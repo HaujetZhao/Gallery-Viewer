@@ -2,6 +2,7 @@
 // 排除区域(sidebar/modal/settings/topbar)用 ref 数组传入。
 import { onMounted, onBeforeUnmount } from 'vue';
 import { useUserSettingsStore } from '../stores/userSettings.js';
+import { useModalStore } from '../stores/modal.js';
 
 const ZONE_HEIGHT = 150;
 
@@ -24,6 +25,7 @@ export function useScrollZone(excludeRefs = []) {
 
   function onMouseMove(e) {
     if (!settings.settings.scrollZoneEnabled) return;
+    if (useModalStore().isOpen) return; // modal 打开时暂停感应滚动(避免全屏遮罩下触发看不见的滚动)
     if (isInExcluded(e.clientX, e.clientY)) {
       stop();
       return;
