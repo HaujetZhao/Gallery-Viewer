@@ -1,0 +1,237 @@
+/**
+ * ========================================
+ * 相册浏览器 - CSS 设计令牌 (Design Tokens)
+ * ========================================
+ * 
+ * 本文件定义了应用的所有设计变量，确保视觉一致性。
+ * 修改这些变量可以快速调整整个应用的外观。
+ */
+
+:root {
+    /* ==================== 颜色系统 ==================== */
+
+    /* --- 主色调 (Primary Colors) --- */
+    /* 用于主要按钮、链接和强调元素 */
+    --color-primary: #3498db;
+    /* 主色 - 蓝色 */
+    --color-primary-dark: #2980b9;
+    /* 主色深色 - 用于悬停状态 */
+    --color-primary-light: #5dade2;
+    /* 主色浅色 - 用于背景 */
+
+    /* --- 语义化颜色 (Semantic Colors) --- */
+    /* 用于表达不同的状态和含义 */
+    --color-success: #27ae60;
+    /* 成功 - 绿色 */
+    --color-warning: #f39c12;
+    /* 警告 - 橙色 */
+    --color-danger: #e74c3c;
+    /* 危险 - 红色 */
+    --color-info: #16a085;
+    /* 信息 - 青色 */
+
+    /* --- 中性色阶 (Neutral Colors) --- */
+    /* 用于背景、边框、文本等 */
+    --color-gray-50: #f8f9fa;
+    /* 最浅灰 */
+    --color-gray-100: #e9ecef;
+    /* 浅灰 */
+    --color-gray-200: #dee2e6;
+    --color-gray-300: #ced4da;
+    --color-gray-400: #adb5bd;
+    --color-gray-500: #6c757d;
+    /* 中灰 */
+    --color-gray-600: #495057;
+    --color-gray-700: #343a40;
+    --color-gray-800: #212529;
+    --color-gray-900: #1a1d20;
+    /* 最深灰 */
+
+    /* --- 背景色 (Background Colors) --- */
+    --bg-primary: #ffffff;
+    /* 主背景 - 白色 */
+    --bg-secondary: #f5f7fa;
+    /* 次要背景 - 浅灰 */
+    --bg-tertiary: #ecf0f1;
+    /* 三级背景 */
+
+    /* --- 文本颜色 (Text Colors) --- */
+    --text-primary: #333333;
+    /* 主要文本 */
+    --text-secondary: #666666;
+    /* 次要文本 */
+    --text-muted: #999999;
+    /* 弱化文本 */
+    --text-inverse: #ffffff;
+    /* 反色文本(深色背景上) */
+
+    /* --- 专用颜色 (Legacy - 向后兼容) --- */
+    --sidebar-bg: #2c3e50;
+    /* 侧边栏背景 */
+    --sidebar-text: #ecf0f1;
+    /* 侧边栏文字 */
+    --accent-color: #3498db;
+    /* 强调色 (等同于 primary) */
+    --bg-color: #f5f7fa;
+    /* 页面背景 (等同于 bg-secondary) */
+
+
+    /* ==================== 间距系统 ==================== */
+
+    /* 基于 4px 基准的间距刻度 */
+    /* 使用方式: padding: var(--spacing-4); */
+    --spacing-0: 0;
+    /* 0px - 无间距 */
+    --spacing-1: 4px;
+    /* 4px - 最小间距 */
+    --spacing-2: 8px;
+    /* 8px */
+    --spacing-3: 12px;
+    /* 12px */
+    --spacing-4: 16px;
+    /* 16px - 标准间距 */
+    --spacing-5: 20px;
+    /* 20px */
+    --spacing-6: 24px;
+    /* 24px */
+    --spacing-8: 32px;
+    /* 32px */
+    --spacing-10: 40px;
+    /* 40px */
+    --spacing-12: 48px;
+    /* 48px - 大间距 */
+    --spacing-16: 64px;
+    /* 64px - 超大间距 */
+
+
+    /* ==================== 字体系统 ==================== */
+
+    /* --- 字体族 (Font Family) --- */
+    --font-family-base: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Microsoft YaHei', sans-serif;
+    --font-family-mono: 'Consolas', 'Monaco', 'Courier New', monospace;
+
+    /* --- 字号 (Font Size) --- */
+    --font-size-xs: 12px;
+    /* 超小号 - 用于辅助信息 */
+    --font-size-sm: 13px;
+    /* 小号 */
+    --font-size-base: 14px;
+    /* 标准 - 正文字号 */
+    --font-size-lg: 16px;
+    /* 大号 */
+    --font-size-xl: 18px;
+    /* 超大号 */
+    --font-size-2xl: 20px;
+    /* 二级标题 */
+    --font-size-3xl: 24px;
+    /* 一级标题 */
+
+    /* --- 字重 (Font Weight) --- */
+    --font-weight-normal: 400;
+    /* 正常 */
+    --font-weight-medium: 500;
+    /* 中等 */
+    --font-weight-semibold: 600;
+    /* 半粗 */
+    --font-weight-bold: 700;
+    /* 粗体 */
+
+    /* --- 行高 (Line Height) --- */
+    --line-height-tight: 1.2;
+    /* 紧凑 - 用于标题 */
+    --line-height-base: 1.5;
+    /* 标准 - 用于正文 */
+    --line-height-relaxed: 1.75;
+    /* 宽松 - 用于长文本 */
+
+
+    /* ==================== 圆角系统 ==================== */
+
+    /* 使用方式: border-radius: var(--radius-base); */
+    --radius-sm: 4px;
+    /* 小圆角 - 按钮、输入框 */
+    --radius-base: 6px;
+    /* 标准圆角 */
+    --radius-lg: 8px;
+    /* 大圆角 - 卡片 */
+    --radius-xl: 12px;
+    /* 超大圆角 - 模态框 */
+    --radius-full: 9999px;
+    /* 完全圆角 - 圆形按钮 */
+
+
+    /* ==================== 阴影系统 ==================== */
+
+    /* 6级阴影深度，数字越大阴影越深 */
+    /* 使用方式: box-shadow: var(--shadow-md); */
+    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
+    /* 超浅阴影 */
+    --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.1);
+    /* 浅阴影 */
+    --shadow-base: 0 4px 8px rgba(0, 0, 0, 0.12);
+    /* 标准阴影 */
+    --shadow-md: 0 6px 12px rgba(0, 0, 0, 0.15);
+    /* 中等阴影 */
+    --shadow-lg: 0 10px 20px rgba(0, 0, 0, 0.2);
+    /* 深阴影 */
+    --shadow-xl: 0 20px 40px rgba(0, 0, 0, 0.25);
+    /* 超深阴影 */
+
+
+    /* ==================== 动画系统 ==================== */
+
+    /* --- 过渡时长 (Transition Duration) --- */
+    --transition-fast: 150ms;
+    /* 快速 - 按钮悬停 */
+    --transition-base: 250ms;
+    /* 标准 - 大多数过渡 */
+    --transition-slow: 350ms;
+    /* 慢速 - 大型元素 */
+
+    /* --- 缓动函数 (Easing Functions) --- */
+    /* 使用方式: transition: all var(--transition-base) var(--ease-out); */
+    --ease-in: cubic-bezier(0.4, 0, 1, 1);
+    /* 加速 */
+    --ease-out: cubic-bezier(0, 0, 0.2, 1);
+    /* 减速 */
+    --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+    /* 先加速后减速 */
+
+
+    /* ==================== Z-Index 层级系统 ==================== */
+
+    /* 统一管理元素堆叠顺序，避免层级冲突 */
+    --z-base: 0;
+    /* 基础层 */
+    --z-dropdown: 100;
+    /* 下拉菜单 */
+    --z-sticky: 200;
+    /* 粘性定位元素 */
+    --z-fixed: 300;
+    /* 固定定位元素 */
+    --z-modal-backdrop: 400;
+    /* 模态框背景遮罩 */
+    --z-modal: 500;
+    /* 模态框 */
+    --z-popover: 600;
+    /* 弹出层 */
+    --z-tooltip: 700;
+    /* 工具提示 */
+    --z-toast: 800;
+    /* Toast 通知 */
+
+
+    /* ==================== 布局系统 ==================== */
+
+    /* --- 侧边栏 (Sidebar) --- */
+    --sidebar-width: 280px;
+    /* 侧边栏宽度 */
+    --sidebar-width-collapsed: 60px;
+    /* 侧边栏折叠宽度 */
+
+    /* --- 其他布局 --- */
+    --header-height: 60px;
+    /* 顶部栏高度 */
+    --footer-height: 40px;
+    /* 底部栏高度 */
+}
