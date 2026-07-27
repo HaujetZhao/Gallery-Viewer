@@ -285,16 +285,17 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
     window.removeEventListener('mouseup', onMouseUp);
   }
 
-  // 切换文件时重置变换 + 按需加载 svg
+  // 切换文件:重置变换 + 按需加载 svg。
+  // resetTransform 延迟到 nextTick(新元素已渲染),避免在旧元素上执行导致旧图闪到 scale=1。
   watch(
     () => modal.currentFile,
-    async (f) => {
+    (f) => {
       if (!f) return;
-      resetTransform();
       loading.value = mediaKind.value !== 'audio';
       svgText.value = '';
       isHoveringVideo.value = false;
-      if (mediaKind.value === 'svg') await loadSvg();
+      if (mediaKind.value === 'svg') loadSvg();
+      nextTick(() => resetTransform());
     },
   );
 
