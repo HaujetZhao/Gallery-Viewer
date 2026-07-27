@@ -3,7 +3,6 @@
 // 注意:与 recovery.js 循环依赖(handleFolderClick 调 handleFolderNotFound,recovery 调 startBackgroundScan),
 // 函数体内调用,ES module 安全。
 import { useFsStore } from '../stores/fs';
-import { useToastStore } from '../stores/uiToast';
 import { SmartFolder } from '../models/SmartFolder';
 import { isFileSystemAccessSupported } from '../utils/browser';
 import { handleFolderNotFound } from './recovery';
@@ -27,6 +26,9 @@ export async function openFolderPicker() {
     const root = await loadProject(handle);
     fs.rootFolder = root;
     fs.currentFolder = root;
+    // ⚠️ 必须在 fs.rootFolder 赋值后、从「代理」fs.rootFolder 起步启动后台扫描。
+    // 若传原始 root,scan 改的是原始 SmartFolder,不触发 reactive 代理的响应式,Sidebar 子目录不更新。
+    startBackgroundScan(fs.rootFolder);
     return root;
   } catch (err) {
     if (err.name !== 'AbortError') {
@@ -63,53 +65,26 @@ export async function getFolderData(dirHandle) {
   return folderData;
 }
 
-// 建根 SmartFolder + 后台递归扫描。
+// 建根 SmartFolder(扫根目录)。后台递归扫描由调用方在设 fs.rootFolder 后、从代理起步触发(见 openFolderPicker)。
 export async function loadProject(handle) {
-  const root = await getFolderData(handle);
-  console.log(`[loadProject] 根扫完,根有 ${root.subFolders.length} 个子目录,启动后台扫描`);
-  // [调试] startBackgroundScan 完成 toast,用于判断"没扫"还是"扫了没更新 UI"。验证后可去 toast/log。
-  startBackgroundScan(root)
-    .then(({ folderCount, fileCount }) => {
-      console.log(`[loadProject] 后台扫描结束:扫了 ${folderCount} 个子目录,共 ${fileCount} 个文件`);
-      useToastStore().info(`后台扫描完成:扫了 ${folderCount} 个子目录,共 ${fileCount} 个文件`);
-    })
-    .catch((e) => {
-      console.error('[loadProject] 后台扫描出错:', e);
-      useToastStore().error('后台扫描出错: ' + (e?.message || e));
-    });
-  return root;
+  return await getFolderData(handle);
 }
 
-// 后台递归扫描子目录(串行,原版行为)。返回 { folderCount, fileCount } 供 loadProject toast。
-// [调试] 每个 subFolder scan 前后 console.log,排查"没扫 vs 没更新 UI"。
+// 后台递归扫描子目录(串行,深度优先)。
+// ⚠️ 必须从「代理」folder 起步(调用方传 fs.rootFolder):scan 会改子 SmartFolder 的 files/subFolders,
+// 改代理才触发响应式让 Sidebar 实时更新;改原始对象则 UI 不刷新(子目录一直灰,直到点击)。
 export async function startBackgroundScan(parentFolder) {
-  let folderCount = 0;
-  let fileCount = 0;
-  async function walk(folder) {
-    if (!folder || !folder.subFolders || folder.subFolders.length === 0) {
-      console.log(`[后台扫描] ${folder?.path || folder?.name || '(空)'} 无子目录,跳过`);
-      return;
-    }
-    console.log(`[后台扫描] 进入 ${folder.path || folder.name},子目录 ${folder.subFolders.length} 个`);
-    for (const subFolderData of folder.subFolders) {
-      try {
-        if (!subFolderData.scanned) {
-          console.log(`[后台扫描] ▶ 开始扫 ${subFolderData.path}`);
-          await subFolderData.scan();
-          console.log(`[后台扫描] ✓ 完成 ${subFolderData.path}: ${subFolderData.files.length} 文件, ${subFolderData.subFolders.length} 子目录`);
-        } else {
-          console.log(`[后台扫描] ⊙ 已扫过 ${subFolderData.path},跳过`);
-        }
-        folderCount++;
-        fileCount += subFolderData.files.length;
-        await walk(subFolderData);
-      } catch (e) {
-        console.warn(`[后台扫描] ✗ 失败 ${subFolderData.path}:`, e);
+  if (!parentFolder || !parentFolder.subFolders) return;
+  for (const subFolderData of parentFolder.subFolders) {
+    try {
+      if (!subFolderData.scanned) {
+        await subFolderData.scan();
       }
+      await startBackgroundScan(subFolderData);
+    } catch (e) {
+      console.warn('后台扫描子文件夹失败:', subFolderData.name, e);
     }
   }
-  await walk(parentFolder);
-  return { folderCount, fileCount };
 }
 
 // 清状态后重载整个项目。
@@ -121,6 +96,7 @@ export async function reloadProject() {
   const root = await loadProject(fs.rootHandle);
   fs.rootFolder = root;
   fs.currentFolder = root;
+  startBackgroundScan(fs.rootFolder); // 同 openFolderPicker,赋值后从代理起步
   return root;
 }
 
