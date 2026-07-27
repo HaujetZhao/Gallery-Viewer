@@ -1,0 +1,25 @@
+# 依赖
+node_modules/
+
+# 构建产物
+dist/
+dist-pwa/
+
+# Vite 缓存
+.vite/
+
+# 日志
+*.log
+npm-debug.log*
+
+# 系统/编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# 本地环境
+.env
+.env.local
+.env.*.local
