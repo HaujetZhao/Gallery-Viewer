@@ -45,15 +45,22 @@ export class SmartFile {
     if (!this.handle || !this.parent) {
       throw new Error('无法重命名：缺少必要的句柄或父级引用');
     }
+    // 先 revoke blobUrl 释放引用,避免 handle.move 报 "A FileSystemHandle cannot be moved while it is locked"
+    // (缩略图 canvas/img 持有 blobUrl 时,Chrome 视文件为锁定)。move 后再重建。
+    if (this.blobUrl) {
+      URL.revokeObjectURL(this.blobUrl);
+      this.blobUrl = null;
+    }
     try {
       await this.handle.move(newName);
       const newFile = await this.handle.getFile();
       this.file = newFile;
-      if (this.blobUrl) URL.revokeObjectURL(this.blobUrl);
       this.blobUrl = URL.createObjectURL(newFile);
       this.md5 = null;
       return true;
     } catch (err) {
+      // move 失败,从原 file 重建 blobUrl(已 revoke)
+      this.blobUrl = URL.createObjectURL(this.file);
       console.error('重命名失败:', err);
       throw err;
     }

@@ -39,19 +39,24 @@ function startRename() {
     nameInputEl.value?.focus();
   });
 }
+let committing = false; // 防重入(@keyup.enter 提交后 input 卸载又触发 @blur)
 async function commitRename() {
-  const newName = draftName.value.trim();
-  editing.value = false;
-  if (!newName || newName === props.file.name) return;
-  if (/[<>:"/\\|?*]/.test(newName)) {
-    toast.error('文件名包含非法字符');
-    return;
-  }
+  if (committing) return;
+  committing = true;
   try {
+    const newName = draftName.value.trim();
+    editing.value = false;
+    if (!newName || newName === props.file.name) return;
+    if (/[<>:"/\\|?*]/.test(newName)) {
+      toast.error('文件名包含非法字符');
+      return;
+    }
     await history.renameFile(props.file, newName);
     toast.success('重命名成功(Ctrl+Z 撤销)');
   } catch (e) {
     toast.error('重命名失败: ' + e.message);
+  } finally {
+    committing = false;
   }
 }
 function cancelRename() {
