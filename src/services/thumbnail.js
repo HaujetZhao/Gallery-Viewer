@@ -3,7 +3,11 @@
 // IntersectionObserver + 并发队列留到阶段 5 gallery 的 useThumbnail composable。
 import { calculateMD5 } from '../utils/file';
 import { getThumbnailStrategy } from './thumbnail-strategies';
-import { getThumbnailFromDB, saveThumbnailToDB, touchThumbnailInDB } from './db';
+import { getThumbnailFromDB, saveThumbnailToDB, touchThumbnailInDB, deleteThumbnail } from './db';
+import { triggerRedraw } from '../composables/useThumbnail';
+import { useFsStore } from '../stores/fs';
+import { useUserSettingsStore } from '../stores/userSettings';
+import { useToastStore } from '../stores/uiToast';
 
 // 把缓存 blob 画到 canvas(缓存恢复,不做缩放,blob 本就是 targetSize 方图)。
 function drawBlobToCanvas(canvas, blob) {
@@ -62,4 +66,27 @@ export async function generateThumbnail(file, canvas, targetSize = 400) {
     });
   }
   return { cached: false, strategyName: strategy.name };
+}
+
+// 强制重绘当前视图缩略图:删当前 folder 各文件(已算 md5)的缓存 → triggerRedraw 重挂卡片重生成。
+// 搬自源码 js/filesystem.js forceRegenerateCurrentThumbnails。GIF/SVG 无 md5 自动跳过(它们本就不缓存)。
+export async function forceRegenerateCurrentThumbnails() {
+  const fs = useFsStore();
+  const settings = useUserSettingsStore();
+  const toast = useToastStore();
+  const files = fs.currentFolder?.files || [];
+  if (!files.length) {
+    toast.info('当前没有文件');
+    return;
+  }
+  const targetSize = settings.settings.thumbnailSize;
+  let deleteCount = 0;
+  for (const file of files) {
+    if (file.md5) {
+      deleteThumbnail(`${file.md5}_${targetSize}`);
+      deleteCount++;
+    }
+  }
+  toast.success(`已清除 ${deleteCount} 个缩略图缓存,正在重新生成...`);
+  triggerRedraw();
 }

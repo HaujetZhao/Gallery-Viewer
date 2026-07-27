@@ -10,6 +10,9 @@ let observer = null;
 const queue = { waiting: [], activeCount: 0 };
 const MAX_CONCURRENT = CONFIG.PERFORMANCE.THUMBNAIL_QUEUE_SIZE; // 4
 
+// 重绘信号:forceRegenerateCurrentThumbnails 删缓存后 ++,Gallery watch 触发卡片重挂载重新生成。
+export const redrawSignal = ref(0);
+
 function handleIntersect(entries) {
   for (const entry of entries) {
     const el = entry.target;
@@ -69,13 +72,20 @@ async function schedule() {
   }
 }
 
-// 全量重置(切换文件夹/清缓存时调):disconnect + 清队列。
+// 全量重置(切换文件夹时调):disconnect + 清队列。
 export function unobserveAll() {
   if (observer) {
     observer.disconnect();
     observer = null;
   }
   queue.waiting = [];
+}
+
+// 强制重绘当前视图:unobserveAll + 递增 redrawSignal → Gallery 重挂卡片重新生成。
+// forceRegenerateCurrentThumbnails 删缓存后调。
+export function triggerRedraw() {
+  unobserveAll();
+  redrawSignal.value++;
 }
 
 // 每卡片 composable。mediaElRef 指向 canvas/img/object 元素。

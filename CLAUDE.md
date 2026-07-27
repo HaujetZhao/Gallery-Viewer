@@ -55,10 +55,11 @@ docs/superpowers/        # specs(设计)+ plans(各阶段实施计划)
 
 ## 后续待办
 
-见 [后续待办.md](后续待办.md)——已知小问题（音量滑块拖不动 / 单媒体卡片显小 / 主题变量残留）+ 状态 + 修复方向。每阶段验收后追加。
+见 [后续待办.md](后续待办.md)——跨阶段遗留事项 + [迁移完整性审查](docs/superpowers/specs/2026-07-27-迁移完整性审查.md)后的待排期项（滚动指示条 / Ctrl+C toast 等）+ 约定现代化方向。每轮验收后追加。
 
 ## 文档
 
 - 设计总纲：`docs/superpowers/specs/2026-07-27-相册浏览器重构-design.md`
+- 迁移完整性审查：`docs/superpowers/specs/2026-07-27-迁移完整性审查.md`（重构后对比原版的差异 / 修复 / 约定现代化）
 - 各阶段实施计划：`docs/superpowers/plans/`
 - 源工程（只读参考）：`D:\repos\相册浏览器`（原生 JS 原版）

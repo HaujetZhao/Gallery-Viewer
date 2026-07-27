@@ -7,6 +7,7 @@ import { useToastStore } from '../stores/uiToast';
 import { useStorageEstimate } from '../composables/useStorageEstimate';
 import { clearAllCache, cleanOldCache } from '../services/db';
 import { reloadProject, refreshFolder } from '../services/filesystem';
+import { forceRegenerateCurrentThumbnails } from '../services/thumbnail';
 
 const props = defineProps({ modelValue: Boolean });
 const emit = defineEmits(['update:modelValue']);
@@ -95,7 +96,7 @@ function commitSpeed() {
   settings.set('scrollSpeed', Number(scrollSpeed.value));
 }
 
-// 刷新当前目录:ALL_MEDIA 走重载项目,否则重扫当前文件夹(捕获外部增删改)
+// 刷新目录:ALL_MEDIA 走重载项目,否则重扫当前文件夹(捕获外部增删改)
 async function onRefreshCurrent() {
   if (!fsStore.currentFolder) return;
   if (fsStore.currentFolder === fsStore.allMediaFolder) {
@@ -109,6 +110,10 @@ async function onRefreshCurrent() {
   } catch (e) {
     toast.error('刷新失败: ' + e.message);
   }
+}
+// 重绘当前:删当前视图缩略图缓存 + 重挂卡片重新生成(forceRegenerateCurrentThumbnails 内部已 toast)
+function onRedrawCurrent() {
+  forceRegenerateCurrentThumbnails();
 }
 async function onReload() {
   toast.info('重载项目中...');
@@ -219,8 +224,8 @@ async function onClearAll() {
         </div>
 
         <div class="setting-item button-group">
-          <button class="btn-block" @click="onRefreshCurrent">刷新当前目录</button>
-          <button class="btn-block warning" @click="onReload">重载项目</button>
+          <button class="btn-block" @click="onRefreshCurrent">刷新目录</button>
+          <button class="btn-block" @click="onRedrawCurrent">重绘当前</button>
           <button class="btn-block danger" @click="onCleanOld">清理过期</button>
           <button class="btn-block danger" @click="onClearAll">清空全部</button>
         </div>

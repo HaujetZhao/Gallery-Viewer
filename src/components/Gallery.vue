@@ -5,7 +5,7 @@ import { useUserSettingsStore } from '../stores/userSettings';
 import { useModalStore } from '../stores/modal';
 import { useGallerySearch } from '../composables/useGallerySearch';
 import { windowsCompareStrings } from '../utils/format';
-import { unobserveAll } from '../composables/useThumbnail';
+import { unobserveAll, redrawSignal } from '../composables/useThumbnail';
 import PhotoCard from './PhotoCard.vue';
 
 const fsStore = useFsStore();
@@ -51,6 +51,10 @@ watch(
     unobserveAll();
   },
 );
+// 重绘信号:forceRegenerateCurrentThumbnails 删缓存后 ++ → 卡片重挂载重新生成
+watch(redrawSignal, () => {
+  rerunKey.value++;
+});
 
 function openPreview(file) {
   modal.open(file, displayFiles.value);
