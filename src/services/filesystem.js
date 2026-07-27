@@ -3,6 +3,7 @@
 // 注意:与 recovery.js 循环依赖(handleFolderClick 调 handleFolderNotFound,recovery 调 startBackgroundScan),
 // 函数体内调用,ES module 安全。
 import { useFsStore } from '../stores/fs';
+import { useToastStore } from '../stores/uiToast';
 import { SmartFolder } from '../models/SmartFolder';
 import { isFileSystemAccessSupported } from '../utils/browser';
 import { handleFolderNotFound } from './recovery';
@@ -65,26 +66,50 @@ export async function getFolderData(dirHandle) {
 // 建根 SmartFolder + 后台递归扫描。
 export async function loadProject(handle) {
   const root = await getFolderData(handle);
-  startBackgroundScan(root); // fire-and-forget,后台递归
+  console.log(`[loadProject] 根扫完,根有 ${root.subFolders.length} 个子目录,启动后台扫描`);
+  // [调试] startBackgroundScan 完成 toast,用于判断"没扫"还是"扫了没更新 UI"。验证后可去 toast/log。
+  startBackgroundScan(root)
+    .then(({ folderCount, fileCount }) => {
+      console.log(`[loadProject] 后台扫描结束:扫了 ${folderCount} 个子目录,共 ${fileCount} 个文件`);
+      useToastStore().info(`后台扫描完成:扫了 ${folderCount} 个子目录,共 ${fileCount} 个文件`);
+    })
+    .catch((e) => {
+      console.error('[loadProject] 后台扫描出错:', e);
+      useToastStore().error('后台扫描出错: ' + (e?.message || e));
+    });
   return root;
 }
 
-// 后台递归扫描子目录。同级并发(Promise.all)——原串行 await 大目录树太慢,
-// 用户在扫到深层前会以为"子目录没扫"。仍深度优先,但同级并行。
+// 后台递归扫描子目录(串行,原版行为)。返回 { folderCount, fileCount } 供 loadProject toast。
+// [调试] 每个 subFolder scan 前后 console.log,排查"没扫 vs 没更新 UI"。
 export async function startBackgroundScan(parentFolder) {
-  if (!parentFolder || !parentFolder.subFolders?.length) return;
-  await Promise.all(
-    parentFolder.subFolders.map(async (subFolderData) => {
+  let folderCount = 0;
+  let fileCount = 0;
+  async function walk(folder) {
+    if (!folder || !folder.subFolders || folder.subFolders.length === 0) {
+      console.log(`[后台扫描] ${folder?.path || folder?.name || '(空)'} 无子目录,跳过`);
+      return;
+    }
+    console.log(`[后台扫描] 进入 ${folder.path || folder.name},子目录 ${folder.subFolders.length} 个`);
+    for (const subFolderData of folder.subFolders) {
       try {
         if (!subFolderData.scanned) {
+          console.log(`[后台扫描] ▶ 开始扫 ${subFolderData.path}`);
           await subFolderData.scan();
+          console.log(`[后台扫描] ✓ 完成 ${subFolderData.path}: ${subFolderData.files.length} 文件, ${subFolderData.subFolders.length} 子目录`);
+        } else {
+          console.log(`[后台扫描] ⊙ 已扫过 ${subFolderData.path},跳过`);
         }
-        await startBackgroundScan(subFolderData);
+        folderCount++;
+        fileCount += subFolderData.files.length;
+        await walk(subFolderData);
       } catch (e) {
-        console.warn('后台扫描子文件夹失败:', subFolderData.name, e);
+        console.warn(`[后台扫描] ✗ 失败 ${subFolderData.path}:`, e);
       }
-    }),
-  );
+    }
+  }
+  await walk(parentFolder);
+  return { folderCount, fileCount };
 }
 
 // 清状态后重载整个项目。
