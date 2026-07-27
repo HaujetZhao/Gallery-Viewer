@@ -21,7 +21,6 @@ const panelEl = ref(null);
 const left = ref(80);
 const top = ref(80);
 
-// 打开时刷新存储 + 智能定位(右上角,避开左上齿轮)
 watch(
   () => props.modelValue,
   async (open) => {
@@ -34,7 +33,7 @@ watch(
   },
 );
 
-// ===== 拖拽(按 .settings-header 拖) =====
+// 拖拽
 let dragOffset = null;
 function onDragStart(e) {
   if (!e.target.closest('.settings-header')) return;
@@ -57,7 +56,6 @@ function onDragEnd() {
   document.removeEventListener('mouseup', onDragEnd);
 }
 
-// ESC 关闭
 function onKeydown(e) {
   if (e.key === 'Escape' && props.modelValue) emit('update:modelValue', false);
 }
@@ -68,23 +66,35 @@ onBeforeUnmount(() => {
   document.removeEventListener('mouseup', onDragEnd);
 });
 
-// ===== 控件(绑 userSettings) =====
+// 控件(本地 ref + change 提交 userSettings)
+const sortField = ref(settings.settings.sortField);
+const sortAsc = ref(settings.settings.sortDirection === 'asc');
+const colCount = ref(settings.settings.columnCount);
 const thumbnailSize = ref(settings.settings.thumbnailSize);
 const scrollZoneEnabled = ref(settings.settings.scrollZoneEnabled);
 const scrollSpeed = ref(settings.settings.scrollSpeed);
 
-function commitThumbnailSize() {
+function commitSort() {
+  settings.set('sortField', sortField.value);
+}
+function toggleSort() {
+  sortAsc.value = !sortAsc.value;
+  settings.set('sortDirection', sortAsc.value ? 'asc' : 'desc');
+}
+function commitCol() {
+  settings.set('columnCount', Number(colCount.value));
+}
+function commitThumb() {
   settings.set('thumbnailSize', Number(thumbnailSize.value));
 }
 function toggleScrollZone() {
   scrollZoneEnabled.value = !scrollZoneEnabled.value;
   settings.set('scrollZoneEnabled', scrollZoneEnabled.value);
 }
-function commitScrollSpeed() {
+function commitSpeed() {
   settings.set('scrollSpeed', Number(scrollSpeed.value));
 }
 
-// ===== 缓存按钮 =====
 async function onReload() {
   toast.info('重载项目中...');
   await reloadProject();
@@ -117,39 +127,52 @@ async function onClearAll() {
         <div class="drag-handle"><i class="fas fa-arrows-alt"></i></div>
       </div>
       <div class="settings-body">
-        <div class="setting-item info-item">
+        <div class="setting-item">
           <label>当前路径</label>
-          <span class="info-value">{{ fsStore.currentFolder?.path || '—' }}</span>
+          <span class="info-value" style="word-break: break-all; font-size: 12px; text-align: right;">
+            {{ fsStore.currentFolder?.path || '—' }}
+          </span>
         </div>
 
         <div class="separator"></div>
 
         <div class="setting-item">
+          <label>排序方式</label>
+          <div style="display: flex; align-items: center; gap: 10px; flex: 1;">
+            <select v-model="sortField" @change="commitSort" style="flex: 1;">
+              <option value="name">文件名</option>
+              <option value="size">文件大小</option>
+              <option value="date">修改日期</option>
+            </select>
+            <button class="btn-small" @click="toggleSort" :title="sortAsc ? '升序' : '降序'">
+              <i :class="sortAsc ? 'fas fa-arrow-down-short-wide' : 'fas fa-arrow-up-wide-short'"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="setting-item">
+          <label>显示列数</label>
+          <input type="range" min="1" max="10" step="1" v-model.number="colCount" @change="commitCol" />
+          <span>{{ colCount }}列</span>
+        </div>
+
+        <div class="setting-item">
           <label>缩略图质量</label>
-          <input
-            type="range"
-            min="100"
-            max="1000"
-            step="50"
-            v-model.number="thumbnailSize"
-            @change="commitThumbnailSize"
-          />
+          <input type="range" min="100" max="1000" step="50" v-model.number="thumbnailSize" @change="commitThumb" />
           <span>{{ thumbnailSize }}px</span>
         </div>
 
         <div class="setting-item">
-          <label :inactive="!scrollZoneEnabled">感应滚动</label>
-          <button class="btn-small" @click="toggleScrollZone">
-            <i :class="scrollZoneEnabled ? 'fas fa-toggle-on' : 'fas fa-toggle-off'"></i>
-            {{ scrollZoneEnabled ? '开' : '关' }}
-          </button>
+          <label style="cursor: pointer; user-select: none;" @click="toggleScrollZone">
+            感应滚动 <i :class="scrollZoneEnabled ? 'fas fa-toggle-on' : 'fas fa-toggle-off'"></i>
+          </label>
           <input
             type="range"
             min="0.5"
             max="5"
             step="0.1"
             v-model.number="scrollSpeed"
-            @change="commitScrollSpeed"
+            @change="commitSpeed"
             :disabled="!scrollZoneEnabled"
           />
           <span>{{ scrollSpeed.toFixed(1) }}</span>
@@ -157,19 +180,19 @@ async function onClearAll() {
 
         <div class="separator"></div>
 
-        <div class="setting-item" style="justify-content: flex-start">
-          <label>主题</label>
-        </div>
-        <div class="theme-selector">
-          <div
-            v-for="t in themeStore.getThemes()"
-            :key="t.id"
-            class="theme-option"
-            :class="{ active: themeStore.currentTheme === t.id }"
-            @click="themeStore.applyTheme(t.id)"
-          >
-            <span class="theme-icon">{{ t.icon }}</span>
-            <span>{{ t.name }}</span>
+        <div class="settings-section">
+          <h3><i class="fas fa-palette"></i> 主题</h3>
+          <div class="theme-selector">
+            <div
+              v-for="t in themeStore.getThemes()"
+              :key="t.id"
+              class="theme-option"
+              :class="{ active: themeStore.currentTheme === t.id }"
+              @click="themeStore.applyTheme(t.id)"
+            >
+              <div class="theme-preview" :class="t.id"></div>
+              <span class="theme-name">{{ t.icon }} {{ t.name }}</span>
+            </div>
           </div>
         </div>
 
@@ -181,41 +204,11 @@ async function onClearAll() {
         </div>
 
         <div class="setting-item button-group">
-          <button class="btn-block" @click="onReload">重载项目</button>
-          <button class="btn-block warning" @click="onCleanOld">清理过期</button>
+          <button class="btn-block warning" @click="onReload">重载项目</button>
+          <button class="btn-block danger" @click="onCleanOld">清理过期</button>
           <button class="btn-block danger" @click="onClearAll">清空全部</button>
         </div>
       </div>
     </div>
   </Teleport>
 </template>
-
-<style scoped>
-.theme-selector {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-.theme-option {
-  flex: 1;
-  padding: 8px;
-  border: 2px solid #e1e5eb;
-  border-radius: 6px;
-  text-align: center;
-  cursor: pointer;
-  font-size: 12px;
-  transition: all 0.2s;
-}
-.theme-option:hover {
-  border-color: var(--color-primary, #3498db);
-}
-.theme-option.active {
-  border-color: var(--color-primary, #3498db);
-  background: rgba(52, 152, 219, 0.1);
-}
-.theme-icon {
-  display: block;
-  font-size: 18px;
-  margin-bottom: 4px;
-}
-</style>
