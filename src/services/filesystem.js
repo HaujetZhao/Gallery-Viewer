@@ -1,13 +1,15 @@
 // 文件系统服务。搬自源码 js/filesystem.js,剥 DOM/UI 耦合,service 内部用 useFsStore() 操作状态。
-// syncTreeStructure(源码 sidebar)阶段5 接入;Vue 响应式渲染 subFolders,可能不需要它。
+// syncTreeStructure(源码 sidebar)Vue 后不需要(响应式自动同步 subFolders)。
+// 注意:与 recovery.js 循环依赖(handleFolderClick 调 handleFolderNotFound,recovery 调 startBackgroundScan),
+// 函数体内调用,ES module 安全。
 import { useFsStore } from '../stores/fs.js';
 import { SmartFolder } from '../models/SmartFolder.js';
 import { isFileSystemAccessSupported } from '../utils/browser.js';
+import { handleFolderNotFound } from './recovery.js';
 
-// 打开根目录入口。权限在 picker 阶段一次性拿(mode:readwrite),后续不再调 verifyHandlePermission。
+// 打开根目录入口。权限在 picker 阶段一次性拿(mode:readwrite)。
 export async function openFolderPicker() {
   if (!isFileSystemAccessSupported()) {
-    // 阶段4 暂用 alert,阶段7 settings/toast 组件做好后替换
     alert('浏览器不支持文件系统访问 API,请使用 Chrome / Edge / Opera(86+)');
     return null;
   }
@@ -20,8 +22,9 @@ export async function openFolderPicker() {
     });
     fs.rootHandle = handle;
     fs.foldersData.clear();
-    fs.foldersData.set('ALL_MEDIA', fs.allMediaFolder); // ALL_MEDIA 已在 store 初始化时建,这里重新挂回清空后的 map
+    fs.foldersData.set('ALL_MEDIA', fs.allMediaFolder);
     const root = await loadProject(handle);
+    fs.rootFolder = root;
     fs.currentFolder = root;
     return root;
   } catch (err) {
@@ -59,15 +62,14 @@ export async function getFolderData(dirHandle) {
   return folderData;
 }
 
-// 建根 SmartFolder + 后台递归扫描。源码有 treeNode.createRoot/addToUI(DOM),Vue 后剥离(组件渲染)。
+// 建根 SmartFolder + 后台递归扫描。
 export async function loadProject(handle) {
   const root = await getFolderData(handle);
   startBackgroundScan(root); // fire-and-forget,后台递归
   return root;
 }
 
-// 深度优先递归后台扫描。scan 已把 subFolder 加到 parent.subFolders 数组,TreeNode 是数据投影,
-// Vue 组件 v-for 渲染 subFolders,无需手动 treeNode.addChild。
+// 深度优先递归后台扫描。scan 已把 subFolder 加到 parent.subFolders,Vue 组件 v-for 响应式渲染。
 export async function startBackgroundScan(parentFolder) {
   if (!parentFolder || !parentFolder.subFolders) return;
   for (const subFolderData of parentFolder.subFolders) {
@@ -89,17 +91,16 @@ export async function reloadProject() {
   fs.foldersData.set('ALL_MEDIA', fs.allMediaFolder);
   if (!fs.rootHandle) return null;
   const root = await loadProject(fs.rootHandle);
+  fs.rootFolder = root;
   fs.currentFolder = root;
   return root;
 }
 
-// 重扫单文件夹。源码有 syncTreeStructure(阶段5)+toast,这里剥离。
-// 失败(NotFoundError)时从 foldersData 删 + treeNode 数据清理。
+// 重扫单文件夹。失败(NotFoundError)时从 foldersData 删 + treeNode 数据清理。
 export async function refreshFolder(folder) {
   try {
     await folder.scan();
     folder.treeNode?.refreshState();
-    // 阶段5: 接入 syncTreeStructure(folder) —— Vue 响应式可能让此步多余,届时评估
   } catch (err) {
     if (err.name === 'NotFoundError') {
       const fs = useFsStore();
@@ -107,5 +108,56 @@ export async function refreshFolder(folder) {
       folder.treeNode?.destroy();
     }
     throw err;
+  }
+}
+
+// 加载并显示指定文件夹。Vue 后只需设 currentFolder(Gallery 自动响应)。
+export async function loadFolder(folder) {
+  const fs = useFsStore();
+  if (folder === fs.allMediaFolder) {
+    await switchToAllPhotos();
+    return;
+  }
+  fs.currentFolder = folder;
+}
+
+// 聚合所有 foldersData 的文件到 ALL_MEDIA,切到聚合视图。
+export async function switchToAllPhotos() {
+  const fs = useFsStore();
+  const allFiles = [];
+  for (const [path, data] of fs.foldersData.entries()) {
+    if (path !== 'ALL_MEDIA' && data?.files?.length) {
+      allFiles.push(...data.files);
+    }
+  }
+  fs.allMediaFolder.files = allFiles;
+  fs.currentFolder = fs.allMediaFolder;
+}
+
+// 文件夹点击:validate → 失效恢复 → 小文件夹即时刷新 → loadFolder。
+export async function handleFolderClick(folder) {
+  if (!folder) return;
+  const fs = useFsStore();
+  if (folder === fs.allMediaFolder) {
+    await loadFolder(folder);
+    return;
+  }
+  try {
+    const isValid = await folder.validate();
+    if (!isValid) {
+      await handleFolderNotFound(folder);
+      return;
+    }
+    // 只对小文件夹(<200 文件)即时刷新,大的等用户手动刷新
+    if (folder.files.length < 200) {
+      await refreshFolder(folder);
+    }
+    await loadFolder(folder);
+  } catch (err) {
+    if (err.name === 'NotFoundError' || err.message?.includes('not found')) {
+      await handleFolderNotFound(folder);
+    } else {
+      console.error('文件夹点击处理失败:', err);
+    }
   }
 }
