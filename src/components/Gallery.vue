@@ -6,14 +6,11 @@ import { useModalStore } from '../stores/modal';
 import { useGallerySearch } from '../composables/useGallerySearch';
 import { windowsCompareStrings } from '../utils/format';
 import { unobserveAll } from '../composables/useThumbnail';
-import { refreshFolder, reloadProject } from '../services/filesystem';
-import { useToastStore } from '../stores/uiToast';
 import PhotoCard from './PhotoCard.vue';
 
 const fsStore = useFsStore();
 const settings = useUserSettingsStore();
 const modal = useModalStore();
-const toast = useToastStore();
 const { searchTerm, debouncedTerm, filteredCount, totalCount } = useGallerySearch();
 
 const sortField = computed(() => settings.settings.sortField);
@@ -55,21 +52,6 @@ watch(
   },
 );
 
-// 刷新当前目录:ALL_MEDIA 重载项目,否则重扫当前文件夹(捕获外部增删改)
-const refreshing = ref(false);
-async function onRefresh() {
-  if (refreshing.value) return;
-  refreshing.value = true;
-  try {
-    if (fsStore.currentFolder === fsStore.allMediaFolder) await reloadProject();
-    else await refreshFolder(fsStore.currentFolder);
-  } catch (e) {
-    toast.error('刷新失败: ' + e.message);
-  } finally {
-    refreshing.value = false;
-  }
-}
-
 function openPreview(file) {
   modal.open(file, displayFiles.value);
 }
@@ -87,11 +69,6 @@ onBeforeUnmount(() => unobserveAll());
 
 <template>
   <div id="galleryContainer" class="gallery-container">
-    <div class="gallery-toolbar">
-      <button class="gallery-refresh-btn" :disabled="refreshing" @click="onRefresh" title="刷新当前目录">
-        <i class="fas fa-sync-alt" :class="{ 'fa-spin': refreshing }"></i> 刷新
-      </button>
-    </div>
     <div v-if="displayFiles.length === 0" class="empty-state">
       <i class="fas fa-images empty-icon"></i>
       <p>{{ debouncedTerm ? '没有匹配的文件' : '此文件夹为空' }}</p>

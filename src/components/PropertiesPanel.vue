@@ -1,11 +1,15 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref, nextTick } from 'vue';
 import { usePropertiesStore } from '../stores/properties';
+import { useHistoryStore } from '../stores/history';
+import { useToastStore } from '../stores/uiToast';
 import { buildGpsLinks, FormatDMS } from '../services/gps';
 import { formatDuration } from '../services/metadata';
 import { formatFileSize, formatDate } from '../utils/format';
 
 const props2 = usePropertiesStore();
+const history = useHistoryStore();
+const toast = useToastStore();
 
 const EXIF_MAP = {
   Make: '制造商', Model: '型号', LensModel: '镜头', Software: '后期软件',
@@ -40,6 +44,45 @@ const dim = computed(() => props2.metadata?.dimensions || {});
 const exif = computed(() => props2.metadata?.exif);
 const id3 = computed(() => props2.metadata?.id3);
 const gps = computed(() => buildGpsLinks(exif.value));
+
+// 内联重命名(点击文件名触发)
+const editing = ref(false);
+const draftName = ref('');
+const nameInputEl = ref(null);
+function startRename() {
+  if (!props2.file) return;
+  draftName.value = props2.file.name;
+  editing.value = true;
+  nextTick(() => {
+    const dotIdx = props2.file.name.lastIndexOf('.');
+    if (dotIdx > 0) nameInputEl.value?.setSelectionRange(0, dotIdx);
+    else nameInputEl.value?.select();
+    nameInputEl.value?.focus();
+  });
+}
+let committing = false; // 防重入(@keyup.enter 提交后 input 卸载又触发 @blur)
+async function commitRename() {
+  if (committing) return;
+  committing = true;
+  try {
+    const newName = draftName.value.trim();
+    editing.value = false;
+    if (!newName || newName === props2.file.name) return;
+    if (/[<>:"/\\|?*]/.test(newName)) {
+      toast.error('文件名包含非法字符');
+      return;
+    }
+    await history.renameFile(props2.file, newName);
+    toast.success('重命名成功(Ctrl+Z 撤销)');
+  } catch (e) {
+    toast.error('重命名失败: ' + e.message);
+  } finally {
+    committing = false;
+  }
+}
+function cancelRename() {
+  editing.value = false;
+}
 
 function fmtExifVal(key, val, tags) {
   if (key === 'ExposureTime' && val < 1 && val > 0) return `1/${Math.round(1 / val)}`;
@@ -101,7 +144,23 @@ const exifGroups = computed(() => {
               <h4>基本信息</h4>
               <table class="props-table">
                 <tbody>
-                <tr><td>文件名</td><td>{{ props2.file.name }}</td></tr>
+                <tr>
+                  <td>文件名</td>
+                  <td>
+                    <span v-if="!editing" class="props-filename" @click="startRename" title="点击重命名">
+                      {{ props2.file.name }} <i class="fas fa-edit props-rename-icon"></i>
+                    </span>
+                    <input
+                      v-else
+                      ref="nameInputEl"
+                      v-model="draftName"
+                      class="props-rename-input"
+                      @keyup.enter="commitRename"
+                      @keyup.esc="cancelRename"
+                      @blur="commitRename"
+                    />
+                  </td>
+                </tr>
                 <tr><td>路径</td><td class="file-path-display">{{ props2.file.path }}</td></tr>
                 <tr v-if="dim.width"><td>分辨率</td><td>{{ dim.width }} × {{ dim.height }}</td></tr>
                 <tr v-if="dim.duration"><td>时长</td><td>{{ formatDuration(dim.duration) }}</td></tr>
@@ -159,3 +218,29 @@ const exifGroups = computed(() => {
     </div>
   </Teleport>
 </template>
+
+<style scoped>
+.props-filename {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.props-rename-icon {
+  font-size: 0.8em;
+  opacity: 0.35;
+  transition: opacity 0.2s;
+}
+.props-filename:hover .props-rename-icon {
+  opacity: 1;
+}
+.props-rename-input {
+  width: 100%;
+  font: inherit;
+  padding: 2px 6px;
+  border: 1px solid var(--color-primary);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+</style>

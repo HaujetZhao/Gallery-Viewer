@@ -133,7 +133,10 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
   // ===== 触摸 =====
   function onTouchStart(e) {
     if (!modal.isOpen) return;
+    // 交互控件放行(音频播放器内滑块/按钮等),保留原生 touch
+    if (e.target.closest('.modal-audio-player, input, button, select, textarea')) return;
     if (e.touches.length === 1) {
+      e.preventDefault(); // 阻止合成 click 穿透到背后元素 + 页面滚动
       panning = true;
       startX = e.touches[0].clientX - pointX.value;
       startY = e.touches[0].clientY - pointY.value;
@@ -176,9 +179,13 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
     if (e.touches.length > 0) return; // 还有手指
     if (!panning) return;
     const dur = Date.now() - mouseDownTime;
-    if (dur < 300) {
+    if (dur < 300 && e.changedTouches[0]) {
+      // tap 判定:短按 + 几乎没移动(<10px) + 不在媒体上 → 关闭
+      const t = e.changedTouches[0];
+      const moveX = t.clientX - mouseDownX;
+      const moveY = t.clientY - mouseDownY;
       const onMedia = e.target.closest('.modal-media, audio, .modal-audio-player');
-      if (!onMedia) modal.close();
+      if (Math.sqrt(moveX * moveX + moveY * moveY) < 10 && !onMedia) modal.close();
     }
     panning = false;
   }

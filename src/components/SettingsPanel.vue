@@ -6,7 +6,7 @@ import { useFsStore } from '../stores/fs';
 import { useToastStore } from '../stores/uiToast';
 import { useStorageEstimate } from '../composables/useStorageEstimate';
 import { clearAllCache, cleanOldCache } from '../services/db';
-import { reloadProject } from '../services/filesystem';
+import { reloadProject, refreshFolder } from '../services/filesystem';
 
 const props = defineProps({ modelValue: Boolean });
 const emit = defineEmits(['update:modelValue']);
@@ -95,6 +95,21 @@ function commitSpeed() {
   settings.set('scrollSpeed', Number(scrollSpeed.value));
 }
 
+// 刷新当前目录:ALL_MEDIA 走重载项目,否则重扫当前文件夹(捕获外部增删改)
+async function onRefreshCurrent() {
+  if (!fsStore.currentFolder) return;
+  if (fsStore.currentFolder === fsStore.allMediaFolder) {
+    await onReload();
+    return;
+  }
+  toast.info('刷新中...');
+  try {
+    await refreshFolder(fsStore.currentFolder);
+    toast.success('已刷新当前目录');
+  } catch (e) {
+    toast.error('刷新失败: ' + e.message);
+  }
+}
 async function onReload() {
   toast.info('重载项目中...');
   await reloadProject();
@@ -204,6 +219,7 @@ async function onClearAll() {
         </div>
 
         <div class="setting-item button-group">
+          <button class="btn-block" @click="onRefreshCurrent">刷新当前目录</button>
           <button class="btn-block warning" @click="onReload">重载项目</button>
           <button class="btn-block danger" @click="onCleanOld">清理过期</button>
           <button class="btn-block danger" @click="onClearAll">清空全部</button>

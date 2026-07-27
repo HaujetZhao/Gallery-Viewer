@@ -44,7 +44,8 @@ const settingsOpen = ref(false);
 const browserSupported = isFileSystemAccessSupported();
 const sidebarEl = ref(null);
 const settingsBtnEl = ref(null);
-useScrollZone([sidebarEl, settingsBtnEl]);
+const filterEl = ref(null);
+useScrollZone([sidebarEl, settingsBtnEl, filterEl]);
 
 onMounted(async () => {
   themeStore.init();
@@ -117,7 +118,7 @@ function onKeydown(e) {
       <i class="fas fa-cog"></i>
     </button>
 
-    <div v-if="fsStore.currentFolder" class="filter-container">
+    <div v-if="fsStore.currentFolder" class="filter-container" ref="filterEl">
       <input type="text" v-model="searchTerm" placeholder="搜索文件名..." />
       <div class="filter-count">{{ filteredCount }}/{{ totalCount }}</div>
     </div>
