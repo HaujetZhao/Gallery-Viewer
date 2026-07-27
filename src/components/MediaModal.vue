@@ -34,6 +34,7 @@ const { loading, svgText, mediaKind, isHoveringVideo, onImgLoad, copyCurrent } =
           class="modal-media modal-video"
           :src="modal.currentFile.blobUrl"
           controls
+          @loadeddata="loading = false"
           @mouseenter="isHoveringVideo = true"
           @mouseleave="isHoveringVideo = false"
         />

@@ -100,6 +100,7 @@ const exifGroups = computed(() => {
             <div class="props-section">
               <h4>基本信息</h4>
               <table class="props-table">
+                <tbody>
                 <tr><td>文件名</td><td>{{ props2.file.name }}</td></tr>
                 <tr><td>路径</td><td class="file-path-display">{{ props2.file.path }}</td></tr>
                 <tr v-if="dim.width"><td>分辨率</td><td>{{ dim.width }} × {{ dim.height }}</td></tr>
@@ -107,6 +108,7 @@ const exifGroups = computed(() => {
                 <tr v-if="dim.estimatedBitrate"><td>估算比特率</td><td>{{ dim.estimatedBitrate }} kbps</td></tr>
                 <tr><td>大小</td><td>{{ formatFileSize(props2.file.size) }}</td></tr>
                 <tr><td>修改时间</td><td>{{ formatDate(props2.file.lastModified) }}</td></tr>
+                </tbody>
               </table>
             </div>
 
@@ -114,12 +116,14 @@ const exifGroups = computed(() => {
             <div v-if="id3" class="props-section">
               <h4><i class="fas fa-tags"></i> 音乐信息</h4>
               <table class="props-table">
+                <tbody>
                 <template v-for="f in ID3_FIELDS" :key="f.key">
                   <tr v-if="id3[f.key]">
                     <td><i :class="['fas', f.icon]"></i> {{ f.label }}</td>
                     <td>{{ id3[f.key] }}</td>
                   </tr>
                 </template>
+                </tbody>
               </table>
             </div>
 
