@@ -14,16 +14,16 @@ const fsStore = useFsStore();
 const settings = useUserSettingsStore();
 const modal = useModalStore();
 const toast = useToastStore();
-const { searchTerm, filteredCount, totalCount } = useGallerySearch();
+const { searchTerm, debouncedTerm, filteredCount, totalCount } = useGallerySearch();
 
 const sortField = computed(() => settings.settings.sortField);
 const sortAsc = computed(() => settings.settings.sortDirection === 'asc');
 const colCount = computed(() => settings.settings.columnCount);
 
-// 过滤 + 排序
+// 过滤 + 排序(用 debouncedTerm,避免每键全量重排)
 const displayFiles = computed(() => {
   const files = fsStore.currentFolder?.files || [];
-  const term = searchTerm.value.toLowerCase();
+  const term = debouncedTerm.value.toLowerCase();
   let list = files.filter((f) => f.path.toLowerCase().includes(term));
   const dir = sortAsc.value ? 1 : -1;
   list = [...list].sort((a, b) => {
@@ -78,7 +78,8 @@ watch(
   () => fsStore.currentFolder,
   () => {
     unobserveAll();
-    searchTerm.value = ''; // 切文件夹清搜索
+    searchTerm.value = '';
+    debouncedTerm.value = ''; // 立即清,不等 debounce
   },
 );
 onBeforeUnmount(() => unobserveAll());
@@ -91,7 +92,11 @@ onBeforeUnmount(() => unobserveAll());
         <i class="fas fa-sync-alt" :class="{ 'fa-spin': refreshing }"></i> 刷新
       </button>
     </div>
-    <div class="gallery-grid" :style="{ '--estimated-height': estHeight }">
+    <div v-if="displayFiles.length === 0" class="empty-state">
+      <i class="fas fa-images empty-icon"></i>
+      <p>{{ debouncedTerm ? '没有匹配的文件' : '此文件夹为空' }}</p>
+    </div>
+    <div v-else class="gallery-grid" :style="{ '--estimated-height': estHeight }">
       <div v-for="(col, i) in columns" :key="i" class="masonry-col">
         <PhotoCard
           v-for="f in col"

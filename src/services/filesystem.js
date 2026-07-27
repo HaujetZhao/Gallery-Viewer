@@ -106,6 +106,10 @@ export async function refreshFolder(folder) {
       const fs = useFsStore();
       fs.foldersData.delete(folder.path);
       folder.treeNode?.destroy();
+      // 失效的若是当前文件夹,切到父级/全部媒体,避免 Gallery 停在幽灵文件夹
+      if (fs.currentFolder === folder) {
+        fs.currentFolder = folder.parent || fs.allMediaFolder;
+      }
     }
     throw err;
   }

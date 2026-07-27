@@ -2,7 +2,7 @@
 import { useConfirmStore } from '../stores/confirm';
 import { useFsStore } from '../stores/fs';
 import { useToastStore } from '../stores/uiToast';
-import { refreshFolder, loadFolder } from './filesystem';
+import { refreshFolder, loadFolder, switchToAllPhotos } from './filesystem';
 
 export async function handleDeleteFolder(folder) {
   if (!folder.parent) {
@@ -27,8 +27,14 @@ export async function handleDeleteFolder(folder) {
     const path = folder.path;
     await folder.delete(); // SmartFolder.delete: removeEntry recursive + 从 parent.subFolders 移除
     fs.foldersData.delete(path);
+    // 递归清后代缓存(否则 ALL_MEDIA 聚合仍含已删子树的文件)
+    const prefix = path + '/';
+    for (const key of [...fs.foldersData.keys()]) {
+      if (key.startsWith(prefix)) fs.foldersData.delete(key);
+    }
     if (folder.parent) await refreshFolder(folder.parent);
     if (fs.currentFolder === folder) await loadFolder(folder.parent);
+    else if (fs.currentFolder === fs.allMediaFolder) await switchToAllPhotos();
     toast.success(`文件夹 "${folder.name}" 已删除`);
   } catch (err) {
     if (err.name === 'NotAllowedError') toast.error('没有权限删除文件夹');
