@@ -42,7 +42,7 @@ docs/superpowers/        # specs(设计)+ plans(各阶段实施计划)
 2. **model 层保持纯逻辑**（`models/` 不 import Pinia/Vue）。`SmartFolder.appState` 由 `stores/fs.js` 静态注入（`SmartFolder.appState = { get rootHandle(), get foldersData() }`），避免 model 反向依赖 store。
 3. **service 层操作 store**：`services/` 内部 `useFsStore()` / `useToastStore()` 等直接调（在函数体内，不在模块顶层）。
 4. **CSS 全局复用**：`src/styles/` 是源码原样搬来的 11 个 CSS（`main.js` 全局 import）。组件**不重写这些 CSS**，模板直接用其 class（如 `.photo-card` / `.masonry-col` / `.tree-node` / `.modal-audio-player`）。组件 scoped 样式只补 CSS 里没有的。
-5. **核心复杂逻辑 1:1 照搬源码**（不要"优化"）：scan 增量算法、syncChildren diff、GPS 坐标转换（魔数逐字照抄）、ID3 解析、`.trash` 镜像回收站、calculateMD5 只 hash 前 2MB（缓存键语义）。
+5. **核心复杂逻辑 1:1 照搬源码**（不要"优化"）：scan 增量算法、GPS 坐标转换（魔数逐字照抄）、ID3 解析、`.trash` 镜像回收站、calculateMD5 只 hash 前 2MB（缓存键语义）。（`syncChildren` diff 在 Vue 响应式下无用，迁移审查已删）
 6. **跨组件状态进 Pinia store；组件私有状态用 `ref`/`reactive`**。
 7. **主题切换**：`useThemeStore.applyTheme` 保留 `document.documentElement.style.setProperty` 注入 CSS 变量机制（与 Vue 不冲突）。
 
