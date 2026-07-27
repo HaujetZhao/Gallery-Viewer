@@ -5,31 +5,37 @@ import { SmartFolder } from '../models/SmartFolder';
 // 函数体内调用,ES module 安全。
 import { useFsStore } from '../stores/fs';
 import { isFileSystemAccessSupported } from '../utils/browser';
+import { saveRootHandle } from './handleStore';
 import { handleFolderNotFound } from './recovery';
 
-// 打开根目录入口。权限在 picker 阶段一次性拿(mode:readwrite)。
+// 从 handle 初始化项目:设 rootHandle → loadProject(扫根)→ 设 rootFolder/currentFolder → 后台递归扫描。
+// openFolderPicker 和启动恢复共用。⚠️ startBackgroundScan 必须在 fs.rootFolder 赋值后、从代理起步。
+export async function initProject(handle) {
+  const fs = useFsStore();
+  fs.rootHandle = handle;
+  fs.foldersData.clear();
+  fs.foldersData.set('ALL_MEDIA', fs.allMediaFolder);
+  const root = await loadProject(handle);
+  fs.rootFolder = root;
+  fs.currentFolder = root;
+  startBackgroundScan(fs.rootFolder);
+  return root;
+}
+
+// 打开根目录入口(picker)。权限在 picker 阶段一次性拿(mode:readwrite)。句柄存 IDB 供下次启动恢复。
 export async function openFolderPicker() {
   if (!isFileSystemAccessSupported()) {
     alert('浏览器不支持文件系统访问 API,请使用 Chrome / Edge / Opera(86+)');
     return null;
   }
-  const fs = useFsStore();
   try {
     const handle = await window.showDirectoryPicker({
       mode: 'readwrite',
       id: 'photo-viewer-start',
       startIn: 'pictures',
     });
-    fs.rootHandle = handle;
-    fs.foldersData.clear();
-    fs.foldersData.set('ALL_MEDIA', fs.allMediaFolder);
-    const root = await loadProject(handle);
-    fs.rootFolder = root;
-    fs.currentFolder = root;
-    // ⚠️ 必须在 fs.rootFolder 赋值后、从「代理」fs.rootFolder 起步启动后台扫描。
-    // 若传原始 root,scan 改的是原始 SmartFolder,不触发 reactive 代理的响应式,Sidebar 子目录不更新。
-    startBackgroundScan(fs.rootFolder);
-    return root;
+    await saveRootHandle(handle); // 记住句柄,下次启动恢复
+    return await initProject(handle);
   }
   catch (err) {
     if (err.name !== 'AbortError') {
@@ -66,7 +72,7 @@ export async function getFolderData(dirHandle) {
   return folderData;
 }
 
-// 建根 SmartFolder(扫根目录)。后台递归扫描由调用方在设 fs.rootFolder 后、从代理起步触发(见 openFolderPicker)。
+// 建根 SmartFolder(扫根目录)。后台递归扫描由调用方在设 fs.rootFolder 后、从代理起步触发。
 export async function loadProject(handle) {
   return await getFolderData(handle);
 }
@@ -90,18 +96,12 @@ export async function startBackgroundScan(parentFolder) {
   }
 }
 
-// 清状态后重载整个项目。
+// 清状态后重载整个项目(用当前 rootHandle)。
 export async function reloadProject() {
   const fs = useFsStore();
-  fs.foldersData.clear();
-  fs.foldersData.set('ALL_MEDIA', fs.allMediaFolder);
   if (!fs.rootHandle)
     return null;
-  const root = await loadProject(fs.rootHandle);
-  fs.rootFolder = root;
-  fs.currentFolder = root;
-  startBackgroundScan(fs.rootFolder); // 同 openFolderPicker,赋值后从代理起步
-  return root;
+  return await initProject(fs.rootHandle);
 }
 
 // 重扫单文件夹。失败(NotFoundError)时从 foldersData 删 + treeNode 数据清理。

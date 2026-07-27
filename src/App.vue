@@ -12,7 +12,8 @@ import Toast from './components/Toast.vue';
 import { useGallerySearch } from './composables/useGallerySearch';
 import { useScrollZone } from './composables/useScrollZone';
 import { initDB } from './services/db';
-import { openFolderPicker } from './services/filesystem';
+import { initProject, openFolderPicker } from './services/filesystem';
+import { loadRootHandle, verifyPermission } from './services/handleStore';
 import { useFsStore } from './stores/fs';
 import { useHistoryStore } from './stores/history';
 import { useThemeStore } from './stores/theme';
@@ -45,6 +46,8 @@ const browserSupported = isFileSystemAccessSupported();
 const sidebarEl = ref(null);
 const settingsBtnEl = ref(null);
 const filterEl = ref(null);
+// 待恢复的句柄:权限需用户手势重新授权时,启动页显示"打开上次"按钮(requestPermission 需用户手势)
+const restorableHandle = ref(null);
 useScrollZone([sidebarEl, settingsBtnEl, filterEl]);
 
 onMounted(async () => {
@@ -56,11 +59,46 @@ onMounted(async () => {
     console.warn('initDB 失败:', e);
   }
   document.addEventListener('keydown', onKeydown);
+  await tryRestoreFolder();
 });
 onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown));
 
+// 启动时尝试恢复上次文件夹:权限仍在(granted)则直接恢复;否则记下句柄,启动页显示恢复按钮。
+async function tryRestoreFolder() {
+  try {
+    const handle = await loadRootHandle();
+    if (!handle)
+      return;
+    const perm = await handle.queryPermission({ mode: 'readwrite' });
+    if (perm === 'granted') {
+      await initProject(handle);
+    }
+    else {
+      restorableHandle.value = handle;
+    }
+  }
+  catch (e) {
+    console.warn('恢复文件夹失败:', e);
+  }
+}
+
+// 用户点击"打开上次":此时有用户手势,requestPermission 可弹框 → 恢复
+async function restoreLast() {
+  const handle = restorableHandle.value;
+  if (!handle)
+    return;
+  restorableHandle.value = null;
+  if (await verifyPermission(handle)) {
+    await initProject(handle);
+  }
+  else {
+    toast.error('未获得文件夹访问权限');
+  }
+}
+
 async function open() {
   await openFolderPicker();
+  restorableHandle.value = null; // 已打开新文件夹,清待恢复态
 }
 function onKeydown(e) {
   const tag = document.activeElement?.tagName;
@@ -112,6 +150,11 @@ function onKeydown(e) {
         </div>
         <BrowserUnsupportedWarning v-if="!browserSupported" />
       </div>
+      <!-- 恢复上次文件夹(权限需重新授权时显示) -->
+      <div v-if="restorableHandle" class="restore-card" @click.stop="restoreLast">
+        <i class="fas fa-folder-open" />
+        <span>打开上次:{{ restorableHandle.name }}</span>
+      </div>
     </div>
 
     <!-- 主界面 -->
@@ -147,3 +190,25 @@ function onKeydown(e) {
     <PropertiesPanel />
   </div>
 </template>
+
+<style scoped>
+.restore-card {
+  margin: 20px auto 0;
+  padding: 12px 20px;
+  max-width: 360px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 2px dashed var(--color-primary);
+  border-radius: var(--radius-lg);
+  color: var(--color-primary);
+  cursor: pointer;
+  font-size: 15px;
+  transition: all var(--transition-fast) var(--ease-out);
+}
+.restore-card:hover {
+  background-color: var(--bg-tertiary);
+  transform: translateY(-2px);
+}
+</style>

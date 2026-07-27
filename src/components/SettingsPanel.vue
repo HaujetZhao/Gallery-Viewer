@@ -3,6 +3,7 @@ import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useStorageEstimate } from '../composables/useStorageEstimate';
 import { cleanOldCache, clearAllCache } from '../services/db';
 import { refreshFolder, reloadProject } from '../services/filesystem';
+import { clearRootHandle } from '../services/handleStore';
 import { forceRegenerateCurrentThumbnails } from '../services/thumbnail';
 import { useFsStore } from '../stores/fs';
 import { useThemeStore } from '../stores/theme';
@@ -147,6 +148,11 @@ async function onClearAll() {
   toast.success('已清空所有缓存');
   await refreshStorage();
 }
+// 忘记当前文件夹:清除记住的句柄,下次启动不再自动恢复
+async function onForgetFolder() {
+  await clearRootHandle();
+  toast.success('已忘记文件夹,下次启动需重新选择');
+}
 </script>
 
 <template>
@@ -259,6 +265,9 @@ async function onClearAll() {
           </button>
           <button class="btn-block danger" @click="onClearAll">
             清空全部
+          </button>
+          <button class="btn-block" @click="onForgetFolder">
+            忘记文件夹
           </button>
         </div>
       </div>
