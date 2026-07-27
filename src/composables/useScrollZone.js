@@ -1,8 +1,8 @@
 // 屏幕边缘感应滚动。鼠标进入顶/底 150px 区域,按距边缘距离线性变速度,rAF 循环 window.scrollBy。
 // 排除区域(sidebar/modal/settings/topbar)用 ref 数组传入。
 import { onMounted, onBeforeUnmount } from 'vue';
-import { useUserSettingsStore } from '../stores/userSettings.js';
-import { useModalStore } from '../stores/modal.js';
+import { useUserSettingsStore } from '../stores/userSettings';
+import { useModalStore } from '../stores/modal';
 
 const ZONE_HEIGHT = 150;
 

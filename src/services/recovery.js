@@ -1,8 +1,8 @@
 // 句柄失效恢复服务。搬自源码 js/recovery.js。
 // 失效检测由调用方触发(validate 失败 / NotFoundError);本服务负责:找祖先→重扫→递归扫新增子目录。
 // syncTreeStructure(源码 sidebar)阶段5 接入;handleFileNotFound 推迟阶段6 gallery。
-import { useFsStore } from '../stores/fs.js';
-import { startBackgroundScan } from './filesystem.js';
+import { useFsStore } from '../stores/fs';
+import { startBackgroundScan } from './filesystem';
 
 // 文件夹失效恢复。返回恢复后的可用祖先 SmartFolder,或 null(根也失效)。
 export async function handleFolderNotFound(folderData) {

@@ -1,7 +1,7 @@
 // 文件操作命令(命令模式)。搬自源码 js/operation-history.js 的 3 个 Operation 类。
 // FileDelete 含 .trash 回收站逻辑(镜像目录 + 防重名);Rename/Move 委托 SmartFile。
 // 文件删除进撤销栈;文件夹删除不进(物理 removeEntry,不可逆,见 fileOps.handleDeleteFolder)。
-import { useFsStore } from '../stores/fs.js';
+import { useFsStore } from '../stores/fs';
 
 export const OperationType = {
   FILE_DELETE: 'file_delete',

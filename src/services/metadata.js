@@ -1,8 +1,8 @@
 // 元数据提取策略。搬自源码 js/metadata-strategies.js。
 // image:dimensions + EXIF;video:loadedmetadata;audio:时长 + MP3 ID3;svg:dimensions。
-import { FileTypes } from '../config/file-types.js';
-import { extractExif } from './exif.js';
-import { extractID3Tags } from './id3-parser.js';
+import { FileTypes } from '../config/file-types';
+import { extractExif } from './exif';
+import { extractID3Tags } from './id3-parser';
 
 export function formatDuration(seconds) {
   if (!seconds || seconds === 0) return '未知';

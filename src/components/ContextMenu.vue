@@ -1,6 +1,6 @@
 <script setup>
 import { watch, ref, nextTick, onMounted, onBeforeUnmount } from 'vue';
-import { useContextMenuStore } from '../stores/contextMenu.js';
+import { useContextMenuStore } from '../stores/contextMenu';
 
 const menu = useContextMenuStore();
 const menuEl = ref(null);

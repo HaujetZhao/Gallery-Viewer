@@ -1,12 +1,12 @@
 <script setup>
 import { ref, computed, nextTick } from 'vue';
-import { useThumbnail } from '../composables/useThumbnail.js';
-import { getThumbnailStrategy } from '../services/thumbnail-strategies.js';
-import { formatFileSize, formatDate } from '../utils/format.js';
-import { useContextMenuStore } from '../stores/contextMenu.js';
-import { useHistoryStore } from '../stores/history.js';
-import { useToastStore } from '../stores/uiToast.js';
-import { usePropertiesStore } from '../stores/properties.js';
+import { useThumbnail } from '../composables/useThumbnail';
+import { getThumbnailStrategy } from '../services/thumbnail-strategies';
+import { formatFileSize, formatDate } from '../utils/format';
+import { useContextMenuStore } from '../stores/contextMenu';
+import { useHistoryStore } from '../stores/history';
+import { useToastStore } from '../stores/uiToast';
+import { usePropertiesStore } from '../stores/properties';
 
 const props = defineProps({
   file: { type: Object, required: true },

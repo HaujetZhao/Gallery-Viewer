@@ -1,6 +1,6 @@
 // 缩略图生成策略。搬自源码 js/thumbnail-strategies.js,零改动(仅加 export + import FileTypes)。
 // 为不同媒体类型提供缩略图生成和卡片标识。
-import { FileTypes } from '../config/file-types.js';
+import { FileTypes } from '../config/file-types';
 
 export const ThumbnailStrategies = {
   // 图片策略

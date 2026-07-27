@@ -2,7 +2,7 @@
 // 文件级操作(删除/重命名/移动)进栈,Ctrl+Z 撤销;文件夹删除不进栈。
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import { FileDeleteOperation, FileRenameOperation, FileMoveOperation } from '../services/operations.js';
+import { FileDeleteOperation, FileRenameOperation, FileMoveOperation } from '../services/operations';
 
 const MAX_SIZE = 50;
 

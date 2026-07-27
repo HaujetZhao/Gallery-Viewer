@@ -1,9 +1,9 @@
 <script setup>
 import { computed } from 'vue';
-import { usePropertiesStore } from '../stores/properties.js';
-import { buildGpsLinks, FormatDMS } from '../services/gps.js';
-import { formatDuration } from '../services/metadata.js';
-import { formatFileSize, formatDate } from '../utils/format.js';
+import { usePropertiesStore } from '../stores/properties';
+import { buildGpsLinks, FormatDMS } from '../services/gps';
+import { formatDuration } from '../services/metadata';
+import { formatFileSize, formatDate } from '../utils/format';
 
 const props2 = usePropertiesStore();
 

@@ -1,12 +1,12 @@
 <script setup>
 import { ref, watch, nextTick, onMounted, onBeforeUnmount } from 'vue';
-import { useUserSettingsStore } from '../stores/userSettings.js';
-import { useThemeStore } from '../stores/theme.js';
-import { useFsStore } from '../stores/fs.js';
-import { useToastStore } from '../stores/uiToast.js';
-import { useStorageEstimate } from '../composables/useStorageEstimate.js';
-import { clearAllCache, cleanOldCache } from '../services/db.js';
-import { reloadProject } from '../services/filesystem.js';
+import { useUserSettingsStore } from '../stores/userSettings';
+import { useThemeStore } from '../stores/theme';
+import { useFsStore } from '../stores/fs';
+import { useToastStore } from '../stores/uiToast';
+import { useStorageEstimate } from '../composables/useStorageEstimate';
+import { clearAllCache, cleanOldCache } from '../services/db';
+import { reloadProject } from '../services/filesystem';
 
 const props = defineProps({ modelValue: Boolean });
 const emit = defineEmits(['update:modelValue']);

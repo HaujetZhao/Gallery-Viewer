@@ -1,13 +1,13 @@
 <script setup>
 import { computed, ref, watch, onBeforeUnmount } from 'vue';
-import { useFsStore } from '../stores/fs.js';
-import { useUserSettingsStore } from '../stores/userSettings.js';
-import { useModalStore } from '../stores/modal.js';
-import { useGallerySearch } from '../composables/useGallerySearch.js';
-import { windowsCompareStrings } from '../utils/format.js';
-import { unobserveAll } from '../composables/useThumbnail.js';
-import { refreshFolder, reloadProject } from '../services/filesystem.js';
-import { useToastStore } from '../stores/uiToast.js';
+import { useFsStore } from '../stores/fs';
+import { useUserSettingsStore } from '../stores/userSettings';
+import { useModalStore } from '../stores/modal';
+import { useGallerySearch } from '../composables/useGallerySearch';
+import { windowsCompareStrings } from '../utils/format';
+import { unobserveAll } from '../composables/useThumbnail';
+import { refreshFolder, reloadProject } from '../services/filesystem';
+import { useToastStore } from '../stores/uiToast';
 import PhotoCard from './PhotoCard.vue';
 
 const fsStore = useFsStore();

@@ -1,8 +1,8 @@
 <script setup>
 import { ref } from 'vue';
-import { useFsStore } from '../stores/fs.js';
-import { useSidebar } from '../composables/useSidebar.js';
-import { switchToAllPhotos } from '../services/filesystem.js';
+import { useFsStore } from '../stores/fs';
+import { useSidebar } from '../composables/useSidebar';
+import { switchToAllPhotos } from '../services/filesystem';
 import SidebarTreeItem from './SidebarTreeItem.vue';
 
 const fsStore = useFsStore();

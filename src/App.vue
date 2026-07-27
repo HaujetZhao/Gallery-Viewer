@@ -1,14 +1,14 @@
 <script setup>
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue';
-import { useThemeStore } from './stores/theme.js';
-import { useFsStore } from './stores/fs.js';
-import { useUserSettingsStore } from './stores/userSettings.js';
-import { useToastStore } from './stores/uiToast.js';
-import { useHistoryStore } from './stores/history.js';
-import { initDB } from './services/db.js';
-import { openFolderPicker } from './services/filesystem.js';
-import { isFileSystemAccessSupported } from './utils/browser.js';
-import { useGallerySearch } from './composables/useGallerySearch.js';
+import { useThemeStore } from './stores/theme';
+import { useFsStore } from './stores/fs';
+import { useUserSettingsStore } from './stores/userSettings';
+import { useToastStore } from './stores/uiToast';
+import { useHistoryStore } from './stores/history';
+import { initDB } from './services/db';
+import { openFolderPicker } from './services/filesystem';
+import { isFileSystemAccessSupported } from './utils/browser';
+import { useGallerySearch } from './composables/useGallerySearch';
 import Sidebar from './components/Sidebar.vue';
 import Gallery from './components/Gallery.vue';
 import MediaModal from './components/MediaModal.vue';
@@ -18,7 +18,7 @@ import ConfirmDialog from './components/ConfirmDialog.vue';
 import ContextMenu from './components/ContextMenu.vue';
 import PropertiesPanel from './components/PropertiesPanel.vue';
 import BrowserUnsupportedWarning from './components/BrowserUnsupportedWarning.vue';
-import { useScrollZone } from './composables/useScrollZone.js';
+import { useScrollZone } from './composables/useScrollZone';
 
 const themeStore = useThemeStore();
 const fsStore = useFsStore();

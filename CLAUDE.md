@@ -38,7 +38,7 @@ docs/superpowers/        # specs(设计)+ plans(各阶段实施计划)
 
 ## 关键约定（迁移中确立，请遵守）
 
-1. **相对 import 一律带 `.js` 扩展名**（`from './stores/fs.js'`）——Vite 可省略，但 node 原生 ESM 验证需要，统一带。`.vue` 文件 import 省略扩展名是 Vite 惯例（node 不 import .vue）。
+1. **相对 import 省略 `.js` 扩展名**（`from './stores/fs'`）——Vite/esbuild 自动解析，符合 IDE 惯例。`.vue` 文件 import 同样省略扩展名。（迁移期为 node 原生 ESM 验证曾统一带 `.js`，重构完成后已去掉。）
 2. **model 层保持纯逻辑**（`models/` 不 import Pinia/Vue）。`SmartFolder.appState` 由 `stores/fs.js` 静态注入（`SmartFolder.appState = { get rootHandle(), get foldersData() }`），避免 model 反向依赖 store。
 3. **service 层操作 store**：`services/` 内部 `useFsStore()` / `useToastStore()` 等直接调（在函数体内，不在模块顶层）。
 4. **CSS 全局复用**：`src/styles/` 是源码原样搬来的 11 个 CSS（`main.js` 全局 import）。组件**不重写这些 CSS**，模板直接用其 class（如 `.photo-card` / `.masonry-col` / `.tree-node` / `.modal-audio-player`）。组件 scoped 样式只补 CSS 里没有的。

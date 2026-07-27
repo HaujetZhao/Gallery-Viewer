@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
-import { extractID3Tags } from '../services/id3-parser.js';
-import { extractAudioCover } from '../services/thumbnail-strategies.js';
+import { extractID3Tags } from '../services/id3-parser';
+import { extractAudioCover } from '../services/thumbnail-strategies';
 
 const props = defineProps({ file: { type: Object, required: true } });
 const emit = defineEmits(['prev', 'next']);

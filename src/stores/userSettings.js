@@ -2,7 +2,7 @@
 // settings 响应式,UI 可直接绑定;load() 合并 CONFIG.DEFAULTS 保证新字段有默认值。
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import { CONFIG } from '../config/index.js';
+import { CONFIG } from '../config/index';
 
 const STORAGE_KEY = 'gallery-viewer-settings';
 

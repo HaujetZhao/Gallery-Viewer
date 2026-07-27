@@ -1,10 +1,10 @@
 // Modal 交互 composable。搬自源码 js/modal.js 的手势/键盘/复制 + events.js 的翻页/视频键盘。
 // scale/translate 用 style 独立属性(源码如此,浏览器更优路径)。LRU 缓存推迟阶段10。
 import { ref, computed, watch, onBeforeUnmount, nextTick } from 'vue';
-import { useModalStore } from '../stores/modal.js';
-import { CONFIG } from '../config/index.js';
-import { FileTypes } from '../config/file-types.js';
-import { convertToPngBlob } from '../utils/file.js';
+import { useModalStore } from '../stores/modal';
+import { CONFIG } from '../config/index';
+import { FileTypes } from '../config/file-types';
+import { convertToPngBlob } from '../utils/file';
 
 const { MIN_SCALE, MAX_SCALE, ZOOM_STEP } = CONFIG.UI.MODAL;
 

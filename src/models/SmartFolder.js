@@ -2,10 +2,10 @@
  * SmartFolder 类 - 表示一个文件夹。搬自源码 js/model.SmartFolder.js。
  * scan() 增量算法原样保留(性能关键);appState 通过静态注入访问(保持纯逻辑,不依赖 Pinia)。
  */
-import { SmartFile } from './SmartFile.js';
-import { TreeNode } from './TreeNode.js';
-import { FileTypes } from '../config/file-types.js';
-import { windowsCompareStrings } from '../utils/format.js';
+import { SmartFile } from './SmartFile';
+import { TreeNode } from './TreeNode';
+import { FileTypes } from '../config/file-types';
+import { windowsCompareStrings } from '../utils/format';
 
 export class SmartFolder {
   // 静态注入:由 fsStore 初始化时设为 { get rootHandle(), get foldersData() }

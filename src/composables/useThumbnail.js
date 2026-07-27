@@ -2,8 +2,8 @@
 // 全局共享单例(observer + queue,并发上限 4);每卡片 useThumbnail 只 observe 自己的 mediaEl。
 // 软取消用响应式 loading ref 代替源码 dataset;loaded/loading 状态绑到 el.__thumb。
 import { ref, onMounted, onBeforeUnmount } from 'vue';
-import { CONFIG } from '../config/index.js';
-import { generateThumbnail } from '../services/thumbnail.js';
+import { CONFIG } from '../config/index';
+import { generateThumbnail } from '../services/thumbnail';
 
 // 模块级单例
 let observer = null;

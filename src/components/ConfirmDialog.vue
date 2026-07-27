@@ -1,6 +1,6 @@
 <script setup>
 import { onMounted, onBeforeUnmount, watch, nextTick, ref } from 'vue';
-import { useConfirmStore } from '../stores/confirm.js';
+import { useConfirmStore } from '../stores/confirm';
 
 const confirm = useConfirmStore();
 const boxEl = ref(null);

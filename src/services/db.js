@@ -1,6 +1,6 @@
 // IndexedDB 缩略图缓存。搬自源码 js/db.js,纯逻辑(UI 副作用剥离到调用方)。
 // 缓存键 id = `${md5}_${width}`。修两个陷阱:save 返回 Promise;新增 touch 刷新 lastAccessed。
-import { CONFIG } from '../config/index.js';
+import { CONFIG } from '../config/index';
 
 const DB_NAME = CONFIG.DATABASE.NAME;
 const DB_VERSION = CONFIG.DATABASE.VERSION;

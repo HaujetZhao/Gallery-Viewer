@@ -1,7 +1,7 @@
 // 全局 toast 通知 store。show 加一条,setTimeout 到期自动移除。
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import { CONFIG } from '../config/index.js';
+import { CONFIG } from '../config/index';
 
 let _id = 0;
 

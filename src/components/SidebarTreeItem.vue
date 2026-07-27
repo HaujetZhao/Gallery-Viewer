@@ -1,11 +1,11 @@
 <script setup>
 import { ref } from 'vue';
-import { useFsStore } from '../stores/fs.js';
-import { handleFolderClick } from '../services/filesystem.js';
-import { useContextMenuStore } from '../stores/contextMenu.js';
-import { useHistoryStore } from '../stores/history.js';
-import { useToastStore } from '../stores/uiToast.js';
-import { handleDeleteFolder } from '../services/fileOps.js';
+import { useFsStore } from '../stores/fs';
+import { handleFolderClick } from '../services/filesystem';
+import { useContextMenuStore } from '../stores/contextMenu';
+import { useHistoryStore } from '../stores/history';
+import { useToastStore } from '../stores/uiToast';
+import { handleDeleteFolder } from '../services/fileOps';
 
 defineOptions({ name: 'SidebarTreeItem' });
 

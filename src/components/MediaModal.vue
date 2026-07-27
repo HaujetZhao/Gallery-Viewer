@@ -1,7 +1,7 @@
 <script setup>
 import { ref } from 'vue';
-import { useModalStore } from '../stores/modal.js';
-import { useModal } from '../composables/useModal.js';
+import { useModalStore } from '../stores/modal';
+import { useModal } from '../composables/useModal';
 import AudioPlayer from './AudioPlayer.vue';
 
 const modal = useModalStore();

@@ -2,10 +2,10 @@
 // syncTreeStructure(源码 sidebar)Vue 后不需要(响应式自动同步 subFolders)。
 // 注意:与 recovery.js 循环依赖(handleFolderClick 调 handleFolderNotFound,recovery 调 startBackgroundScan),
 // 函数体内调用,ES module 安全。
-import { useFsStore } from '../stores/fs.js';
-import { SmartFolder } from '../models/SmartFolder.js';
-import { isFileSystemAccessSupported } from '../utils/browser.js';
-import { handleFolderNotFound } from './recovery.js';
+import { useFsStore } from '../stores/fs';
+import { SmartFolder } from '../models/SmartFolder';
+import { isFileSystemAccessSupported } from '../utils/browser';
+import { handleFolderNotFound } from './recovery';
 
 // 打开根目录入口。权限在 picker 阶段一次性拿(mode:readwrite)。
 export async function openFolderPicker() {

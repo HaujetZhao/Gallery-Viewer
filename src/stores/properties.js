@@ -1,7 +1,7 @@
 // 属性面板 store。open(file) → 加载元数据 → 显示。
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import { getMetadataStrategy } from '../services/metadata.js';
+import { getMetadataStrategy } from '../services/metadata';
 
 export const usePropertiesStore = defineStore('properties', () => {
   const visible = ref(false);

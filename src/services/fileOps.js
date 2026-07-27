@@ -1,8 +1,8 @@
 // 文件夹删除业务。两步确认 + 物理 removeEntry recursive(不可逆,不进撤销栈)。
-import { useConfirmStore } from '../stores/confirm.js';
-import { useFsStore } from '../stores/fs.js';
-import { useToastStore } from '../stores/uiToast.js';
-import { refreshFolder, loadFolder } from './filesystem.js';
+import { useConfirmStore } from '../stores/confirm';
+import { useFsStore } from '../stores/fs';
+import { useToastStore } from '../stores/uiToast';
+import { refreshFolder, loadFolder } from './filesystem';
 
 export async function handleDeleteFolder(folder) {
   if (!folder.parent) {
