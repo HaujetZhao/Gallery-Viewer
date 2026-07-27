@@ -16,6 +16,7 @@ import SettingsPanel from './components/SettingsPanel.vue';
 import Toast from './components/Toast.vue';
 import ConfirmDialog from './components/ConfirmDialog.vue';
 import ContextMenu from './components/ContextMenu.vue';
+import PropertiesPanel from './components/PropertiesPanel.vue';
 import BrowserUnsupportedWarning from './components/BrowserUnsupportedWarning.vue';
 import { useScrollZone } from './composables/useScrollZone.js';
 
@@ -126,5 +127,6 @@ function onKeydown(e) {
     <Toast />
     <ConfirmDialog />
     <ContextMenu />
+    <PropertiesPanel />
   </div>
 </template>

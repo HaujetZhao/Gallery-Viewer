@@ -6,6 +6,7 @@ import { formatFileSize, formatDate } from '../utils/format.js';
 import { useContextMenuStore } from '../stores/contextMenu.js';
 import { useHistoryStore } from '../stores/history.js';
 import { useToastStore } from '../stores/uiToast.js';
+import { usePropertiesStore } from '../stores/properties.js';
 
 const props = defineProps({
   file: { type: Object, required: true },
@@ -23,6 +24,7 @@ const { loaded, loading } = useThumbnail(mediaEl, props.file, props.targetSize);
 const contextMenu = useContextMenuStore();
 const history = useHistoryStore();
 const toast = useToastStore();
+const properties = usePropertiesStore();
 
 // 内联重命名
 const editing = ref(false);
@@ -65,6 +67,7 @@ function cancelRename() {
 
 function onContextmenu(e) {
   contextMenu.show(e.clientX, e.clientY, [
+    { label: '属性', icon: 'fas fa-info-circle', action: () => properties.open(props.file) },
     { label: '重命名', icon: 'fas fa-edit', action: startRename },
     { divider: true },
     { label: '删除', icon: 'fas fa-trash-alt', danger: true, action: onDelete },
