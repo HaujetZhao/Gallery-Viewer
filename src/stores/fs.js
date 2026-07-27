@@ -25,19 +25,5 @@ export const useFsStore = defineStore('fs', () => {
   allMediaFolder.value = createAllMediaFolder();
   foldersData.value.set('ALL_MEDIA', allMediaFolder.value);
 
-  // 临时:打开根目录并扫描。阶段 4 filesystem service 做好后替换为完整实现(含权限/recovery)。
-  async function openRoot() {
-    const handle = await window.showDirectoryPicker({
-      mode: 'readwrite',
-      id: 'photo-viewer-start',
-      startIn: 'pictures',
-    });
-    rootHandle.value = handle;
-    const result = await SmartFolder.create({ handle });
-    currentFolder.value = result.folder;
-    foldersData.value.set(result.folder.path, result.folder);
-    return result;
-  }
-
-  return { rootHandle, currentFolder, foldersData, allMediaFolder, openRoot };
+  return { rootHandle, currentFolder, foldersData, allMediaFolder };
 });

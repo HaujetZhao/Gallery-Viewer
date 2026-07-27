@@ -4,6 +4,8 @@ import { useThemeStore } from './stores/theme.js';
 import { useFsStore } from './stores/fs.js';
 import { initDB } from './services/db.js';
 import { generateThumbnail } from './services/thumbnail.js';
+import { openFolderPicker } from './services/filesystem.js';
+import { handleFolderNotFound } from './services/recovery.js';
 import { FileTypes } from './config/file-types.js';
 
 const themeStore = useThemeStore();
@@ -20,23 +22,30 @@ onMounted(async () => {
   }
 });
 
-// 临时:打开文件夹 → scan → 控制台打印树(阶段 5 起替换为真实 UI)。
+// 临时:打开文件夹 → 后台递归扫描 → 控制台打印全部缓存(阶段 5 起替换为真实 UI)。
 async function scanAndPrint() {
-  try {
-    const result = await fsStore.openRoot();
-    const root = result.folder;
-    console.log('=== 扫描结果 ===');
-    console.log(`根目录: ${root.name} | 文件 ${root.files.length} | 子文件夹 ${root.subFolders.length}`);
-    console.log('新文件:', result.newFiles.map((f) => f.name));
-    console.log('新子文件夹:', result.newSubFolders.map((f) => f.name));
-    console.log('foldersData 缓存条目:', fsStore.foldersData.size);
-    for (const sub of root.subFolders) {
-      console.log(`  📁 ${sub.name} (scanned=${sub.scanned}, files=${sub.files.length}, subs=${sub.subFolders.length})`);
-    }
-    console.log('全部媒体聚合:', fsStore.allMediaFolder.name);
-  } catch (e) {
-    console.error('扫描失败:', e);
+  const root = await openFolderPicker();
+  if (!root) return; // 取消选择或不支持
+  console.log('=== 扫描结果(含后台递归) ===');
+  console.log(`根目录: ${root.name} | 直接文件 ${root.files.length} | 直接子文件夹 ${root.subFolders.length}`);
+  console.log('foldersData 全部缓存条目(含递归子目录):', fsStore.foldersData.size);
+  console.table(
+    [...fsStore.foldersData.entries()]
+      .filter(([k]) => k !== 'ALL_MEDIA')
+      .map(([k, v]) => ({ path: k, files: v.files.length, scanned: v.scanned })),
+  );
+}
+
+// 临时冒烟:对 currentFolder 触发恢复流程(它本身有效,findValidAncestor 返回自己,scan 增量)。
+// 验证 recovery 链路(findValidAncestor→scan→startBackgroundScan)能跑通,不报错。
+async function testRecovery() {
+  if (!fsStore.currentFolder) {
+    console.log('请先扫描文件夹');
+    return;
   }
+  console.log('=== recovery 冒烟 ===');
+  const recovered = await handleFolderNotFound(fsStore.currentFolder);
+  console.log('恢复结果:', recovered ? `已恢复到 ${recovered.name}` : '无法恢复(根失效)');
 }
 
 // 临时:对当前文件夹第一张图片生成缩略图。阶段 5 gallery 接入真实卡片后替换。
@@ -69,7 +78,7 @@ async function generateFirstThumbnail() {
   <div class="startup-placeholder">
     <i class="fas fa-images"></i>
     <h1>相册浏览器</h1>
-    <p>骨架就绪 · 阶段 3:缩略图系统可用</p>
+    <p>骨架就绪 · 阶段 4:文件系统 + 恢复可用</p>
 
     <!-- 临时主题切换 UI(阶段 7 设置面板做好后替换) -->
     <div class="theme-switcher">
@@ -87,6 +96,9 @@ async function generateFirstThumbnail() {
     <!-- 临时扫描按钮(阶段 5 画廊做好后替换) -->
     <div class="scan-zone">
       <button class="scan-btn" @click="scanAndPrint">📂 打开文件夹并扫描(F12 看控制台)</button>
+      <button class="scan-btn" :disabled="!fsStore.currentFolder" @click="testRecovery">
+        🔧 测试 recovery(冒烟)
+      </button>
       <span v-if="fsStore.currentFolder" class="scan-result">
         当前: {{ fsStore.currentFolder.name }} · {{ fsStore.currentFolder.files.length }} 文件
       </span>
