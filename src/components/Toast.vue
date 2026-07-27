@@ -21,7 +21,7 @@ const icons = {
         :class="`toast-${t.type}`"
         @click="toast.remove(t.id)"
       >
-        <i class="toast-icon" :class="icons[t.type] || icons.info"></i>
+        <i class="toast-icon" :class="icons[t.type] || icons.info" />
         <span>{{ t.message }}</span>
       </div>
     </div>

@@ -1,5 +1,5 @@
-import { createApp } from 'vue';
 import { createPinia } from 'pinia';
+import { createApp } from 'vue';
 import App from './App.vue';
 
 // 全局样式:搬自源码 css/(60+ 设计变量 + 3 套主题)。

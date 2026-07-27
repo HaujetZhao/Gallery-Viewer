@@ -40,7 +40,8 @@ export function saveThumbnailToDB(data) {
       tx.objectStore(STORE_NAME).put(data);
       tx.oncomplete = () => resolve();
       tx.onerror = () => resolve();
-    } catch (e) {
+    }
+    catch (e) {
       console.error('DB Save Error', e);
       resolve();
     }
@@ -57,7 +58,7 @@ export function getThumbnailFromDB(md5, width) {
       .transaction([STORE_NAME], 'readonly')
       .objectStore(STORE_NAME)
       .get(`${md5}_${width}`);
-    req.onsuccess = (e) => resolve(e.target.result);
+    req.onsuccess = e => resolve(e.target.result);
     req.onerror = () => resolve(null);
   });
 }
@@ -129,6 +130,7 @@ export function cleanOldCache() {
 }
 
 export function deleteThumbnail(id) {
-  if (!db) return;
+  if (!db)
+    return;
   db.transaction([STORE_NAME], 'readwrite').objectStore(STORE_NAME).delete(id);
 }

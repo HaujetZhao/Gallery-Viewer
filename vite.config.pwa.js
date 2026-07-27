@@ -1,5 +1,5 @@
-import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
+import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 // PWA 构建:独立外链 SW + manifest(无法内联进单 HTML,故与 vite.config.js 分开)。

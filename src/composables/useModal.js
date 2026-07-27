@@ -1,18 +1,21 @@
 // Modal 交互 composable。搬自源码 js/modal.js 的手势/键盘/复制 + events.js 的翻页/视频键盘。
 // scale/translate 用 style 独立属性(源码如此,浏览器更优路径)。LRU 缓存推迟阶段10。
-import { ref, computed, watch, onBeforeUnmount, nextTick } from 'vue';
-import { useModalStore } from '../stores/modal';
-import { CONFIG } from '../config/index';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { FileTypes } from '../config/file-types';
+import { CONFIG } from '../config/index';
+import { useModalStore } from '../stores/modal';
 import { convertToPngBlob } from '../utils/file';
 
 const { MIN_SCALE, MAX_SCALE, ZOOM_STEP } = CONFIG.UI.MODAL;
 
 // mediaKind 分类(image/svg/video/audio)
 function getMediaKind(type) {
-  if (FileTypes.image.svg.includes(type)) return 'svg';
-  if (FileTypes.video.all.includes(type)) return 'video';
-  if (FileTypes.audio.all.includes(type)) return 'audio';
+  if (FileTypes.image.svg.includes(type))
+    return 'svg';
+  if (FileTypes.video.all.includes(type))
+    return 'video';
+  if (FileTypes.audio.all.includes(type))
+    return 'audio';
   return 'image'; // standard + gif
 }
 
@@ -31,13 +34,18 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
 
   // 拖拽临时状态(非响应式)
   let panning = false;
-  let startX = 0, startY = 0;
-  let mouseDownTime = 0, mouseDownX = 0, mouseDownY = 0;
-  let initialDistance = 0, initialScale = 1;
+  let startX = 0;
+  let startY = 0;
+  let mouseDownTime = 0;
+  let mouseDownX = 0;
+  let mouseDownY = 0;
+  let initialDistance = 0;
+  let initialScale = 1;
 
   function applyTransform() {
     const el = mediaElRef.value;
-    if (!el) return;
+    if (!el)
+      return;
     el.style.scale = scale.value;
     el.style.translate = `${pointX.value}px ${pointY.value}px`;
   }
@@ -52,10 +60,12 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
   // 图片自适应屏幕:设 natural 像素 + scale 适应 + minScale=初始
   function initializeMediaDisplay() {
     const el = mediaElRef.value;
-    if (!el || !el.classList.contains('modal-image')) return;
+    if (!el || !el.classList.contains('modal-image'))
+      return;
     el.style.width = `${el.naturalWidth}px`;
     el.style.height = `${el.naturalHeight}px`;
-    const vw = window.innerWidth, vh = window.innerHeight;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
     const initial = Math.min(vh / el.naturalHeight, vw / el.naturalWidth, 1) * 0.99;
     scale.value = initial;
     pointX.value = 0;
@@ -71,14 +81,17 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
 
   // ===== 滚轮缩放(以鼠标为中心 + 平移补偿) =====
   function onWheel(e) {
-    if (!modal.isOpen) return;
+    if (!modal.isOpen)
+      return;
     e.preventDefault();
     const delta = e.deltaY > 0 ? -1 : 1;
     const ratio = 1 + delta * ZOOM_STEP;
     const newScale = scale.value * ratio;
-    if (newScale < minScale.value || newScale > MAX_SCALE) return;
+    if (newScale < minScale.value || newScale > MAX_SCALE)
+      return;
     const el = mediaElRef.value;
-    if (!el) return;
+    if (!el)
+      return;
     const rect = el.getBoundingClientRect();
     const offsetX = e.clientX - rect.left - rect.width / 2;
     const offsetY = e.clientY - rect.top - rect.height / 2;
@@ -90,9 +103,11 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
 
   // ===== 鼠标拖拽 =====
   function onMouseDown(e) {
-    if (!modal.isOpen || e.button !== 0) return;
+    if (!modal.isOpen || e.button !== 0)
+      return;
     // 音频播放器内(音量滑块/按钮)及其他交互控件放行原生行为,否则 preventDefault 会拦住滑块拖动
-    if (e.target.closest('.modal-audio-player, input, button, select, textarea')) return;
+    if (e.target.closest('.modal-audio-player, input, button, select, textarea'))
+      return;
     e.preventDefault();
     panning = true;
     startX = e.clientX - pointX.value;
@@ -100,11 +115,13 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
     mouseDownTime = Date.now();
     mouseDownX = e.clientX;
     mouseDownY = e.clientY;
-    if (modalElRef.value) modalElRef.value.style.cursor = 'grabbing';
+    if (modalElRef.value)
+      modalElRef.value.style.cursor = 'grabbing';
   }
 
   function onMouseMove(e) {
-    if (!panning || !modal.isOpen) return;
+    if (!panning || !modal.isOpen)
+      return;
     e.preventDefault();
     const moveX = e.clientX - mouseDownX;
     const moveY = e.clientY - mouseDownY;
@@ -116,7 +133,8 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
   }
 
   function onMouseUp(e) {
-    if (!panning) return;
+    if (!panning)
+      return;
     const dur = Date.now() - mouseDownTime;
     const moveX = e.clientX - mouseDownX;
     const moveY = e.clientY - mouseDownY;
@@ -124,17 +142,21 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
     const isClick = dist < 5 && dur < 300;
     if (isClick) {
       const onMedia = e.target.closest('.modal-media, audio, .modal-audio-player');
-      if (!onMedia) modal.close();
+      if (!onMedia)
+        modal.close();
     }
     panning = false;
-    if (modalElRef.value) modalElRef.value.style.cursor = '';
+    if (modalElRef.value)
+      modalElRef.value.style.cursor = '';
   }
 
   // ===== 触摸 =====
   function onTouchStart(e) {
-    if (!modal.isOpen) return;
+    if (!modal.isOpen)
+      return;
     // 交互控件放行(音频播放器内滑块/按钮等),保留原生 touch
-    if (e.target.closest('.modal-audio-player, input, button, select, textarea')) return;
+    if (e.target.closest('.modal-audio-player, input, button, select, textarea'))
+      return;
     if (e.touches.length === 1) {
       e.preventDefault(); // 阻止合成 click 穿透到背后元素 + 页面滚动
       panning = true;
@@ -143,7 +165,8 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
       mouseDownX = e.touches[0].clientX;
       mouseDownY = e.touches[0].clientY;
       mouseDownTime = Date.now();
-    } else if (e.touches.length === 2) {
+    }
+    else if (e.touches.length === 2) {
       e.preventDefault();
       const dx = e.touches[0].clientX - e.touches[1].clientX;
       const dy = e.touches[0].clientY - e.touches[1].clientY;
@@ -153,7 +176,8 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
   }
 
   function onTouchMove(e) {
-    if (!modal.isOpen) return;
+    if (!modal.isOpen)
+      return;
     if (e.touches.length === 1 && panning) {
       e.preventDefault();
       const moveX = e.touches[0].clientX - mouseDownX;
@@ -163,21 +187,25 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
         pointY.value = e.touches[0].clientY - startY;
         applyTransform();
       }
-    } else if (e.touches.length === 2) {
+    }
+    else if (e.touches.length === 2) {
       e.preventDefault();
       const dx = e.touches[0].clientX - e.touches[1].clientX;
       const dy = e.touches[0].clientY - e.touches[1].clientY;
       const cur = Math.sqrt(dx * dx + dy * dy);
       const newScale = initialScale * (cur / initialDistance);
-      if (newScale < minScale.value || newScale > MAX_SCALE) return;
+      if (newScale < minScale.value || newScale > MAX_SCALE)
+        return;
       scale.value = newScale;
       applyTransform();
     }
   }
 
   function onTouchEnd(e) {
-    if (e.touches.length > 0) return; // 还有手指
-    if (!panning) return;
+    if (e.touches.length > 0)
+      return; // 还有手指
+    if (!panning)
+      return;
     const dur = Date.now() - mouseDownTime;
     if (dur < 300 && e.changedTouches[0]) {
       // tap 判定:短按 + 几乎没移动(<10px) + 不在媒体上 → 关闭
@@ -185,16 +213,19 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
       const moveX = t.clientX - mouseDownX;
       const moveY = t.clientY - mouseDownY;
       const onMedia = e.target.closest('.modal-media, audio, .modal-audio-player');
-      if (Math.sqrt(moveX * moveX + moveY * moveY) < 10 && !onMedia) modal.close();
+      if (Math.sqrt(moveX * moveX + moveY * moveY) < 10 && !onMedia)
+        modal.close();
     }
     panning = false;
   }
 
   // ===== 键盘 =====
   function onKeydown(e) {
-    if (!modal.isOpen) return;
+    if (!modal.isOpen)
+      return;
     const tag = document.activeElement?.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    if (tag === 'INPUT' || tag === 'TEXTAREA')
+      return;
 
     // 视频悬停:方向键快进退 + 空格暂停
     if (isHoveringVideo.value) {
@@ -244,26 +275,30 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
     try {
       const raw = await file.handle.getFile();
       const targetBlob = raw.type === 'image/png' ? raw : await convertToPngBlob(file.blobUrl);
-      if (!targetBlob) throw new Error('无法生成图片数据');
+      if (!targetBlob)
+        throw new Error('无法生成图片数据');
       const item = new ClipboardItem({
         'image/png': targetBlob,
         'text/plain': new Blob([file.blobUrl], { type: 'text/plain' }),
         'text/html': new Blob([`<img src="${file.blobUrl}" alt="${file.name}" />`], { type: 'text/html' }),
       });
       await navigator.clipboard.write([item]);
-      console.log(`已复制: ${file.name}`);
-    } catch (err) {
+      console.warn(`已复制: ${file.name}`);
+    }
+    catch (err) {
       console.error('复制失败:', err);
     }
   }
 
   // ===== SVG:fetch blobUrl → text =====
   async function loadSvg() {
-    if (mediaKind.value !== 'svg' || !modal.currentFile) return;
+    if (mediaKind.value !== 'svg' || !modal.currentFile)
+      return;
     try {
       const r = await fetch(modal.currentFile.blobUrl);
       svgText.value = await r.text();
-    } catch (e) {
+    }
+    catch (e) {
       console.warn('SVG 加载失败:', e);
     }
   }
@@ -272,7 +307,8 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
   // (初始 isOpen=false,modal v-if 不渲染,modalEl.value 为 null)
   function attachGestures() {
     const el = modalElRef.value;
-    if (!el) return;
+    if (!el)
+      return;
     el.addEventListener('wheel', onWheel, { passive: false });
     el.addEventListener('mousedown', onMouseDown);
     el.addEventListener('touchstart', onTouchStart, { passive: false });
@@ -300,11 +336,13 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
   watch(
     () => modal.currentFile,
     (f) => {
-      if (!f) return;
+      if (!f)
+        return;
       loading.value = mediaKind.value !== 'audio';
       svgText.value = '';
       isHoveringVideo.value = false;
-      if (mediaKind.value === 'svg') loadSvg();
+      if (mediaKind.value === 'svg')
+        loadSvg();
       nextTick(() => resetTransform());
     },
   );
@@ -319,7 +357,8 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
           resetTransform();
           attachGestures();
         });
-      } else {
+      }
+      else {
         window.removeEventListener('keydown', onKeydown);
         detachGestures();
       }
@@ -332,7 +371,18 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
   });
 
   return {
-    scale, pointX, pointY, minScale, isHoveringVideo, loading, svgText, mediaKind,
-    applyTransform, resetTransform, initializeMediaDisplay, onImgLoad, copyCurrent,
+    scale,
+    pointX,
+    pointY,
+    minScale,
+    isHoveringVideo,
+    loading,
+    svgText,
+    mediaKind,
+    applyTransform,
+    resetTransform,
+    initializeMediaDisplay,
+    onImgLoad,
+    copyCurrent,
   };
 }

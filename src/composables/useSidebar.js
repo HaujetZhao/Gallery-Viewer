@@ -1,8 +1,8 @@
 // 侧边栏 composable。钉住 + 拖拽缩放(保留源码幽灵 resize-helper + ResizeObserver 方案)。
 // pinned/width 持久化到 userSettings;--sidebar-width 设到 :root(全局可访问,如 .settings-btn 的 left)。
-import { ref, watch, onMounted, onBeforeUnmount } from 'vue';
-import { useUserSettingsStore } from '../stores/userSettings';
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { CONFIG } from '../config/index';
+import { useUserSettingsStore } from '../stores/userSettings';
 
 export function useSidebar(resizeElRef) {
   const settings = useUserSettingsStore();
@@ -17,15 +17,16 @@ export function useSidebar(resizeElRef) {
 
   // 把 --sidebar-width 设到 :root(全局可访问,如 .settings-btn 的 left 计算)
   function applyWidthVar(w) {
-    document.documentElement.style.setProperty('--sidebar-width', w + 'px');
+    document.documentElement.style.setProperty('--sidebar-width', `${w}px`);
   }
-  watch(width, (w) => applyWidthVar(w));
+  watch(width, w => applyWidthVar(w));
 
   onMounted(() => {
     applyWidthVar(width.value);
     const el = resizeElRef.value;
-    if (!el) return;
-    el.style.width = width.value + 'px'; // 恢复持久化宽度
+    if (!el)
+      return;
+    el.style.width = `${width.value}px`; // 恢复持久化宽度
     ro = new ResizeObserver(() => {
       const w = el.offsetWidth;
       // min-width:200/max-width:80vw 由 CSS 强制,这里只记录有效值

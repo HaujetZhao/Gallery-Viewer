@@ -8,7 +8,9 @@
       <li>Microsoft Edge</li>
       <li>Opera</li>
     </ul>
-    <p class="note">Firefox 目前尚不支持此功能。</p>
+    <p class="note">
+      Firefox 目前尚不支持此功能。
+    </p>
   </div>
 </template>
 

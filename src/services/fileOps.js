@@ -2,7 +2,7 @@
 import { useConfirmStore } from '../stores/confirm';
 import { useFsStore } from '../stores/fs';
 import { useToastStore } from '../stores/uiToast';
-import { refreshFolder, loadFolder, switchToAllPhotos } from './filesystem';
+import { loadFolder, refreshFolder, switchToAllPhotos } from './filesystem';
 
 export async function handleDeleteFolder(folder) {
   if (!folder.parent) {
@@ -21,24 +21,32 @@ export async function handleDeleteFolder(folder) {
     }<span style="color:#7f8c8d;">删除操作复杂且无法撤销</span>`,
     hasContent,
   });
-  if (!ok) return;
+  if (!ok)
+    return;
 
   try {
     const path = folder.path;
     await folder.delete(); // SmartFolder.delete: removeEntry recursive + 从 parent.subFolders 移除
     fs.foldersData.delete(path);
     // 递归清后代缓存(否则 ALL_MEDIA 聚合仍含已删子树的文件)
-    const prefix = path + '/';
+    const prefix = `${path}/`;
     for (const key of [...fs.foldersData.keys()]) {
-      if (key.startsWith(prefix)) fs.foldersData.delete(key);
+      if (key.startsWith(prefix))
+        fs.foldersData.delete(key);
     }
-    if (folder.parent) await refreshFolder(folder.parent);
-    if (fs.currentFolder === folder) await loadFolder(folder.parent);
-    else if (fs.currentFolder === fs.allMediaFolder) await switchToAllPhotos();
+    if (folder.parent)
+      await refreshFolder(folder.parent);
+    if (fs.currentFolder === folder)
+      await loadFolder(folder.parent);
+    else if (fs.currentFolder === fs.allMediaFolder)
+      await switchToAllPhotos();
     toast.success(`文件夹 "${folder.name}" 已删除`);
-  } catch (err) {
-    if (err.name === 'NotAllowedError') toast.error('没有权限删除文件夹');
-    else if (err.name === 'InvalidModificationError') toast.error('文件夹不为空或正在使用中');
-    else toast.error('删除失败: ' + err.message);
+  }
+  catch (err) {
+    if (err.name === 'NotAllowedError')
+      toast.error('没有权限删除文件夹');
+    else if (err.name === 'InvalidModificationError')
+      toast.error('文件夹不为空或正在使用中');
+    else toast.error(`删除失败: ${err.message}`);
   }
 }

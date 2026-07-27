@@ -34,11 +34,12 @@ export async function handleFolderNotFound(folderData) {
 export async function safelyExecuteFolderOperation(folderData, operation) {
   try {
     return await operation();
-  } catch (err) {
+  }
+  catch (err) {
     if (
-      err.name === 'NotFoundError' ||
-      err.message?.includes('not found') ||
-      err.message?.includes('not exist')
+      err.name === 'NotFoundError'
+      || err.message?.includes('not found')
+      || err.message?.includes('not exist')
     ) {
       const recovered = await handleFolderNotFound(folderData);
       if (recovered) {
@@ -53,11 +54,12 @@ export async function safelyExecuteFolderOperation(folderData, operation) {
 export async function safelyExecuteFileOperation(fileData, operation) {
   try {
     return await operation();
-  } catch (err) {
+  }
+  catch (err) {
     if (
-      err.name === 'NotFoundError' ||
-      err.message?.includes('not found') ||
-      err.message?.includes('not exist')
+      err.name === 'NotFoundError'
+      || err.message?.includes('not found')
+      || err.message?.includes('not exist')
     ) {
       console.warn('文件可能已失效:', fileData?.name);
       // 阶段6 gallery: 接入 handleFileNotFound(fileData)

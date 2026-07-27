@@ -1,8 +1,8 @@
 // 撤销栈 store。搬自源码 js/operation-history.js 的 OperationHistory 单例。
 // 文件级操作(删除/重命名/移动)进栈,Ctrl+Z 撤销;文件夹删除不进栈。
 import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
-import { FileDeleteOperation, FileRenameOperation, FileMoveOperation } from '../services/operations';
+import { computed, ref } from 'vue';
+import { FileDeleteOperation, FileMoveOperation, FileRenameOperation } from '../services/operations';
 
 const MAX_SIZE = 50;
 
@@ -12,10 +12,12 @@ export const useHistoryStore = defineStore('history', () => {
   async function executeOperation(op) {
     await op.execute();
     stack.value.push(op);
-    if (stack.value.length > MAX_SIZE) stack.value.shift();
+    if (stack.value.length > MAX_SIZE)
+      stack.value.shift();
   }
   async function undoLastOperation() {
-    if (!stack.value.length) throw new Error('没有可撤销的操作');
+    if (!stack.value.length)
+      throw new Error('没有可撤销的操作');
     const op = stack.value.pop();
     await op.undo();
     return op;
@@ -25,7 +27,7 @@ export const useHistoryStore = defineStore('history', () => {
   }
 
   // 便捷函数(对应源码 *WithHistory)
-  const deleteFile = (f) => executeOperation(new FileDeleteOperation(f));
+  const deleteFile = f => executeOperation(new FileDeleteOperation(f));
   const renameFile = (f, newName) => executeOperation(new FileRenameOperation(f, f.name, newName));
   const moveFile = (f, target) => executeOperation(new FileMoveOperation(f, target));
 

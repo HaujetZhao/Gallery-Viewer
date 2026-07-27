@@ -3,11 +3,16 @@
 
 export function getBrowserName() {
   const ua = navigator.userAgent;
-  if (ua.includes('Firefox')) return 'Firefox';
-  if (ua.includes('Edg')) return 'Microsoft Edge'; // 必须在 Chrome 之前判(Edge UA 含 Chrome)
-  if (ua.includes('Chrome')) return 'Chrome';
-  if (ua.includes('Safari')) return 'Safari';
-  if (ua.includes('Opera') || ua.includes('OPR')) return 'Opera';
+  if (ua.includes('Firefox'))
+    return 'Firefox';
+  if (ua.includes('Edg'))
+    return 'Microsoft Edge'; // 必须在 Chrome 之前判(Edge UA 含 Chrome)
+  if (ua.includes('Chrome'))
+    return 'Chrome';
+  if (ua.includes('Safari'))
+    return 'Safari';
+  if (ua.includes('Opera') || ua.includes('OPR'))
+    return 'Opera';
   return '未知浏览器';
 }
 

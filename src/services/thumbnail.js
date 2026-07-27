@@ -1,13 +1,13 @@
+import { triggerRedraw } from '../composables/useThumbnail';
+import { useFsStore } from '../stores/fs';
+import { useToastStore } from '../stores/uiToast';
+import { useUserSettingsStore } from '../stores/userSettings';
 // 缩略图生成主体。搬自源码 js/thumbnails.js 的 generateAndShowThumbnail,去 observer/队列/DOM 耦合。
 // 接收 (file: SmartFile, canvas: HTMLCanvasElement, targetSize) → 查缓存→命中画/未命中生成存→画到 canvas。
 // IntersectionObserver + 并发队列留到阶段 5 gallery 的 useThumbnail composable。
 import { calculateMD5 } from '../utils/file';
+import { deleteThumbnail, getThumbnailFromDB, saveThumbnailToDB, touchThumbnailInDB } from './db';
 import { getThumbnailStrategy } from './thumbnail-strategies';
-import { getThumbnailFromDB, saveThumbnailToDB, touchThumbnailInDB, deleteThumbnail } from './db';
-import { triggerRedraw } from '../composables/useThumbnail';
-import { useFsStore } from '../stores/fs';
-import { useUserSettingsStore } from '../stores/userSettings';
-import { useToastStore } from '../stores/uiToast';
 
 // 把缓存 blob 画到 canvas(缓存恢复,不做缩放,blob 本就是 targetSize 方图)。
 function drawBlobToCanvas(canvas, blob) {

@@ -15,7 +15,8 @@ export const useUserSettingsStore = defineStore('userSettings', () => {
       settings.value = stored
         ? { ...CONFIG.DEFAULTS, ...JSON.parse(stored) }
         : { ...CONFIG.DEFAULTS };
-    } catch (e) {
+    }
+    catch (e) {
       console.warn('加载用户设置失败:', e);
       settings.value = { ...CONFIG.DEFAULTS };
     }

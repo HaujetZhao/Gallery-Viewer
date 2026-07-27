@@ -1,11 +1,11 @@
 <script setup>
 import { ref } from 'vue';
-import { useFsStore } from '../stores/fs';
+import { handleDeleteFolder } from '../services/fileOps';
 import { handleFolderClick } from '../services/filesystem';
 import { useContextMenuStore } from '../stores/contextMenu';
+import { useFsStore } from '../stores/fs';
 import { useHistoryStore } from '../stores/history';
 import { useToastStore } from '../stores/uiToast';
-import { handleDeleteFolder } from '../services/fileOps';
 
 defineOptions({ name: 'SidebarTreeItem' });
 
@@ -29,7 +29,8 @@ function toggle(e) {
 }
 
 function onContextmenu(e) {
-  if (props.isRoot) return;
+  if (props.isRoot)
+    return;
   e.preventDefault();
   e.stopPropagation();
   contextMenu.show(e.clientX, e.clientY, [
@@ -48,21 +49,26 @@ async function onDrop(e) {
   e.preventDefault();
   dragOver.value = false;
   const path = e.dataTransfer.getData('application/x-photo-path');
-  if (!path) return;
+  if (!path)
+    return;
   const file = findFileByPath(path);
-  if (!file) return;
-  if (file.parent === props.folder) return; // 拖到自己父文件夹,无意义
+  if (!file)
+    return;
+  if (file.parent === props.folder)
+    return; // 拖到自己父文件夹,无意义
   try {
     await history.moveFile(file, props.folder);
     toast.success(`已移动到 ${props.folder.name}(Ctrl+Z 撤销)`);
-  } catch (err) {
-    toast.error('移动失败: ' + err.message);
+  }
+  catch (err) {
+    toast.error(`移动失败: ${err.message}`);
   }
 }
 function findFileByPath(path) {
   for (const [, folder] of fsStore.foldersData) {
-    const f = folder.files.find((x) => x.path === path);
-    if (f) return f;
+    const f = folder.files.find(x => x.path === path);
+    if (f)
+      return f;
   }
   return null;
 }
@@ -70,11 +76,10 @@ function findFileByPath(path) {
 
 <template>
   <li
-    :class="[
-      'tree-node',
+    class="tree-node" :class="[
       {
         'root-node': isRoot,
-        active: fsStore.currentFolder === folder,
+        'active': fsStore.currentFolder === folder,
         'empty-folder': folder.treeNode.isEmpty,
         'drag-over': dragOver,
       },
@@ -88,11 +93,11 @@ function findFileByPath(path) {
     <i
       :class="folder.treeNode.expanded ? 'fas fa-folder-open' : 'fas fa-folder'"
       @click="toggle"
-    ></i>
+    />
     <span class="tree-node-name">{{ folder.name }}</span>
     <span class="tree-node-count">({{ folder.files.length }})</span>
   </li>
-  <ul :class="['tree-sub-list', { expanded: folder.treeNode.expanded }]">
+  <ul class="tree-sub-list" :class="[{ expanded: folder.treeNode.expanded }]">
     <SidebarTreeItem v-for="child in folder.subFolders" :key="child.path" :folder="child" />
   </ul>
 </template>

@@ -15,7 +15,8 @@ export function useStorageEstimate() {
       const quotaMB = (quota / 1048576).toFixed(0);
       const percent = ((usage / quota) * 100).toFixed(1);
       text.value = `${usedMB} MB / ${quotaMB} MB (${percent}%)`;
-    } catch (e) {
+    }
+    catch {
       text.value = '无法获取存储信息';
     }
   }

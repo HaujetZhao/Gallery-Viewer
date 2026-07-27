@@ -11,10 +11,10 @@ export const useToastStore = defineStore('uiToast', () => {
   function show(message, type = 'info', duration) {
     const id = ++_id;
     toasts.value.push({ id, message, type });
-    setTimeout(() => remove(id), duration || CONFIG.UI.TOAST.DURATION);
+    setTimeout(remove, duration || CONFIG.UI.TOAST.DURATION, id);
   }
   function remove(id) {
-    toasts.value = toasts.value.filter((t) => t.id !== id);
+    toasts.value = toasts.value.filter(t => t.id !== id);
   }
 
   return {

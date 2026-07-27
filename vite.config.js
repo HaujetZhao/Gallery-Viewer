@@ -1,5 +1,5 @@
-import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
+import { defineConfig } from 'vite';
 import { viteSingleFile } from 'vite-plugin-singlefile';
 
 // 单 HTML 构建:所有 JS/CSS/字体(含 font-awesome woff2)base64 内联进单个 dist/index.html。

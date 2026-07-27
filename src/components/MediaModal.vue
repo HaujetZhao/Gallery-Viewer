@@ -1,7 +1,7 @@
 <script setup>
 import { ref } from 'vue';
-import { useModalStore } from '../stores/modal';
 import { useModal } from '../composables/useModal';
+import { useModalStore } from '../stores/modal';
 import AudioPlayer from './AudioPlayer.vue';
 
 const modal = useModalStore();
@@ -9,7 +9,7 @@ const modalEl = ref(null);
 const contentEl = ref(null);
 const mediaEl = ref(null);
 
-const { loading, svgText, mediaKind, isHoveringVideo, onImgLoad, copyCurrent } = useModal(
+const { loading, svgText, mediaKind, isHoveringVideo, onImgLoad } = useModal(
   modalEl,
   contentEl,
   mediaEl,
@@ -18,8 +18,8 @@ const { loading, svgText, mediaKind, isHoveringVideo, onImgLoad, copyCurrent } =
 
 <template>
   <Teleport to="body">
-    <div v-if="modal.isOpen" class="modal" ref="modalEl">
-      <div class="modal-content" ref="contentEl">
+    <div v-if="modal.isOpen" ref="modalEl" class="modal">
+      <div ref="contentEl" class="modal-content">
         <img
           v-if="mediaKind === 'image'"
           ref="mediaEl"
@@ -28,7 +28,7 @@ const { loading, svgText, mediaKind, isHoveringVideo, onImgLoad, copyCurrent } =
           draggable="false"
           alt="Full view"
           @load="onImgLoad"
-        />
+        >
         <video
           v-else-if="mediaKind === 'video'"
           ref="mediaEl"
@@ -44,7 +44,7 @@ const { loading, svgText, mediaKind, isHoveringVideo, onImgLoad, copyCurrent } =
           ref="mediaEl"
           class="modal-media svg-container"
           v-html="svgText"
-        ></div>
+        />
         <AudioPlayer
           v-else-if="mediaKind === 'audio'"
           :file="modal.currentFile"
@@ -53,7 +53,7 @@ const { loading, svgText, mediaKind, isHoveringVideo, onImgLoad, copyCurrent } =
         />
       </div>
       <div v-if="loading" class="loader">
-        <i class="fas fa-spinner fa-spin"></i>
+        <i class="fas fa-spinner fa-spin" />
       </div>
     </div>
   </Teleport>

@@ -15,12 +15,15 @@ class Operation {
     this.target = target;
     this.timestamp = Date.now();
   }
+
   async execute() {
     throw new Error('execute() must be implemented');
   }
+
   async undo() {
     throw new Error('undo() must be implemented');
   }
+
   getDescription() {
     throw new Error('getDescription() must be implemented');
   }
@@ -40,7 +43,8 @@ export class FileDeleteOperation extends Operation {
   _getRelativePath() {
     const pathParts = this.fileData.path.split('/');
     const rootName = useFsStore().rootHandle.name;
-    if (pathParts[0] === rootName) pathParts.shift();
+    if (pathParts[0] === rootName)
+      pathParts.shift();
     pathParts.pop();
     return pathParts.join('/');
   }
@@ -49,7 +53,8 @@ export class FileDeleteOperation extends Operation {
   async _createTrashDirectory() {
     const rootTrashHandle = await useFsStore().rootHandle.getDirectoryHandle('.trash', { create: true });
     const relativePath = this._getRelativePath();
-    if (!relativePath) return rootTrashHandle;
+    if (!relativePath)
+      return rootTrashHandle;
     let current = rootTrashHandle;
     for (const dir of relativePath.split('/')) {
       current = await current.getDirectoryHandle(dir, { create: true });
@@ -70,8 +75,10 @@ export class FileDeleteOperation extends Operation {
         await trashDirHandle.getFileHandle(targetName); // 已存在则试下一个
         targetName = `${baseName}_${counter}${ext}`;
         counter++;
-      } catch (e) {
-        if (e.name === 'NotFoundError') break; // 名字可用
+      }
+      catch (e) {
+        if (e.name === 'NotFoundError')
+          break; // 名字可用
         throw e;
       }
     }
@@ -79,7 +86,8 @@ export class FileDeleteOperation extends Operation {
   }
 
   async execute() {
-    if (!this.parentFolder?.handle) throw new Error('无法定位父文件夹');
+    if (!this.parentFolder?.handle)
+      throw new Error('无法定位父文件夹');
     const trashDirHandle = await this._createTrashDirectory();
     const trashName = await this._generateUniqueTrashName(trashDirHandle);
     await this.fileData.handle.move(trashDirHandle, trashName); // move(dir, name) 双参
@@ -90,7 +98,8 @@ export class FileDeleteOperation extends Operation {
   }
 
   async undo() {
-    if (!this.trashPath) throw new Error('没有删除信息,无法撤销');
+    if (!this.trashPath)
+      throw new Error('没有删除信息,无法撤销');
     const rootTrashHandle = await useFsStore().rootHandle.getDirectoryHandle('.trash');
     const pathParts = this.trashPath.split('/');
     const trashName = pathParts.pop();
@@ -103,7 +112,8 @@ export class FileDeleteOperation extends Operation {
     // move 后旧 handle 失效,重取 + 重建 blobUrl + 清 md5(源码漏了 blobUrl,补上)
     const restoredHandle = await this.parentFolder.handle.getFileHandle(this.originalName);
     const restoredFile = await restoredHandle.getFile();
-    if (this.fileData.blobUrl) URL.revokeObjectURL(this.fileData.blobUrl);
+    if (this.fileData.blobUrl)
+      URL.revokeObjectURL(this.fileData.blobUrl);
     this.fileData.handle = restoredHandle;
     this.fileData.file = restoredFile;
     this.fileData.blobUrl = URL.createObjectURL(restoredFile);
@@ -123,13 +133,16 @@ export class FileRenameOperation extends Operation {
     this.oldName = oldName;
     this.newName = newName;
   }
+
   async execute() {
     await this.fileData.rename(this.newName);
   }
+
   async undo() {
     await this.fileData.rename(this.oldName);
     // SmartFile.rename 内部已重建 blobUrl + 清 md5,Vue 响应式自动更新
   }
+
   getDescription() {
     return `重命名:${this.oldName} → ${this.newName}`;
   }
@@ -139,17 +152,22 @@ export class FileMoveOperation extends Operation {
   constructor(fileData, targetFolder) {
     super(OperationType.FILE_MOVE, fileData);
     this.fileData = fileData;
-    if (!fileData.parent) throw new Error('文件缺少父文件夹引用');
+    if (!fileData.parent)
+      throw new Error('文件缺少父文件夹引用');
     this.sourceFolder = fileData.parent;
     this.targetFolder = targetFolder;
   }
+
   async execute() {
     await this.fileData.move(this.targetFolder);
   }
+
   async undo() {
-    if (!this.sourceFolder) throw new Error('源文件夹引用丢失');
+    if (!this.sourceFolder)
+      throw new Error('源文件夹引用丢失');
     await this.fileData.move(this.sourceFolder);
   }
+
   getDescription() {
     return `移动文件:${this.fileData.name}`;
   }

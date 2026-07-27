@@ -2,7 +2,7 @@
 // 持有 rootHandle/rootFolder/currentFolder/foldersData/allMediaFolder;通过静态注入让 SmartFolder 访问。
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import { SmartFolder, createAllMediaFolder } from '../models/SmartFolder';
+import { createAllMediaFolder, SmartFolder } from '../models/SmartFolder';
 
 export const useFsStore = defineStore('fs', () => {
   const rootHandle = ref(null); // FileSystemDirectoryHandle

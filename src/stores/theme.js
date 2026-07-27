@@ -98,7 +98,7 @@ export const THEMES = {
 // 三套主题变量键的并集。applyTheme 前先 removeProperty 这些键,清掉上一主题残留
 // (forest 无 gray、dark 独有 success/warning/danger/text-inverse);未覆盖键回退 variables.css :root 默认。
 // ponytail: 不含 --sidebar-width(useSidebar 设的),避免切主题重置侧栏宽度——故不用 cssText=''。
-const ALL_THEME_VARS = Object.values(THEMES).flatMap((t) => Object.keys(t.variables));
+const ALL_THEME_VARS = Object.values(THEMES).flatMap(t => Object.keys(t.variables));
 
 export const useThemeStore = defineStore('theme', () => {
   const currentTheme = ref('ocean');
@@ -110,7 +110,7 @@ export const useThemeStore = defineStore('theme', () => {
       return;
     }
     const root = document.documentElement;
-    ALL_THEME_VARS.forEach((key) => root.style.removeProperty(key));
+    ALL_THEME_VARS.forEach(key => root.style.removeProperty(key));
     Object.entries(theme.variables).forEach(([key, value]) => {
       root.style.setProperty(key, value);
     });

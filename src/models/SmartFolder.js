@@ -1,11 +1,11 @@
+import { FileTypes } from '../config/file-types';
+import { windowsCompareStrings } from '../utils/format';
 /**
  * SmartFolder 类 - 表示一个文件夹。搬自源码 js/model.SmartFolder.js。
  * scan() 增量算法原样保留(性能关键);appState 通过静态注入访问(保持纯逻辑,不依赖 Pinia)。
  */
 import { SmartFile } from './SmartFile';
 import { TreeNode } from './TreeNode';
-import { FileTypes } from '../config/file-types';
-import { windowsCompareStrings } from '../utils/format';
 
 export class SmartFolder {
   // 静态注入:由 fsStore 初始化时设为 { get rootHandle(), get foldersData() }
@@ -19,11 +19,13 @@ export class SmartFolder {
       this.name = virtualName;
       this.isVirtual = true;
       this.virtualConfig = virtualConfig || {};
-    } else if (handle) {
+    }
+    else if (handle) {
       this.name = handle.name;
       this.isVirtual = false;
       this.virtualConfig = null;
-    } else {
+    }
+    else {
       throw new Error('必须提供 handle 或 virtualName');
     }
 
@@ -62,15 +64,17 @@ export class SmartFolder {
     try {
       await this.parent.handle.removeEntry(this.name, { recursive: true });
       const index = this.parent.subFolders.indexOf(this);
-      if (index > -1) this.parent.subFolders.splice(index, 1);
+      if (index > -1)
+        this.parent.subFolders.splice(index, 1);
       return true;
-    } catch (err) {
+    }
+    catch (err) {
       console.error('删除文件夹失败:', err);
       throw err;
     }
   }
 
-  async move(targetFolder) {
+  async move(_targetFolder) {
     throw new Error('文件夹移动功能暂未实现');
   }
 
@@ -91,11 +95,12 @@ export class SmartFolder {
 
   removeFile(file) {
     const index = this.files.indexOf(file);
-    if (index > -1) this.files.splice(index, 1);
+    if (index > -1)
+      this.files.splice(index, 1);
   }
 
   findFile(fileName) {
-    return this.files.find((f) => f.name === fileName) || null;
+    return this.files.find(f => f.name === fileName) || null;
   }
 
   getFileCount() {
@@ -120,12 +125,13 @@ export class SmartFolder {
 
   // 增量扫描算法,性能关键,逻辑一字不改照搬源码(仅删 performance 调试日志 + removeDOMNodes→destroy)。
   async scan() {
-    if (!this.handle) throw new Error('scan 需要有效的 handle');
+    if (!this.handle)
+      throw new Error('scan 需要有效的 handle');
     const dirHandle = this.handle;
 
     // ① 现有 files/subFolders 的 name→obj 映射(用于差集)
-    const existingFilesMap = new Map(this.files.map((f) => [f.name, f]));
-    const existingFoldersMap = new Map(this.subFolders.map((f) => [f.name, f]));
+    const existingFilesMap = new Map(this.files.map(f => [f.name, f]));
+    const existingFoldersMap = new Map(this.subFolders.map(f => [f.name, f]));
 
     const filesToKeep = [];
     const foldersToKeep = [];
@@ -136,7 +142,8 @@ export class SmartFolder {
     for await (const entry of dirHandle.values()) {
       if (entry.kind === 'file') {
         const ext = entry.name.split('.').pop().toLowerCase();
-        if (!FileTypes.allMedia.includes(ext)) continue; // 仅媒体
+        if (!FileTypes.allMedia.includes(ext))
+          continue; // 仅媒体
 
         const existingFile = existingFilesMap.get(entry.name);
         if (existingFile) {
@@ -147,29 +154,35 @@ export class SmartFolder {
             }
             filesToKeep.push(existingFile);
             existingFilesMap.delete(entry.name);
-          } catch (e) {
-            console.log(`文件 ${entry.name} 的 handle 已失效，将被移除`);
           }
-        } else {
+          catch {
+            console.warn(`文件 ${entry.name} 的 handle 已失效，将被移除`);
+          }
+        }
+        else {
           try {
             const file = await entry.getFile();
             const fileObj = new SmartFile({ handle: entry, file, parent: this });
             filesToKeep.push(fileObj);
             newFiles.push(fileObj);
-          } catch (e) {
+          }
+          catch (e) {
             console.warn('无法读取文件:', entry.name, e);
           }
         }
-      } else if (entry.kind === 'directory') {
-        if (entry.name.startsWith('.')) continue; // 跳过隐藏目录
+      }
+      else if (entry.kind === 'directory') {
+        if (entry.name.startsWith('.'))
+          continue; // 跳过隐藏目录
 
         const existingFolder = existingFoldersMap.get(entry.name);
         if (existingFolder) {
           foldersToKeep.push(existingFolder);
           existingFoldersMap.delete(entry.name);
-        } else {
+        }
+        else {
           const subFolderData = new SmartFolder({ handle: entry, parent: this });
-          const subPath = this.path + '/' + entry.name;
+          const subPath = `${this.path}/${entry.name}`;
           SmartFolder.appState.foldersData.set(subPath, subFolderData); // 全局注册
           foldersToKeep.push(subFolderData);
           newSubFolders.push(subFolderData);
@@ -206,16 +219,18 @@ export class SmartFolder {
   }
 
   async validate() {
-    if (!this.handle) return false;
+    if (!this.handle)
+      return false;
     try {
       const permission = await this.handle.queryPermission({ mode: 'read' });
-      if (permission === 'denied') return false;
-      for await (const entry of this.handle.values()) {
-        break; // 只需确认目录可访问
-      }
+      if (permission === 'denied')
+        return false;
+      await this.handle.values().next();
       return true;
-    } catch (err) {
-      if (err.name === 'NotFoundError') return false;
+    }
+    catch (err) {
+      if (err.name === 'NotFoundError')
+        return false;
       console.warn(`文件夹 ${this.name} 验证失败:`, err);
       return false;
     }
@@ -225,7 +240,8 @@ export class SmartFolder {
     let current = this;
     while (current) {
       const isValid = await current.validate();
-      if (isValid) return current;
+      if (isValid)
+        return current;
       current = current.parent;
     }
     return null;

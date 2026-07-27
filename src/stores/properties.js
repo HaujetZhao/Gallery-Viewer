@@ -18,10 +18,12 @@ export const usePropertiesStore = defineStore('properties', () => {
       const ext = f.name.split('.').pop().toLowerCase();
       const strategy = getMetadataStrategy(ext);
       metadata.value = await strategy.getMetadata(f);
-    } catch (e) {
+    }
+    catch (e) {
       console.error('获取元数据失败', e);
       metadata.value = {};
-    } finally {
+    }
+    finally {
       loading.value = false;
     }
   }

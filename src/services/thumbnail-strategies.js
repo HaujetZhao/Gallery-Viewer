@@ -42,7 +42,7 @@ export const ThumbnailStrategies = {
       );
 
       return new Promise((resolve) => {
-        canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.85);
+        canvas.toBlob(blob => resolve(blob), 'image/jpeg', 0.85);
       });
     },
 
@@ -145,26 +145,28 @@ export const ThumbnailStrategies = {
         let captured = false;
         let timeoutId = null;
 
-        const cleanup = () => {
-          if (timeoutId) clearTimeout(timeoutId);
+        function cleanup() {
+          if (timeoutId)
+            clearTimeout(timeoutId);
           video.removeEventListener('loadedmetadata', onLoadedMetadata);
           video.removeEventListener('seeked', onSeeked);
           video.removeEventListener('error', onError);
           video.src = '';
-        };
+        }
 
-        const finishWithDefault = () => {
+        function finishWithDefault() {
           cleanup();
           ThumbnailStrategies.video.drawDefaultThumbnail(element, targetSize);
-          element.toBlob((blob) => resolve(blob), 'image/jpeg', 0.85);
-        };
+          element.toBlob(blob => resolve(blob), 'image/jpeg', 0.85);
+        }
 
-        const onLoadedMetadata = () => {
+        function onLoadedMetadata() {
           video.currentTime = Math.min(5, video.duration / 2);
-        };
+        }
 
-        const onSeeked = () => {
-          if (captured) return;
+        function onSeeked() {
+          if (captured)
+            return;
           captured = true;
           try {
             ThumbnailStrategies.video.drawVideoFrame(element, video, targetSize);
@@ -172,19 +174,23 @@ export const ThumbnailStrategies = {
               cleanup();
               resolve(blob);
             }, 'image/jpeg', 0.85);
-          } catch (err) {
+          }
+          catch {
             finishWithDefault();
           }
-        };
+        }
 
-        const onError = () => finishWithDefault();
+        function onError() {
+          finishWithDefault();
+        }
 
         video.addEventListener('loadedmetadata', onLoadedMetadata);
         video.addEventListener('seeked', onSeeked);
         video.addEventListener('error', onError);
 
         timeoutId = setTimeout(() => {
-          if (!captured) finishWithDefault();
+          if (!captured)
+            finishWithDefault();
         }, 10000);
 
         video.src = fileData.blobUrl;
@@ -242,11 +248,12 @@ export const ThumbnailStrategies = {
           URL.revokeObjectURL(img.src);
 
           return new Promise((resolve) => {
-            canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.85);
+            canvas.toBlob(blob => resolve(blob), 'image/jpeg', 0.85);
           });
         }
-      } catch (err) {
-        console.log('无法提取音频封面:', err.message);
+      }
+      catch (err) {
+        console.warn('无法提取音频封面:', err.message);
       }
 
       // 默认音频图标
@@ -268,7 +275,7 @@ export const ThumbnailStrategies = {
       ctx.fillText('🎵', targetSize / 2, targetSize / 2);
 
       return new Promise((resolve) => {
-        canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.85);
+        canvas.toBlob(blob => resolve(blob), 'image/jpeg', 0.85);
       });
     },
 
@@ -296,11 +303,11 @@ export async function extractAudioCover(fileData) {
     const version = uint8Array[3]; // 3 = v2.3, 4 = v2.4
 
     // synchsafe integer 标签大小
-    const tagSize =
-      ((uint8Array[6] & 0x7f) << 21) |
-      ((uint8Array[7] & 0x7f) << 14) |
-      ((uint8Array[8] & 0x7f) << 7) |
-      (uint8Array[9] & 0x7f);
+    const tagSize
+      = ((uint8Array[6] & 0x7F) << 21)
+        | ((uint8Array[7] & 0x7F) << 14)
+        | ((uint8Array[8] & 0x7F) << 7)
+        | (uint8Array[9] & 0x7F);
 
     let offset = 10;
     const tagEnd = 10 + tagSize;
@@ -313,22 +320,24 @@ export async function extractAudioCover(fileData) {
         uint8Array[offset + 3],
       );
 
-      if (frameId === '\0\0\0\0') break;
+      if (frameId === '\0\0\0\0')
+        break;
 
       // v2.4 帧 size 是 synchsafe,v2.3 是普通 32-bit int
       let frameSize;
       if (version === 4) {
-        frameSize =
-          ((uint8Array[offset + 4] & 0x7f) << 21) |
-          ((uint8Array[offset + 5] & 0x7f) << 14) |
-          ((uint8Array[offset + 6] & 0x7f) << 7) |
-          (uint8Array[offset + 7] & 0x7f);
-      } else {
-        frameSize =
-          (uint8Array[offset + 4] << 24) |
-          (uint8Array[offset + 5] << 16) |
-          (uint8Array[offset + 6] << 8) |
-          uint8Array[offset + 7];
+        frameSize
+          = ((uint8Array[offset + 4] & 0x7F) << 21)
+            | ((uint8Array[offset + 5] & 0x7F) << 14)
+            | ((uint8Array[offset + 6] & 0x7F) << 7)
+            | (uint8Array[offset + 7] & 0x7F);
+      }
+      else {
+        frameSize
+          = (uint8Array[offset + 4] << 24)
+            | (uint8Array[offset + 5] << 16)
+            | (uint8Array[offset + 6] << 8)
+            | uint8Array[offset + 7];
       }
 
       if (frameId === 'APIC') {
@@ -354,7 +363,8 @@ export async function extractAudioCover(fileData) {
     }
 
     return null;
-  } catch (err) {
+  }
+  catch {
     return null;
   }
 }

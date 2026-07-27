@@ -1,24 +1,24 @@
 <script setup>
-import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue';
-import { useThemeStore } from './stores/theme';
-import { useFsStore } from './stores/fs';
-import { useUserSettingsStore } from './stores/userSettings';
-import { useToastStore } from './stores/uiToast';
-import { useHistoryStore } from './stores/history';
-import { initDB } from './services/db';
-import { openFolderPicker } from './services/filesystem';
-import { isFileSystemAccessSupported } from './utils/browser';
-import { useGallerySearch } from './composables/useGallerySearch';
-import Sidebar from './components/Sidebar.vue';
-import Gallery from './components/Gallery.vue';
-import MediaModal from './components/MediaModal.vue';
-import SettingsPanel from './components/SettingsPanel.vue';
-import Toast from './components/Toast.vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import BrowserUnsupportedWarning from './components/BrowserUnsupportedWarning.vue';
 import ConfirmDialog from './components/ConfirmDialog.vue';
 import ContextMenu from './components/ContextMenu.vue';
+import Gallery from './components/Gallery.vue';
+import MediaModal from './components/MediaModal.vue';
 import PropertiesPanel from './components/PropertiesPanel.vue';
-import BrowserUnsupportedWarning from './components/BrowserUnsupportedWarning.vue';
+import SettingsPanel from './components/SettingsPanel.vue';
+import Sidebar from './components/Sidebar.vue';
+import Toast from './components/Toast.vue';
+import { useGallerySearch } from './composables/useGallerySearch';
 import { useScrollZone } from './composables/useScrollZone';
+import { initDB } from './services/db';
+import { openFolderPicker } from './services/filesystem';
+import { useFsStore } from './stores/fs';
+import { useHistoryStore } from './stores/history';
+import { useThemeStore } from './stores/theme';
+import { useToastStore } from './stores/uiToast';
+import { useUserSettingsStore } from './stores/userSettings';
+import { isFileSystemAccessSupported } from './utils/browser';
 
 const themeStore = useThemeStore();
 const fsStore = useFsStore();
@@ -30,13 +30,13 @@ const { searchTerm, filteredCount, totalCount } = useGallerySearch();
 const sidebarPinned = computed(() => !!settings.settings.sidebarPinned);
 const sidebarWidth = computed(() => settings.settings.sidebarWidth || 280);
 const mainStyle = computed(() => ({
-  marginLeft: sidebarPinned.value ? sidebarWidth.value + 'px' : '0px',
+  marginLeft: sidebarPinned.value ? `${sidebarWidth.value}px` : '0px',
   width: sidebarPinned.value ? `calc(100% - ${sidebarWidth.value}px)` : '100%',
 }));
 
 watch(
   sidebarPinned,
-  (v) => document.body.classList.toggle('sidebar-pinned', v),
+  v => document.body.classList.toggle('sidebar-pinned', v),
   { immediate: true },
 );
 
@@ -51,7 +51,8 @@ onMounted(async () => {
   themeStore.init();
   try {
     await initDB();
-  } catch (e) {
+  }
+  catch (e) {
     console.warn('initDB 失败:', e);
   }
   document.addEventListener('keydown', onKeydown);
@@ -63,38 +64,51 @@ async function open() {
 }
 function onKeydown(e) {
   const tag = document.activeElement?.tagName;
-  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  if (tag === 'INPUT' || tag === 'TEXTAREA')
+    return;
   const isCtrl = e.ctrlKey || e.metaKey;
   const key = e.key.toLowerCase();
   if (isCtrl && key === 'o') {
     e.preventDefault();
     open();
-  } else if (isCtrl && key === 'z') {
+  }
+  else if (isCtrl && key === 'z') {
     e.preventDefault();
-    if (!history.canUndo) return;
+    if (!history.canUndo)
+      return;
     history
       .undoLastOperation()
-      .then((op) => toast.success(`已撤销: ${op.getDescription()}`))
-      .catch((err) => toast.error('撤销失败: ' + err.message));
+      .then(op => toast.success(`已撤销: ${op.getDescription()}`))
+      .catch(err => toast.error(`撤销失败: ${err.message}`));
   }
 }
 </script>
 
 <template>
   <div :class="{ 'sidebar-pinned': sidebarPinned }">
-    <div ref="sidebarEl"><Sidebar /></div>
+    <div ref="sidebarEl">
+      <Sidebar />
+    </div>
 
     <!-- 启动页(无 currentFolder) -->
     <div v-if="!fsStore.currentFolder" id="hint">
       <div class="intro-content" @click="open">
-        <i class="fas fa-images"></i>
+        <i class="fas fa-images" />
         <h1>相册浏览器</h1>
         <p>点击打开文件夹(纯本地处理)</p>
         <div class="features">
-          <div class="feature"><i class="fas fa-folder-tree"></i><span>文件树</span></div>
-          <div class="feature"><i class="fas fa-image"></i><span>缩略图缓存</span></div>
-          <div class="feature"><i class="fas fa-info-circle"></i><span>EXIF信息</span></div>
-          <div class="feature"><i class="fas fa-folder-open"></i><span>文件整理</span></div>
+          <div class="feature">
+            <i class="fas fa-folder-tree" /><span>文件树</span>
+          </div>
+          <div class="feature">
+            <i class="fas fa-image" /><span>缩略图缓存</span>
+          </div>
+          <div class="feature">
+            <i class="fas fa-info-circle" /><span>EXIF信息</span>
+          </div>
+          <div class="feature">
+            <i class="fas fa-folder-open" /><span>文件整理</span>
+          </div>
         </div>
         <BrowserUnsupportedWarning v-if="!browserSupported" />
       </div>
@@ -104,7 +118,7 @@ function onKeydown(e) {
     <div v-else class="main-content-wrapper" :style="mainStyle">
       <div class="container">
         <header class="header">
-          <h1><i class="fas fa-images"></i> 相册浏览器</h1>
+          <h1><i class="fas fa-images" /> 相册浏览器</h1>
         </header>
         <Gallery />
         <div class="footer">
@@ -114,13 +128,15 @@ function onKeydown(e) {
     </div>
 
     <!-- 全局浮层 -->
-    <button class="settings-btn" ref="settingsBtnEl" @click="settingsOpen = !settingsOpen" title="设置">
-      <i class="fas fa-cog"></i>
+    <button ref="settingsBtnEl" class="settings-btn" title="设置" @click="settingsOpen = !settingsOpen">
+      <i class="fas fa-cog" />
     </button>
 
-    <div v-if="fsStore.currentFolder" class="filter-container" ref="filterEl">
-      <input type="text" v-model="searchTerm" placeholder="搜索文件名..." />
-      <div class="filter-count">{{ filteredCount }}/{{ totalCount }}</div>
+    <div v-if="fsStore.currentFolder" ref="filterEl" class="filter-container">
+      <input v-model="searchTerm" type="text" placeholder="搜索文件名...">
+      <div class="filter-count">
+        {{ filteredCount }}/{{ totalCount }}
+      </div>
     </div>
 
     <SettingsPanel v-model="settingsOpen" />

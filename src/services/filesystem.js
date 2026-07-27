@@ -1,9 +1,9 @@
+import { SmartFolder } from '../models/SmartFolder';
 // 文件系统服务。搬自源码 js/filesystem.js,剥 DOM/UI 耦合,service 内部用 useFsStore() 操作状态。
 // syncTreeStructure(源码 sidebar)Vue 后不需要(响应式自动同步 subFolders)。
 // 注意:与 recovery.js 循环依赖(handleFolderClick 调 handleFolderNotFound,recovery 调 startBackgroundScan),
 // 函数体内调用,ES module 安全。
 import { useFsStore } from '../stores/fs';
-import { SmartFolder } from '../models/SmartFolder';
 import { isFileSystemAccessSupported } from '../utils/browser';
 import { handleFolderNotFound } from './recovery';
 
@@ -30,10 +30,11 @@ export async function openFolderPicker() {
     // 若传原始 root,scan 改的是原始 SmartFolder,不触发 reactive 代理的响应式,Sidebar 子目录不更新。
     startBackgroundScan(fs.rootFolder);
     return root;
-  } catch (err) {
+  }
+  catch (err) {
     if (err.name !== 'AbortError') {
       console.error('打开文件夹失败:', err);
-      alert('打开文件夹失败: ' + err.message);
+      alert(`打开文件夹失败: ${err.message}`);
     }
     return null;
   }
@@ -74,14 +75,16 @@ export async function loadProject(handle) {
 // ⚠️ 必须从「代理」folder 起步(调用方传 fs.rootFolder):scan 会改子 SmartFolder 的 files/subFolders,
 // 改代理才触发响应式让 Sidebar 实时更新;改原始对象则 UI 不刷新(子目录一直灰,直到点击)。
 export async function startBackgroundScan(parentFolder) {
-  if (!parentFolder || !parentFolder.subFolders) return;
+  if (!parentFolder || !parentFolder.subFolders)
+    return;
   for (const subFolderData of parentFolder.subFolders) {
     try {
       if (!subFolderData.scanned) {
         await subFolderData.scan();
       }
       await startBackgroundScan(subFolderData);
-    } catch (e) {
+    }
+    catch (e) {
       console.warn('后台扫描子文件夹失败:', subFolderData.name, e);
     }
   }
@@ -92,7 +95,8 @@ export async function reloadProject() {
   const fs = useFsStore();
   fs.foldersData.clear();
   fs.foldersData.set('ALL_MEDIA', fs.allMediaFolder);
-  if (!fs.rootHandle) return null;
+  if (!fs.rootHandle)
+    return null;
   const root = await loadProject(fs.rootHandle);
   fs.rootFolder = root;
   fs.currentFolder = root;
@@ -105,7 +109,8 @@ export async function refreshFolder(folder) {
   try {
     await folder.scan();
     folder.treeNode?.refreshState();
-  } catch (err) {
+  }
+  catch (err) {
     if (err.name === 'NotFoundError') {
       const fs = useFsStore();
       fs.foldersData.delete(folder.path);
@@ -144,7 +149,8 @@ export async function switchToAllPhotos() {
 
 // 文件夹点击:validate → 失效恢复 → 小文件夹即时刷新 → loadFolder。
 export async function handleFolderClick(folder) {
-  if (!folder) return;
+  if (!folder)
+    return;
   const fs = useFsStore();
   if (folder === fs.allMediaFolder) {
     await loadFolder(folder);
@@ -161,10 +167,12 @@ export async function handleFolderClick(folder) {
       await refreshFolder(folder);
     }
     await loadFolder(folder);
-  } catch (err) {
+  }
+  catch (err) {
     if (err.name === 'NotFoundError' || err.message?.includes('not found')) {
       await handleFolderNotFound(folder);
-    } else {
+    }
+    else {
       console.error('文件夹点击处理失败:', err);
     }
   }

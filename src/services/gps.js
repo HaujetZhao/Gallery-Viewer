@@ -1,13 +1,15 @@
 // GPS 坐标转换 WGS84↔GCJ-02↔BD-09 + 三家地图 URL。搬自源码 js/properties.js,魔数逐字照抄勿改。
 
 export function FormatDMS(dms) {
-  if (!dms) return '';
+  if (!dms)
+    return '';
   return `${dms[0]}° ${dms[1]}' ${dms[2]}"`;
 }
 
 export function convertDMSToDD(dms, ref) {
   let dd = dms[0] + dms[1] / 60 + dms[2] / 3600;
-  if (ref === 'S' || ref === 'W') dd = dd * -1;
+  if (ref === 'S' || ref === 'W')
+    dd = dd * -1;
   return dd;
 }
 
@@ -32,7 +34,8 @@ function outOfChina(lon, lat) {
 }
 
 export function wgs84ToGcj02(lon, lat) {
-  if (outOfChina(lon, lat)) return [lon, lat];
+  if (outOfChina(lon, lat))
+    return [lon, lat];
   let dLat = transformLat(lon - 105.0, lat - 35.0);
   let dLon = transformLon(lon - 105.0, lat - 35.0);
   const radLat = (lat / 180.0) * Math.PI;
@@ -57,12 +60,14 @@ export function gcj02ToBd09(lon, lat) {
 // Google=WGS84(纬,经);高德=GCJ-02(经,纬);百度=BD-09(纬,经)。
 // 兼容 DMS 数组(exif-js)和十进制(exifr,带符号)两种 GPS 格式。
 export function buildGpsLinks(exifTags) {
-  if (!exifTags?.GPSLatitude || !exifTags?.GPSLongitude) return null;
+  if (!exifTags?.GPSLatitude || !exifTags?.GPSLongitude)
+    return null;
   const rawLat = exifTags.GPSLatitude;
   const rawLon = exifTags.GPSLongitude;
   const latDec = Array.isArray(rawLat) ? convertDMSToDD(rawLat, exifTags.GPSLatitudeRef || 'N') : Number(rawLat);
   const lonDec = Array.isArray(rawLon) ? convertDMSToDD(rawLon, exifTags.GPSLongitudeRef || 'E') : Number(rawLon);
-  if (isNaN(latDec) || isNaN(lonDec)) return null;
+  if (Number.isNaN(latDec) || Number.isNaN(lonDec))
+    return null;
   const [gcjLon, gcjLat] = wgs84ToGcj02(lonDec, latDec);
   const [bdLon, bdLat] = gcj02ToBd09(gcjLon, gcjLat);
   return {

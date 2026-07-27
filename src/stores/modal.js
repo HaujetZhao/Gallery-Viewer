@@ -16,17 +16,20 @@ export const useModalStore = defineStore('modal', () => {
   }
 
   function openByIndex(i) {
-    if (i < 0 || i >= fileList.value.length) return;
+    if (i < 0 || i >= fileList.value.length)
+      return;
     currentIndex.value = i;
     currentFile.value = fileList.value[i];
   }
 
   function next() {
-    if (currentIndex.value < fileList.value.length - 1) openByIndex(currentIndex.value + 1);
+    if (currentIndex.value < fileList.value.length - 1)
+      openByIndex(currentIndex.value + 1);
   }
 
   function prev() {
-    if (currentIndex.value > 0) openByIndex(currentIndex.value - 1);
+    if (currentIndex.value > 0)
+      openByIndex(currentIndex.value - 1);
   }
 
   function close() {

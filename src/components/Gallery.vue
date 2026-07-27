@@ -1,11 +1,11 @@
 <script setup>
-import { computed, ref, watch, onBeforeUnmount } from 'vue';
-import { useFsStore } from '../stores/fs';
-import { useUserSettingsStore } from '../stores/userSettings';
-import { useModalStore } from '../stores/modal';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useGallerySearch } from '../composables/useGallerySearch';
+import { redrawSignal, unobserveAll } from '../composables/useThumbnail';
+import { useFsStore } from '../stores/fs';
+import { useModalStore } from '../stores/modal';
+import { useUserSettingsStore } from '../stores/userSettings';
 import { windowsCompareStrings } from '../utils/format';
-import { unobserveAll, redrawSignal } from '../composables/useThumbnail';
 import PhotoCard from './PhotoCard.vue';
 
 const fsStore = useFsStore();
@@ -21,18 +21,26 @@ const colCount = computed(() => settings.settings.columnCount);
 const displayFiles = computed(() => {
   const files = fsStore.currentFolder?.files || [];
   const term = debouncedTerm.value.toLowerCase();
-  let list = files.filter((f) => f.path.toLowerCase().includes(term));
+  let list = files.filter(f => f.path.toLowerCase().includes(term));
   const dir = sortAsc.value ? 1 : -1;
   list = [...list].sort((a, b) => {
-    if (sortField.value === 'name') return windowsCompareStrings(a.name, b.name) * dir;
-    if (sortField.value === 'size') return (a.size - b.size) * dir;
+    if (sortField.value === 'name')
+      return windowsCompareStrings(a.name, b.name) * dir;
+    if (sortField.value === 'size')
+      return (a.size - b.size) * dir;
     return (a.lastModified - b.lastModified) * dir;
   });
-  // 回写计数(搜索框 fixed 右上读)
-  filteredCount.value = list.length;
-  totalCount.value = files.length;
   return list;
 });
+// 回写计数(搜索框 fixed 右上读)。computed 不应有副作用,用 watch 同步。
+watch(
+  [displayFiles, () => fsStore.currentFolder?.files],
+  ([list, files]) => {
+    filteredCount.value = list.length;
+    totalCount.value = (files || []).length;
+  },
+  { immediate: true },
+);
 
 const columns = computed(() => {
   const n = colCount.value;
@@ -74,14 +82,14 @@ onBeforeUnmount(() => unobserveAll());
 <template>
   <div id="galleryContainer" class="gallery-container">
     <div v-if="displayFiles.length === 0" class="empty-state">
-      <i class="fas fa-images empty-icon"></i>
+      <i class="fas fa-images empty-icon" />
       <p>{{ debouncedTerm ? '没有匹配的文件' : '此文件夹为空' }}</p>
     </div>
     <div v-else class="gallery-grid" :style="{ '--estimated-height': estHeight }">
       <div v-for="(col, i) in columns" :key="i" class="masonry-col">
         <PhotoCard
           v-for="f in col"
-          :key="f.path + '-' + rerunKey"
+          :key="`${f.path}-${rerunKey}`"
           :file="f"
           :target-size="settings.settings.thumbnailSize"
           @click="openPreview(f)"
