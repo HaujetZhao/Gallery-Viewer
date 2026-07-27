@@ -9,7 +9,6 @@ export const useContextMenuStore = defineStore('contextMenu', () => {
   const items = ref([]);
 
   function show(clientX, clientY, itemArr) {
-    hide();
     x.value = clientX;
     y.value = clientY;
     items.value = itemArr;

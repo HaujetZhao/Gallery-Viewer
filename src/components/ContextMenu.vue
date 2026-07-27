@@ -5,11 +5,14 @@ import { useContextMenuStore } from '../stores/contextMenu.js';
 const menu = useContextMenuStore();
 const menuEl = ref(null);
 
-// 边界检测:防止超出右/下
+// 定位:跟随鼠标 + 边界检测。监听 visible/x/y 三者——单 watch(visible) 时,
+// 连续右键 visible 始终 true(旧值 true→新值 true)不触发,是"位置不跟随"的根因。
+const pos = ref({ left: 0, top: 0 });
 watch(
-  () => menu.visible,
-  async (v) => {
+  [() => menu.visible, () => menu.x, () => menu.y],
+  async ([v]) => {
     if (!v) return;
+    pos.value = { left: menu.x, top: menu.y };
     await nextTick();
     const el = menuEl.value;
     if (!el) return;
@@ -18,8 +21,7 @@ watch(
     let top = menu.y;
     if (left + rect.width > window.innerWidth) left = window.innerWidth - rect.width - 10;
     if (top + rect.height > window.innerHeight) top = window.innerHeight - rect.height - 10;
-    el.style.left = left + 'px';
-    el.style.top = top + 'px';
+    pos.value = { left, top };
   },
 );
 
@@ -47,7 +49,7 @@ onBeforeUnmount(() => {
 
 <template>
   <Teleport to="body">
-    <div v-if="menu.visible" ref="menuEl" class="context-menu" @click.stop>
+    <div v-if="menu.visible" ref="menuEl" class="context-menu" :style="{ left: pos.left + 'px', top: pos.top + 'px' }" @click.stop>
       <template v-for="(item, i) in menu.items" :key="i">
         <div v-if="item.divider" class="context-menu-divider"></div>
         <div

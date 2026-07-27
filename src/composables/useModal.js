@@ -152,6 +152,7 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
   function onTouchMove(e) {
     if (!modal.isOpen) return;
     if (e.touches.length === 1 && panning) {
+      e.preventDefault();
       const moveX = e.touches[0].clientX - mouseDownX;
       const moveY = e.touches[0].clientY - mouseDownY;
       if (Math.sqrt(moveX * moveX + moveY * moveY) > 5) {
@@ -165,7 +166,7 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
       const dy = e.touches[0].clientY - e.touches[1].clientY;
       const cur = Math.sqrt(dx * dx + dy * dy);
       const newScale = initialScale * (cur / initialDistance);
-      if (newScale < MIN_SCALE || newScale > MAX_SCALE) return;
+      if (newScale < minScale.value || newScale > MAX_SCALE) return;
       scale.value = newScale;
       applyTransform();
     }

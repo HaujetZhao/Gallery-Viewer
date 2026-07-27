@@ -9,8 +9,8 @@ const props2 = usePropertiesStore();
 
 const EXIF_MAP = {
   Make: '制造商', Model: '型号', LensModel: '镜头', Software: '后期软件',
-  ExposureTime: '曝光时间', FNumber: '光圈', ISOSpeedRatings: 'ISO',
-  FocalLength: '焦距', FocalLengthIn35mmFilm: '等效焦距', ExposureBias: '曝光补偿',
+  ExposureTime: '曝光时间', FNumber: '光圈', ISO: 'ISO',
+  FocalLength: '焦距', FocalLengthIn35mmFilm: '等效焦距', ExposureCompensation: '曝光补偿',
   MeteringMode: '测光模式', Flash: '闪光灯', WhiteBalance: '白平衡',
   DateTimeOriginal: '拍摄时间', PixelXDimension: '宽', PixelYDimension: '高',
   ResolutionUnit: '分辨率单位', Orientation: '方向', ColorSpace: '色彩空间',
@@ -19,7 +19,7 @@ const EXIF_MAP = {
 const EXIF_GROUPS = {
   GPS位置信息: ['GPSLatitude', 'GPSLongitude', 'GPSAltitude'],
   设备信息: ['Make', 'Model', 'LensModel', 'Software'],
-  拍摄参数: ['DateTimeOriginal', 'ExposureTime', 'FNumber', 'ISOSpeedRatings', 'FocalLength', 'FocalLengthIn35mmFilm', 'ExposureBias', 'MeteringMode', 'Flash', 'WhiteBalance'],
+  拍摄参数: ['DateTimeOriginal', 'ExposureTime', 'FNumber', 'ISO', 'FocalLength', 'FocalLengthIn35mmFilm', 'ExposureCompensation', 'MeteringMode', 'Flash', 'WhiteBalance'],
   图像参数: ['PixelXDimension', 'PixelYDimension', 'ColorSpace', 'Orientation'],
 };
 const IGNORE = ['MakerNote', 'UserComment', 'GPSLatitudeRef', 'GPSLongitudeRef', 'GPSVersionID', 'thumbnail', 'ExifIFDPointer', 'GPSInfoIFDPointer', 'InteroperabilityIFDPointer', 'undefined'];

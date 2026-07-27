@@ -83,8 +83,14 @@ async function onDelete() {
 }
 
 function onDragstart(e) {
-  e.dataTransfer.setData('application/x-photo-path', props.file.path);
-  e.dataTransfer.effectAllowed = 'move';
+  // 多 MIME:x-photo-path 供内部移动;uri-list/plain/DownloadURL 供拖到外部(桌面下载/浏览器打开/其他应用)
+  const dt = e.dataTransfer;
+  const url = props.file.blobUrl;
+  dt.setData('application/x-photo-path', props.file.path);
+  dt.setData('text/uri-list', url);
+  dt.setData('text/plain', url);
+  dt.setData('DownloadURL', `${props.file.type}:${props.file.name}:${url}`);
+  dt.effectAllowed = 'all';
 }
 </script>
 
