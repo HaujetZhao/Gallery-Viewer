@@ -3,7 +3,7 @@
  * 源码原本是 DOM 操作类(createRoot/createSpecial、setActive 切 class 等),Vue 后 DOM 渲染交给 Sidebar.vue 的 v-for,
  * 本类只保留树数据结构 + 展开/激活/空状态 + syncChildren diff 算法(用于增量扫描后同步状态)。
  */
-import { windowsCompareStrings } from '../utils/format';
+import { windowsCompareStrings } from '../utils/format.js';
 
 // 模块级注册表:仅做内存管理(unregister),不再管 activeNode(激活态单一来源交 store.currentFolder)
 export const treeNodeRegistry = {

@@ -2,7 +2,7 @@
 // applyTheme 保留 :root.style.setProperty 注入 CSS 变量的机制(与 Vue 不冲突,最稳)。
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import { useUserSettingsStore } from './userSettings';
+import { useUserSettingsStore } from './userSettings.js';
 
 // 三套主题的 variables 键不一致(dark 独有语义色 + text-inverse、forest 无 gray 系列)是源码现状,照搬不对齐。
 export const THEMES = {
