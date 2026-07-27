@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onBeforeUnmount, ref } from 'vue';
+import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue';
 import { useThemeStore } from './stores/theme.js';
 import { useFsStore } from './stores/fs.js';
 import { useUserSettingsStore } from './stores/userSettings.js';
@@ -18,7 +18,8 @@ import { useScrollZone } from './composables/useScrollZone.js';
 const themeStore = useThemeStore();
 const fsStore = useFsStore();
 const settings = useUserSettingsStore();
-const search = useGallerySearch();
+// 解构成顶层 ref(模板才自动解包,否则 search.filteredCount 显示 [object Object])
+const { searchTerm, filteredCount, totalCount } = useGallerySearch();
 
 const sidebarPinned = computed(() => !!settings.settings.sidebarPinned);
 const sidebarWidth = computed(() => settings.settings.sidebarWidth || 280);
@@ -26,6 +27,13 @@ const mainStyle = computed(() => ({
   marginLeft: sidebarPinned.value ? sidebarWidth.value + 'px' : '0px',
   width: sidebarPinned.value ? `calc(100% - ${sidebarWidth.value}px)` : '100%',
 }));
+
+// body.sidebar-pinned class:让 .settings-btn 等依赖 body class 的 CSS 生效
+watch(
+  sidebarPinned,
+  (v) => document.body.classList.toggle('sidebar-pinned', v),
+  { immediate: true },
+);
 
 const settingsOpen = ref(false);
 const browserSupported = isFileSystemAccessSupported();
@@ -96,8 +104,8 @@ function onKeydown(e) {
     </button>
 
     <div v-if="fsStore.currentFolder" class="filter-container">
-      <input type="text" v-model="search.searchTerm" placeholder="搜索文件名..." />
-      <div class="filter-count">{{ search.filteredCount }}/{{ search.totalCount }}</div>
+      <input type="text" v-model="searchTerm" placeholder="搜索文件名..." />
+      <div class="filter-count">{{ filteredCount }}/{{ totalCount }}</div>
     </div>
 
     <SettingsPanel v-model="settingsOpen" />

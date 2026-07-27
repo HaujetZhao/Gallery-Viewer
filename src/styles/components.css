@@ -178,11 +178,12 @@ body.sidebar-pinned .settings-btn {
 
 .filter-container input[type="text"] {
     padding: 12px 20px;
-    border: 1px solid #d1d9e6;
+    border: 1px solid var(--color-gray-300);
     border-radius: 25px;
     font-size: 14px;
     width: 250px;
-    background-color: white;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
     transition: all 0.3s ease;
     padding-right: 80px;
@@ -216,7 +217,7 @@ body.sidebar-pinned .settings-btn {
     top: 80px;
     left: 80px;
     width: 350px;
-    background-color: white;
+    background-color: var(--bg-primary);
     border-radius: 10px;
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
     z-index: 200;
@@ -229,7 +230,7 @@ body.sidebar-pinned .settings-btn {
 }
 
 .settings-header {
-    background-color: #2C3E50;
+    background-color: var(--sidebar-bg);
     padding: 15px;
     display: flex;
     justify-content: space-between;
@@ -272,10 +273,10 @@ body.sidebar-pinned .settings-btn {
 }
 
 .info-item {
-    background-color: #f8f9fa;
+    background-color: var(--bg-secondary);
     padding: 10px;
     border-radius: 6px;
-    border: 1px solid #e1e5eb;
+    border: 1px solid var(--color-gray-200);
 }
 
 .info-value {
@@ -323,13 +324,13 @@ body.sidebar-pinned .settings-btn {
 
 .separator {
     height: 1px;
-    background-color: #e1e5eb;
+    background-color: var(--color-gray-200);
     margin: 15px 0;
 }
 
 .setting-item label {
     font-size: 14px;
-    color: #2c3e50;
+    color: var(--text-primary);
     font-weight: 600;
     min-width: 80px;
 }
@@ -337,10 +338,11 @@ body.sidebar-pinned .settings-btn {
 .setting-item select {
     flex: 1;
     padding: 8px 12px;
-    border: 1px solid #d1d9e6;
+    border: 1px solid var(--color-gray-300);
     border-radius: 6px;
     font-size: 14px;
-    background-color: white;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
     cursor: pointer;
 }
 
@@ -367,7 +369,7 @@ body.sidebar-pinned .settings-btn {
 .setting-item span {
     min-width: 50px;
     text-align: right;
-    color: #2C3E50;
+    color: var(--text-primary);
     font-weight: bold;
     font-size: 12px;
 }

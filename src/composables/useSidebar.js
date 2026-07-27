@@ -1,6 +1,6 @@
-// 侧边栏 composable。钉住 + 拖拽缩放(保留源码幽灵 resize-helper + ResizeObserver 方案,CSS 直接复用)。
-// pinned/width 持久化到 userSettings,App.vue 的 main-wrapper 据此调 margin-left。
-import { ref, onMounted, onBeforeUnmount } from 'vue';
+// 侧边栏 composable。钉住 + 拖拽缩放(保留源码幽灵 resize-helper + ResizeObserver 方案)。
+// pinned/width 持久化到 userSettings;--sidebar-width 设到 :root(全局可访问,如 .settings-btn 的 left)。
+import { ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import { useUserSettingsStore } from '../stores/userSettings.js';
 import { CONFIG } from '../config/index.js';
 
@@ -15,7 +15,14 @@ export function useSidebar(resizeElRef) {
     settings.set('sidebarPinned', pinned.value);
   }
 
+  // 把 --sidebar-width 设到 :root(全局可访问,如 .settings-btn 的 left 计算)
+  function applyWidthVar(w) {
+    document.documentElement.style.setProperty('--sidebar-width', w + 'px');
+  }
+  watch(width, (w) => applyWidthVar(w));
+
   onMounted(() => {
+    applyWidthVar(width.value);
     const el = resizeElRef.value;
     if (!el) return;
     el.style.width = width.value + 'px'; // 恢复持久化宽度
