@@ -91,6 +91,8 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
   // ===== 鼠标拖拽 =====
   function onMouseDown(e) {
     if (!modal.isOpen || e.button !== 0) return;
+    // 音频播放器内(音量滑块/按钮)及其他交互控件放行原生行为,否则 preventDefault 会拦住滑块拖动
+    if (e.target.closest('.modal-audio-player, input, button, select, textarea')) return;
     e.preventDefault();
     panning = true;
     startX = e.clientX - pointX.value;
