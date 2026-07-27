@@ -23,6 +23,14 @@ const progressPct = computed(() => (duration.value ? (currentTime.value / durati
 const volumeIcon = computed(() =>
   volume.value === 0 ? 'fas fa-volume-mute' : volume.value < 0.5 ? 'fas fa-volume-down' : 'fas fa-volume-up',
 );
+// 音量滑块 v-model(0-100 ↔ volume 0-1)。v-model 比 :value+@input 拖动更顺(不受控拉回)。
+const volumeModel = computed({
+  get: () => volume.value * 100,
+  set: (v) => {
+    volume.value = v / 100;
+    if (audioEl.value) audioEl.value.volume = volume.value;
+  },
+});
 
 let visualTimer = null;
 let dragging = false;
@@ -40,9 +48,11 @@ function togglePlay() {
 }
 
 function onTimeUpdate() {
+  if (!audioEl.value) return; // 卸载后 timeupdate 可能仍触发(切到非音频)
   currentTime.value = audioEl.value.currentTime;
 }
 function onLoadedMeta() {
+  if (!audioEl.value) return;
   duration.value = audioEl.value.duration;
 }
 function onEnded() {
@@ -68,10 +78,6 @@ function onDragEnd() {
   dragging = false;
 }
 
-function onVolume(e) {
-  volume.value = e.target.value / 100;
-  audioEl.value.volume = volume.value;
-}
 function toggleMute() {
   if (volume.value > 0) {
     prevVolume.value = volume.value;
@@ -199,14 +205,7 @@ onBeforeUnmount(() => {
             <button class="control-btn volume-btn" @click="toggleMute" title="静音">
               <i :class="volumeIcon"></i>
             </button>
-            <input
-              type="range"
-              class="volume-slider"
-              min="0"
-              max="100"
-              :value="volume * 100"
-              @input="onVolume"
-            />
+            <input type="range" class="volume-slider" min="0" max="100" v-model="volumeModel" />
           </div>
         </div>
       </div>
