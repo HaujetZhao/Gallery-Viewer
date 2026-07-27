@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 import { useModalStore } from '../stores/modal.js';
 import { useModal } from '../composables/useModal.js';
+import AudioPlayer from './AudioPlayer.vue';
 
 const modal = useModalStore();
 const modalEl = ref(null);
@@ -44,12 +45,12 @@ const { loading, svgText, mediaKind, isHoveringVideo, onImgLoad, copyCurrent } =
           class="modal-media svg-container"
           v-html="svgText"
         ></div>
-        <audio
+        <AudioPlayer
           v-else-if="mediaKind === 'audio'"
-          :src="modal.currentFile.blobUrl"
-          controls
-          autoplay
-        ></audio>
+          :file="modal.currentFile"
+          @prev="modal.prev()"
+          @next="modal.next()"
+        />
       </div>
       <div v-if="loading" class="loader">
         <i class="fas fa-spinner fa-spin"></i>
