@@ -57,6 +57,16 @@ const columns = computed(() => {
 // content-visibility 估算高度(源码:(innerWidth-300)/colCount+60)
 const estHeight = computed(() => `${Math.round((window.innerWidth - 300) / colCount.value) + 60}px`);
 
+// thumbnailSize 变 → rerunKey++ → PhotoCard :key 变 → 重建重绘(新缓存键 md5_size)
+const rerunKey = ref(0);
+watch(
+  () => settings.settings.thumbnailSize,
+  () => {
+    rerunKey.value++;
+    unobserveAll();
+  },
+);
+
 // 点击卡片 → 打开 Modal(传 displayFiles 供翻页)
 function openPreview(file) {
   modal.open(file, displayFiles.value);
@@ -100,7 +110,7 @@ onBeforeUnmount(() => unobserveAll());
       <div v-for="(col, i) in columns" :key="i" class="masonry-col">
         <PhotoCard
           v-for="f in col"
-          :key="f.path"
+          :key="f.path + '-' + rerunKey"
           :file="f"
           :target-size="settings.settings.thumbnailSize"
           @click="openPreview(f)"
