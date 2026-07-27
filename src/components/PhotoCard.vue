@@ -9,6 +9,8 @@ const props = defineProps({
   targetSize: { type: Number, default: 400 },
 });
 
+defineEmits(['click']);
+
 const strategy = computed(() => getThumbnailStrategy(props.file.type));
 const badge = computed(() => strategy.value.getCardBadge());
 // image/video/audio → canvas;gif → img;svg → object
@@ -19,7 +21,7 @@ const { loaded, loading } = useThumbnail(mediaEl, props.file, props.targetSize);
 </script>
 
 <template>
-  <div class="photo-card" draggable="true">
+  <div class="photo-card" draggable="true" @click="$emit('click')">
     <div class="thumbnail-container">
       <canvas
         v-if="isCanvas"

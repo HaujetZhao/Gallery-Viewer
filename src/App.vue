@@ -7,6 +7,7 @@ import { initDB } from './services/db.js';
 import { openFolderPicker } from './services/filesystem.js';
 import Sidebar from './components/Sidebar.vue';
 import Gallery from './components/Gallery.vue';
+import MediaModal from './components/MediaModal.vue';
 
 const themeStore = useThemeStore();
 const fsStore = useFsStore();
@@ -59,6 +60,8 @@ async function open() {
         <p>点击「打开文件夹」选择一个含图片/视频的目录</p>
       </div>
     </div>
+
+    <MediaModal />
   </div>
 </template>
 

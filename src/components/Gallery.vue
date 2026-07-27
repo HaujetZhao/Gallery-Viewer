@@ -2,12 +2,14 @@
 import { computed, ref, watch, onBeforeUnmount } from 'vue';
 import { useFsStore } from '../stores/fs.js';
 import { useUserSettingsStore } from '../stores/userSettings.js';
+import { useModalStore } from '../stores/modal.js';
 import { windowsCompareStrings, debounce } from '../utils/format.js';
 import { unobserveAll } from '../composables/useThumbnail.js';
 import PhotoCard from './PhotoCard.vue';
 
 const fsStore = useFsStore();
 const settings = useUserSettingsStore();
+const modal = useModalStore();
 
 // 搜索(本地,不持久化)。v-model + 300ms 防抖更新 searchTerm。
 const searchInput = ref('');
@@ -55,6 +57,11 @@ const columns = computed(() => {
 // content-visibility 估算高度(源码:(innerWidth-300)/colCount+60)
 const estHeight = computed(() => `${Math.round((window.innerWidth - 300) / colCount.value) + 60}px`);
 
+// 点击卡片 → 打开 Modal(传 displayFiles 供翻页)
+function openPreview(file) {
+  modal.open(file, displayFiles.value);
+}
+
 // 切换文件夹时清 observer(避免观察旧卡片)
 watch(
   () => fsStore.currentFolder,
@@ -96,6 +103,7 @@ onBeforeUnmount(() => unobserveAll());
           :key="f.path"
           :file="f"
           :target-size="settings.settings.thumbnailSize"
+          @click="openPreview(f)"
         />
       </div>
     </div>
