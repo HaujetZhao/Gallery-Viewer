@@ -55,10 +55,13 @@ export function gcj02ToBd09(lon, lat) {
 
 // 从 EXIF GPS 字段生成三家地图 URL(经纬度顺序差异内化在此,模板不会写错)。
 // Google=WGS84(纬,经);高德=GCJ-02(经,纬);百度=BD-09(纬,经)。
+// 兼容 DMS 数组(exif-js)和十进制(exifr,带符号)两种 GPS 格式。
 export function buildGpsLinks(exifTags) {
   if (!exifTags?.GPSLatitude || !exifTags?.GPSLongitude) return null;
-  const latDec = convertDMSToDD(exifTags.GPSLatitude, exifTags.GPSLatitudeRef || 'N');
-  const lonDec = convertDMSToDD(exifTags.GPSLongitude, exifTags.GPSLongitudeRef || 'E');
+  const rawLat = exifTags.GPSLatitude;
+  const rawLon = exifTags.GPSLongitude;
+  const latDec = Array.isArray(rawLat) ? convertDMSToDD(rawLat, exifTags.GPSLatitudeRef || 'N') : Number(rawLat);
+  const lonDec = Array.isArray(rawLon) ? convertDMSToDD(rawLon, exifTags.GPSLongitudeRef || 'E') : Number(rawLon);
   if (isNaN(latDec) || isNaN(lonDec)) return null;
   const [gcjLon, gcjLat] = wgs84ToGcj02(lonDec, latDec);
   const [bdLon, bdLat] = gcj02ToBd09(gcjLon, gcjLat);

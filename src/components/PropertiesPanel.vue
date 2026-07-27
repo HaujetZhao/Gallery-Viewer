@@ -44,8 +44,15 @@ const gps = computed(() => buildGpsLinks(exif.value));
 function fmtExifVal(key, val, tags) {
   if (key === 'ExposureTime' && val < 1 && val > 0) return `1/${Math.round(1 / val)}`;
   if (key === 'FocalLength' || key === 'FocalLengthIn35mmFilm') return val + ' mm';
-  if (key === 'GPSLatitude') return FormatDMS(val) + (tags.GPSLatitudeRef ? ' ' + tags.GPSLatitudeRef : '');
-  if (key === 'GPSLongitude') return FormatDMS(val) + (tags.GPSLongitudeRef ? ' ' + tags.GPSLongitudeRef : '');
+  // GPS 兼容 DMS 数组(exif-js)和十进制(exifr)
+  if (key === 'GPSLatitude') {
+    const s = Array.isArray(val) ? FormatDMS(val) : typeof val === 'number' ? val.toFixed(6) : val;
+    return s + (tags.GPSLatitudeRef ? ' ' + tags.GPSLatitudeRef : '');
+  }
+  if (key === 'GPSLongitude') {
+    const s = Array.isArray(val) ? FormatDMS(val) : typeof val === 'number' ? val.toFixed(6) : val;
+    return s + (tags.GPSLongitudeRef ? ' ' + tags.GPSLongitudeRef : '');
+  }
   if (key === 'GPSAltitude') return val + ' m';
   return val;
 }
