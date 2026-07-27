@@ -69,19 +69,22 @@ export async function loadProject(handle) {
   return root;
 }
 
-// 深度优先递归后台扫描。scan 已把 subFolder 加到 parent.subFolders,Vue 组件 v-for 响应式渲染。
+// 后台递归扫描子目录。同级并发(Promise.all)——原串行 await 大目录树太慢,
+// 用户在扫到深层前会以为"子目录没扫"。仍深度优先,但同级并行。
 export async function startBackgroundScan(parentFolder) {
-  if (!parentFolder || !parentFolder.subFolders) return;
-  for (const subFolderData of parentFolder.subFolders) {
-    try {
-      if (!subFolderData.scanned) {
-        await subFolderData.scan();
+  if (!parentFolder || !parentFolder.subFolders?.length) return;
+  await Promise.all(
+    parentFolder.subFolders.map(async (subFolderData) => {
+      try {
+        if (!subFolderData.scanned) {
+          await subFolderData.scan();
+        }
+        await startBackgroundScan(subFolderData);
+      } catch (e) {
+        console.warn('后台扫描子文件夹失败:', subFolderData.name, e);
       }
-      await startBackgroundScan(subFolderData);
-    } catch (e) {
-      console.warn('后台扫描子文件夹失败:', subFolderData.name, e);
-    }
-  }
+    }),
+  );
 }
 
 // 清状态后重载整个项目。

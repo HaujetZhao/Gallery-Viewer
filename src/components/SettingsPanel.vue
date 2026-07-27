@@ -28,8 +28,17 @@ watch(
     if (open) {
       await refreshStorage();
       await nextTick();
-      left.value = Math.max(80, window.innerWidth - 370);
-      top.value = 80;
+      // 贴近设置按钮(左上;sidebar-pinned 时右移)正下方,而非固定窗口右侧
+      const btn = document.querySelector('.settings-btn');
+      const panelWidth = 350;
+      if (btn) {
+        const r = btn.getBoundingClientRect();
+        left.value = Math.max(10, Math.min(r.left, window.innerWidth - panelWidth - 10));
+        top.value = r.bottom + 8;
+      } else {
+        left.value = Math.max(10, window.innerWidth - panelWidth - 20);
+        top.value = 80;
+      }
     }
   },
 );
