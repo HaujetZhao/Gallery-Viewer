@@ -8,7 +8,11 @@ const modalEl = ref(null);
 const contentEl = ref(null);
 const mediaEl = ref(null);
 
-const { loading, svgText, mediaKind, onImgLoad, copyCurrent } = useModal(modalEl, contentEl, mediaEl);
+const { loading, svgText, mediaKind, isHoveringVideo, onImgLoad, copyCurrent } = useModal(
+  modalEl,
+  contentEl,
+  mediaEl,
+);
 </script>
 
 <template>
@@ -30,6 +34,8 @@ const { loading, svgText, mediaKind, onImgLoad, copyCurrent } = useModal(modalEl
           class="modal-media modal-video"
           :src="modal.currentFile.blobUrl"
           controls
+          @mouseenter="isHoveringVideo = true"
+          @mouseleave="isHoveringVideo = false"
         />
         <div
           v-else-if="mediaKind === 'svg'"

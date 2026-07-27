@@ -1,6 +1,6 @@
 // Modal 交互 composable。搬自源码 js/modal.js 的手势/键盘/复制 + events.js 的翻页/视频键盘。
 // scale/translate 用 style 独立属性(源码如此,浏览器更优路径)。LRU 缓存推迟阶段10。
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
+import { ref, computed, watch, onBeforeUnmount, nextTick } from 'vue';
 import { useModalStore } from '../stores/modal.js';
 import { CONFIG } from '../config/index.js';
 import { FileTypes } from '../config/file-types.js';
@@ -258,33 +258,9 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
     }
   }
 
-  // 切换文件时重置变换 + 按需加载 svg
-  watch(
-    () => modal.currentFile,
-    async (f) => {
-      if (!f) return;
-      resetTransform();
-      loading.value = mediaKind.value !== 'audio';
-      svgText.value = '';
-      if (mediaKind.value === 'svg') await loadSvg();
-    },
-  );
-
-  // isOpen 变化时挂/卸键盘
-  watch(
-    () => modal.isOpen,
-    (open) => {
-      if (open) {
-        window.addEventListener('keydown', onKeydown);
-        nextTick(() => resetTransform());
-      } else {
-        window.removeEventListener('keydown', onKeydown);
-      }
-    },
-  );
-
-  // 手势监听挂 modalEl(passive:false 才能 preventDefault)
-  onMounted(() => {
+  // ===== 事件挂载:必须在 modal 显示后(modalEl 已渲染)挂,不能在 onMounted 挂 =====
+  // (初始 isOpen=false,modal v-if 不渲染,modalEl.value 为 null)
+  function attachGestures() {
     const el = modalElRef.value;
     if (!el) return;
     el.addEventListener('wheel', onWheel, { passive: false });
@@ -294,9 +270,9 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
     el.addEventListener('touchend', onTouchEnd);
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
-  });
+  }
 
-  onBeforeUnmount(() => {
+  function detachGestures() {
     const el = modalElRef.value;
     if (el) {
       el.removeEventListener('wheel', onWheel);
@@ -307,6 +283,40 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
     }
     window.removeEventListener('mousemove', onMouseMove);
     window.removeEventListener('mouseup', onMouseUp);
+  }
+
+  // 切换文件时重置变换 + 按需加载 svg
+  watch(
+    () => modal.currentFile,
+    async (f) => {
+      if (!f) return;
+      resetTransform();
+      loading.value = mediaKind.value !== 'audio';
+      svgText.value = '';
+      isHoveringVideo.value = false;
+      if (mediaKind.value === 'svg') await loadSvg();
+    },
+  );
+
+  // isOpen 变化:open 时 nextTick 挂事件(modalEl 此时已渲染),close 时卸。
+  watch(
+    () => modal.isOpen,
+    (open) => {
+      if (open) {
+        window.addEventListener('keydown', onKeydown);
+        nextTick(() => {
+          resetTransform();
+          attachGestures();
+        });
+      } else {
+        window.removeEventListener('keydown', onKeydown);
+        detachGestures();
+      }
+    },
+  );
+
+  onBeforeUnmount(() => {
+    detachGestures();
     window.removeEventListener('keydown', onKeydown);
   });
 
