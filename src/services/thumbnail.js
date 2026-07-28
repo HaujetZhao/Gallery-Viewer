@@ -43,9 +43,11 @@ export async function generateThumbnail(file, canvas, targetSize = 400) {
   // 缓存路径:image/video/audio。md5 懒加载(首次算后存 file.md5)。
   if (!file.md5) {
     // 复用 ensureBlobUrl 已 acquire 的 File(peek 命中,不二次 getFile)。
-    // 注意:复用只消除"重复 getFile",不消除"读前 2MB 算 md5"的 IO——
-    // 首切每张可见图仍读 2MB(calculateMD5 chunkSize=2097152,有兼容性锁不可改)。
-    // 改键换 size+mtime 会丢改名缓存命中 + 破坏旧 IDB key 兼容,已知取舍,不做。
+    // 为何 md5(前 2MB)而非 size+mtime 当缓存键:
+    //   ① 内容寻址——同一张照片在不同文件夹(不同 handle/路径,如父/子文件夹或复制副本),
+    //      md5 相同即可共享同一份缩略图缓存;size+mtime 对「不同物理文件」必然 miss(mtime 随复制变)。
+    //   ② md5 随快照持久化,切回时 file.md5 已恢复 → 直接查缓存,零 md5 计算、零 2MB 读(秒切零重算)。
+    // 代价:首切每张可见图读 2MB 算 md5(按需、视窗触发,非万张预扫)。chunkSize=2097152 锁定(旧 IDB key 兼容)。
     const raw = peek(file)?.file ?? await file.handle.getFile();
     file.md5 = await calculateMD5(raw);
   }

@@ -54,7 +54,7 @@ docs/superpowers/        # specs(设计 + 实现记录)+ plans(实施计划)
 3. **资源走 fileResource 池**（[fileResource.js](src/services/fileResource.js)）：blobUrl/File 集中管理（`acquire`/`destroy`/`peek`，带 in-flight 去重 + inflight cancel）。SmartFile 是池的门面（`blobUrl`/`size`/`lastModified` 是 getter）。**不要直接 `URL.createObjectURL`/`revokeObjectURL`**；size/mtime 单源在 `SmartFile._meta`（响应式），不进池。
 4. **持久化走 schedulePersist**：改树（scan 命中增删 / rename / delete / move）由 `integrateScanResult` 或 `history` 置 `fs.rootDirty=true` + `schedulePersist(id)`（1s debounce 合并写，不阻塞点击）。**不要直接 `saveScan`**。切根前 `flushPendingPersist` 落盘旧根（reload 用 `cancelPendingPersist`——重扫从盘重建）；`persistIfDirty` 仅 dirty 时 `toSnapshot`+`getAllFiles`。
 5. **CSS 全局复用**：`src/styles/` 的全局 CSS（`main.js` 全局 import）。组件**不重写这些 CSS**，模板直接用其 class（如 `.photo-card` / `.gallery-row` / `.tree-node` / `.modal-audio-player`）。组件 scoped 样式只补 CSS 里没有的。
-6. **核心算法稳定**：scan 纯列表差集 + 信任名字集合短路、enrich 并发 getFile 补 size/mtime、GPS（魔数）、ID3、`.trash` 镜像回收站、calculateMD5（前 2MB 缓存键——**首开缩略图的天花板；改键换 size+mtime 会丢改名缓存命中 + 破旧 IDB key 兼容，不动**）。后续改动配测试。
+6. **核心算法稳定**：scan 纯列表差集 + 信任名字集合短路、enrich 并发 getFile 补 size/mtime、GPS（魔数）、ID3、`.trash` 镜像回收站、calculateMD5（前 2MB 缓存键——**内容寻址：跨文件夹/复制副本的同图共享一份缩略图缓存（size+mtime 做不到，mtime 随复制变）；md5 随快照持久化 → 秒切零重算；按需计算（视窗触发）非万张预扫。chunkSize 锁定保旧 IDB key 兼容，不动**）。后续改动配测试。
 7. **跨组件状态进 Pinia store；组件私有状态用 `ref`/`reactive`**。
 8. **主题切换**：`useThemeStore.applyTheme` 用 `document.documentElement.style.setProperty` 注入 CSS 变量（切主题先清残留再设新值，见 [theme.js](src/stores/theme.js)）。
 
