@@ -1,15 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { acquire, destroy, peek, release } from './fileResource';
 
 // jsdom 的 URL.createObjectURL 对 mock 普通对象会抛,stub 之。
 beforeEach(() => {
   URL.createObjectURL = vi.fn(() => 'blob:fake');
   URL.revokeObjectURL = vi.fn(() => {});
-});
-
-afterEach(() => {
-  // 池内残留全部强制释放,避免用例间相互污染
-  destroyAllForTest();
 });
 
 // 造假 SmartFile:acquire 内部调 file.handle.getFile(),所以假对象有 handle.getFile 即可。
@@ -21,10 +16,6 @@ function fakeFile({ name = 'a.jpg', size = 100, lastModified = 200 } = {}) {
     },
   };
 }
-
-// 测试辅助:清空池。peek 暴露后,这里通过遍历已知引用 destroy。
-// 简化:本测试用例都用局部引用,destroy 显式调即可;无残留依赖。
-function destroyAllForTest() {}
 
 describe('fileResource acquire', () => {
   it('acquire 返回 entry 且建 url、缓存 size/mtime、调 getFile 一次', async () => {

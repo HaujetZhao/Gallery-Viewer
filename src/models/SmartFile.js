@@ -95,8 +95,8 @@ export class SmartFile {
       return true;
     }
     catch (err) {
-      // move 失败,文件还在,重建 url
-      await acquire(this).catch(() => {});
+      // move 失败,文件还在,重建 url(getFile 通常仍成功;失败则 blobUrl=null,记 warn 便于排查图裂)
+      await acquire(this).catch(e => console.warn('重命名失败后重建资源失败,blobUrl 将为 null:', e));
       console.error('重命名失败:', err);
       throw err;
     }

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { acquire, destroy } from '../services/fileResource';
 import { SmartFile } from './SmartFile';
 
@@ -6,11 +6,6 @@ import { SmartFile } from './SmartFile';
 beforeEach(() => {
   URL.createObjectURL = vi.fn(() => 'blob:fake');
   URL.revokeObjectURL = vi.fn(() => {});
-});
-
-// 测试间清池,避免残留条目串味。
-afterEach(() => {
-  // 没法遍历池,但每个用例自己 destroy 自己造的 file。
 });
 
 describe('smartFile rehydrate', () => {

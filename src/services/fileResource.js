@@ -28,6 +28,10 @@ function dropEntry(file, entry) {
 
 // 懒取 File + 建 url + 缓存。preloaded=已 fetch 的 File(scan/undo 复用,避免重复 IO)。
 // owner=引用身份,默认 file 自身;多次 acquire 复用同一 url,owners 记账。
+//
+// ponytail 前置约束:不得【并发】acquire 同一 file——两个 in-flight acquire 会各自 getFile+建 url,
+// 第二个覆盖池条目,第一个 url 泄漏。Phase 1-2 无此调用模式(scan 每 file 一次、ensureBlobUrl 单文件、
+// 缩略图走 handle.getFile 不经池);并发安全随 handle-identity 共享一并加(设计文档 §8 YAGNI)。
 export async function acquire(file, owner = file, preloaded = null) {
   let entry = pool.get(file);
   if (!entry) {
@@ -40,6 +44,8 @@ export async function acquire(file, owner = file, preloaded = null) {
 }
 
 // 释放一个 owner;owners 归零 → revoke + 删 entry。
+// ponytail: Phase 1 无生产调用方(所有释放走 destroy);release + owners 引用计数为 Phase 2+ 多视图
+// 共享同一 url 按 owner 释放预留。owners 是 Set(身份去重),非次数计数——同 owner 多次 acquire 只算一个。
 export function release(file, owner = file) {
   const entry = pool.get(file);
   if (!entry)
