@@ -112,6 +112,9 @@ watch(
     unobserveAll();
     searchTerm.value = '';
     debouncedTerm.value = ''; // 立即清,不等 debounce
+    // 整页滚动:切换文件夹必须回顶。useWindowVirtualizer 按当前 scrollY 渲染可视行,
+    // 不归零会停在旧文件夹的滚动位置 → 渲染新文件夹中间行(错位 + 转圈)。
+    window.scrollTo(0, 0);
   },
 );
 onBeforeUnmount(() => {
