@@ -170,7 +170,7 @@ export class SmartFolder {
   }
 
   // 后台补全:并发 getFile 给"待补"文件填 size/mtime(_meta),触发 Vue 响应式让 sort 重排。
-  // targets = 池空(peek null)且 _meta 未写的文件 —— 即 scan/listFolder 新建的项。
+  // targets = 池空(peek null)且 _meta 未写的文件 —— 即 scanFolder 新建的项。
   // 信任短路后既有项 _meta 有 → targets 空 → 零 getFile(信任路零 IO)。
   // 写 _meta 是响应式关键:_meta 是 SmartFile 实例字段(在 store 的 reactive files 数组里),
   // 属性变更触发 Vue 重渲;peek 读普通 Map 不响应式 —— 不能依赖 peek 触发 sort。
@@ -260,7 +260,8 @@ export async function scanFolder(folder, { trust = false } = {}) {
     }
   }
 
-  // ③ 信任短路:文件名 + 目录名集合都与缓存一致 → 零 IO,result.files 沿用 folder.files
+  // ③ 信任短路:文件名 + 目录名集合都与缓存一致 → 零 IO,result.files 直接引用 folder.files
+  //    (零拷贝;integrateScanResult 自赋值 no-op。勿改浅拷贝——会退化。)
   if (trust && sameNameSet(existingFilesMap, currentFileEntries) && sameNameSet(existingFoldersMap, currentDirEntries)) {
     return {
       files: folder.files,

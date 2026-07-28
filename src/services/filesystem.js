@@ -37,6 +37,8 @@ export function integrateScanResult(folder, result, fs) {
   folder.subFolders = result.subFolders;
   folder.scanned = true;
   folder.treeNode?.refreshState();
+  // result.newSubFolders 是 scanFolder 新建的「原始」对象,set 进 reactive Map 后被代理化。
+  // 后续若要写回某 sub,必须 foldersData.get(sub.path) 取代理(recovery.js startBackgroundScan 即如此),勿直接用原始 sub 写回(不响应式)。
   for (const sub of result.newSubFolders)
     fs.foldersData.set(sub.path, sub); // 注册新子目录(path→folder)
   for (const sub of result.removedFolders) {
@@ -193,7 +195,7 @@ export async function startBackgroundScan(parentFolder, token = bgToken) {
   if (!parentFolder)
     return;
   const fs = useFsStore();
-  // Phase 2:先补当前层 files 的 size/mtime(listFolder 零 getFile 后,新文件 _meta=null)
+  // Phase 2/3:先补当前层 files 的 size/mtime(scanFolder 零 getFile 后,新文件 _meta=null)
   await parentFolder.enrich({ token });
   if (!parentFolder.subFolders)
     return;
