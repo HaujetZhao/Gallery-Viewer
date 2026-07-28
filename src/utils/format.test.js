@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatBytes, formatDate, formatFileSize, windowsCompareStrings } from './format';
+import { formatDate, formatFileSize, windowsCompareStrings } from './format';
 
 describe('formatFileSize', () => {
   it('0 → "0 B"', () => {
@@ -18,11 +18,8 @@ describe('formatFileSize', () => {
   it('1048576 → "1 MB"', () => {
     expect(formatFileSize(1048576)).toBe('1 MB');
   });
-});
-
-describe('formatBytes', () => {
-  it('0 → "0 Bytes"', () => {
-    expect(formatBytes(0)).toBe('0 Bytes');
+  it('1 TB 显示(修 >1TB 显示 undefined 的 bug)', () => {
+    expect(formatFileSize(1024 ** 4)).toBe('1 TB');
   });
 });
 

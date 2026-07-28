@@ -1,19 +1,10 @@
 // 格式化与排序工具。搬自源码 js/utils.js,无外部依赖。
 
-export function formatBytes(bytes, decimals = 2) {
-  if (bytes === 0)
-    return '0 Bytes';
-  const k = 1024;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${Number.parseFloat((bytes / k ** i).toFixed(decimals))} ${sizes[i]}`;
-}
-
 export function formatFileSize(bytes) {
   if (bytes === 0)
     return '0 B';
   const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${Number.parseFloat((bytes / k ** i).toFixed(2))} ${sizes[i]}`;
 }
