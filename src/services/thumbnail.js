@@ -11,23 +11,19 @@ import { peek } from './fileResource';
 import { getThumbnailStrategy } from './thumbnail-strategies';
 
 // 把缓存 blob 画到 canvas(缓存恢复,不做缩放,blob 本就是 targetSize 方图)。
-function drawBlobToCanvas(canvas, blob) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(blob);
-    img.onload = () => {
-      canvas.width = img.width;
-      canvas.height = img.height;
-      canvas.getContext('2d').drawImage(img, 0, 0);
-      URL.revokeObjectURL(url);
-      resolve();
-    };
-    img.onerror = (e) => {
-      URL.revokeObjectURL(url);
-      reject(e);
-    };
-    img.src = url;
-  });
+// R3-1:createImageBitmap 解码(与 image 策略同型热路径,缓存命中也走解码,首切提速同样受益)。
+// cached.blob 是之前 canvas.toBlob 存的"已正向" jpeg,但 createImageBitmap 默认 imageOrientation:'none',
+// 为与原 <img> 行为保持一致(防御性,即使 jpeg 已正向也无害),仍传 'from-image'。
+async function drawBlobToCanvas(canvas, blob) {
+  const bitmap = await createImageBitmap(blob, { imageOrientation: 'from-image' });
+  try {
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    canvas.getContext('2d').drawImage(bitmap, 0, 0);
+  }
+  finally {
+    bitmap.close?.(); // 释放位图内存
+  }
 }
 
 // 生成缩略图并画到 canvas。返回 { cached, strategyName }。
@@ -46,7 +42,10 @@ export async function generateThumbnail(file, canvas, targetSize = 400) {
 
   // 缓存路径:image/video/audio。md5 懒加载(首次算后存 file.md5)。
   if (!file.md5) {
-    // ensureBlobUrl 已 acquire,peek 有 File —— 直接复用,省一次 getFile
+    // 复用 ensureBlobUrl 已 acquire 的 File(peek 命中,不二次 getFile)。
+    // 注意:复用只消除"重复 getFile",不消除"读前 2MB 算 md5"的 IO——
+    // 首切每张可见图仍读 2MB(calculateMD5 chunkSize=2097152,有兼容性锁不可改)。
+    // 改键换 size+mtime 会丢改名缓存命中 + 破坏旧 IDB key 兼容,已知取舍,不做。
     const raw = peek(file)?.file ?? await file.handle.getFile();
     file.md5 = await calculateMD5(raw);
   }

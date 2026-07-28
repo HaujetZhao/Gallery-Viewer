@@ -8,7 +8,8 @@ import { generateThumbnail } from '../services/thumbnail';
 // 模块级单例
 let observer = null;
 const queue = { waiting: [], activeCount: 0 };
-const MAX_CONCURRENT = CONFIG.PERFORMANCE.THUMBNAIL_QUEUE_SIZE; // 4
+// 模块首次 import 时读一次(CONFIG.PERFORMANCE.THUMBNAIL_QUEUE_SIZE,现 8);改值需刷新页面。
+const MAX_CONCURRENT = CONFIG.PERFORMANCE.THUMBNAIL_QUEUE_SIZE;
 
 // 重绘信号:forceRegenerateCurrentThumbnails 删缓存后 ++,Gallery watch 触发卡片重挂载重新生成。
 export const redrawSignal = ref(0);

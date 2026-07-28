@@ -6,7 +6,11 @@ export const CONFIG = {
     STORES: { THUMBNAILS: 'thumbnails' },
   },
   PERFORMANCE: {
-    THUMBNAIL_QUEUE_SIZE: 4,
+    // 可视区卡片同时解码的张数。值越大,首屏出图越快但 CPU/内存占用越高;
+    // CPU/内存富余可升,吃紧可降。当前 8 为稳妥选择(8 比 12 在内存吃紧时更稳)。
+    // ⚠️ 模块级常量:消费方 useThumbnail.js 的 MAX_CONCURRENT 在模块首次 import 时读一次,
+    //    改此值需刷新页面才生效,无运行时热改。
+    THUMBNAIL_QUEUE_SIZE: 8,
     INTERSECTION_MARGIN: '100px',
     DEBOUNCE_DELAY: 300,
     SCAN_CONCURRENCY: 32, // scan 内 getFile 并发上限(串行→并发,大文件夹秒级)
