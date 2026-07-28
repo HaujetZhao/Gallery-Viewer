@@ -1,31 +1,21 @@
-/**
- * SmartFile 类 - 表示一个媒体文件。搬自源码 js/model.SmartFile.js,零外部依赖。
- * blobUrl 构造时立即建(正常 scan 路径有 file);fromSnapshot 重建时懒建(ensureBlobUrl)。
- * _size/_lastModified 缓存:支持 fromSnapshot(file=null)时 getter 仍可读。
- * md5 是懒加载槽(外部算后赋值)。
- */
+// SmartFile 类 - 表示一个媒体文件。搬自源码 js/model.SmartFile.js,零外部依赖。
+// 身份(handle/name/type)+ 派生缓存(md5)留实例;browsery 资源(blobUrl)+ 元数据(file/size/mtime)抽到 fileResource 池。
+// SmartFile 当池的门面:blobUrl/size/lastModified 改 getter,消费方读语法不变(字段读 == getter 读)。
+// _meta 是 fromSnapshot 重建时的快照槽 {size, lastModified}(零 IO 重建,池空时可读)。
+// md5 是懒加载槽(外部算后赋值)。
+import { acquire, destroy, peek } from '../services/fileResource';
+
 export class SmartFile {
-  constructor({ handle, file, parent = null }) {
+  constructor({ handle, parent = null }) {
     this.handle = handle; // FileSystemFileHandle
-    this.file = file; // File 对象(可能为 null,fromSnapshot 重建时)
     this.parent = parent; // 父 SmartFolder 引用
-    this._size = file?.size; // 缓存,file=null 时 getter fallback 用
-    this._lastModified = file?.lastModified;
-    this.blobUrl = file ? URL.createObjectURL(file) : null;
-    this.dom = null; // deprecated: gallery 卡片 DOM 反向引用,新代码不依赖
+    this._meta = null; // 快照槽 { size, lastModified }(fromSnapshot 用)
     this.md5 = null; // 懒加载,外部计算后赋值
   }
 
-  // 懒建 blobUrl(fromSnapshot 重建的文件无 blobUrl;显示原图/拖拽前调)。
-  // 单文件 IO,不影响秒切换(切换只重建结构)。
+  // 懒建 blobUrl(池里无 → getFile + 建 url)。scan 正常路径已 acquire,fromSnapshot 重建需懒。
   async ensureBlobUrl() {
-    if (!this.blobUrl) {
-      this.file = await this.handle.getFile();
-      this.blobUrl = URL.createObjectURL(this.file);
-      this._size = this.file.size;
-      this._lastModified = this.file.lastModified;
-    }
-    return this.blobUrl;
+    return (await acquire(this)).url;
   }
 
   _extractType(filename) {
@@ -39,12 +29,15 @@ export class SmartFile {
     return this.handle.name;
   }
 
+  // 池里有读池(实时元数据);否则读 _meta(fromSnapshot 缓存态)。
   get size() {
-    return this.file?.size ?? this._size;
+    const e = peek(this);
+    return e ? e.size : this._meta?.size;
   }
 
   get lastModified() {
-    return this.file?.lastModified ?? this._lastModified;
+    const e = peek(this);
+    return e ? e.mtime : this._meta?.lastModified;
   }
 
   get type() {
@@ -61,7 +54,13 @@ export class SmartFile {
     return parts.join('/');
   }
 
+  // 池里读 url(可能 null,如 fromSnapshot 后未 acquire)。
+  get blobUrl() {
+    return peek(this)?.url ?? null;
+  }
+
   // 序列化为可持久化快照(plain;handle 可结构化克隆进 IDB)。不含 file/blobUrl/parent。
+  // size/lastModified 从 getter 读(池或 _meta,scan 过的读池,fromSnapshot 重建的读 _meta)。
   toSnapshot() {
     return {
       handle: this.handle,
@@ -72,16 +71,12 @@ export class SmartFile {
     };
   }
 
-  // 从快照重建(sync,零 IO)。file/blobUrl 懒(ensureBlobUrl 时从 handle 取);parent 按传参接回。
+  // 从快照重建(sync,零 IO)。handle/parent/md5 直接设;size/lastModified 落 _meta(池空时 getter 读得到)。
   static fromSnapshot(snap, parent) {
     const f = Object.create(SmartFile.prototype);
     f.handle = snap.handle;
-    f.file = null;
     f.parent = parent;
-    f._size = snap.size;
-    f._lastModified = snap.lastModified;
-    f.blobUrl = null;
-    f.dom = null;
+    f._meta = { size: snap.size, lastModified: snap.lastModified };
     f.md5 = snap.md5 ?? null;
     return f;
   }
@@ -90,24 +85,18 @@ export class SmartFile {
     if (!this.handle || !this.parent) {
       throw new Error('无法重命名：缺少必要的句柄或父级引用');
     }
-    // 先 revoke blobUrl 释放引用,避免 handle.move 报 "A FileSystemHandle cannot be moved while it is locked"
-    // (缩略图 canvas/img 持有 blobUrl 时,Chrome 视文件为锁定)。move 后再重建。
-    if (this.blobUrl) {
-      URL.revokeObjectURL(this.blobUrl);
-      this.blobUrl = null;
-    }
+    // 先 destroy 释放 url,避免 handle.move 报 "A FileSystemHandle cannot be moved while it is locked"
+    // (缩略图 canvas/img 持有 blobUrl 时,Chrome 视文件为锁定)。move 后再 acquire 重建。
+    destroy(this);
     try {
       await this.handle.move(newName);
-      const newFile = await this.handle.getFile();
-      this.file = newFile;
-      this.blobUrl = URL.createObjectURL(newFile);
+      await acquire(this); // 重新 getFile 建 url
       this.md5 = null;
       return true;
     }
     catch (err) {
-      // move 失败,从原 file 重建 blobUrl(已 revoke)
-      if (this.file)
-        this.blobUrl = URL.createObjectURL(this.file);
+      // move 失败,文件还在,重建 url
+      await acquire(this).catch(() => {});
       console.error('重命名失败:', err);
       throw err;
     }
@@ -134,11 +123,9 @@ export class SmartFile {
     }
   }
 
+  // 释放池条目(无视 owners)。dispose 用于文件从树移除 / 文件夹销毁。
   dispose() {
-    if (this.blobUrl) {
-      URL.revokeObjectURL(this.blobUrl);
-      this.blobUrl = null;
-    }
+    destroy(this);
   }
 
   async validate() {

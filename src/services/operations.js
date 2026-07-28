@@ -2,6 +2,7 @@
 // FileDelete 含 .trash 回收站逻辑(镜像目录 + 防重名);Rename/Move 委托 SmartFile。
 // 文件删除进撤销栈;文件夹删除不进(物理 removeEntry,不可逆,见 fileOps.handleDeleteFolder)。
 import { useFsStore } from '../stores/fs';
+import { acquire, destroy } from './fileResource';
 
 export const OperationType = {
   FILE_DELETE: 'file_delete',
@@ -109,14 +110,12 @@ export class FileDeleteOperation extends Operation {
     }
     const trashedFileHandle = await trashDirHandle.getFileHandle(trashName);
     await trashedFileHandle.move(this.parentFolder.handle, this.originalName); // 回原位原名
-    // move 后旧 handle 失效,重取 + 重建 blobUrl + 清 md5(源码漏了 blobUrl,补上)
+    // move 后旧 handle 失效,重取 + destroy 旧 url + acquire 建新 url + 清 md5
     const restoredHandle = await this.parentFolder.handle.getFileHandle(this.originalName);
     const restoredFile = await restoredHandle.getFile();
-    if (this.fileData.blobUrl)
-      URL.revokeObjectURL(this.fileData.blobUrl);
+    destroy(this.fileData); // 清旧 url(池里有则 revoke)
     this.fileData.handle = restoredHandle;
-    this.fileData.file = restoredFile;
-    this.fileData.blobUrl = URL.createObjectURL(restoredFile);
+    await acquire(this.fileData, this.fileData, restoredFile); // 建 url + 缓存 size/mtime(复用 restoredFile 零重复 IO)
     this.fileData.md5 = null;
     this.parentFolder.addFileAndSort(this.fileData);
   }

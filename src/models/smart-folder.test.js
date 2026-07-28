@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { acquire } from '../services/fileResource';
 import { SmartFile } from './SmartFile';
 import { SmartFolder } from './SmartFolder';
 
@@ -41,20 +42,21 @@ function dirEntry(name) {
   return { kind: 'directory', name };
 }
 
-// 用既有 SmartFile 预填(模拟 fromSnapshot 后的缓存状态)。
+// 用既有 SmartFile 预填(模拟 scan 过的真实状态:_meta 槽兜底 + 可能 acquire 过)。
+// scan 路径 acquire 后读池;fromSnapshot 重建后只 _meta;这里同步构造,先用 _meta 兜底。
 function cachedFile(name, size = 100, lastModified = 1) {
-  return new SmartFile({
-    handle: { name },
-    file: { name, size, lastModified },
-    parent: null,
-  });
+  const f = new SmartFile({ handle: { name }, parent: null });
+  f._meta = { size, lastModified };
+  return f;
 }
 
 function buildTree() {
   const root = new SmartFolder({ handle: { name: 'root' }, parent: null });
   const sub = new SmartFolder({ handle: { name: 'sub' }, parent: root });
   root.subFolders = [sub];
-  sub.files = [new SmartFile({ handle: { name: 'a.jpg' }, file: { name: 'a.jpg', size: 5, lastModified: 9 }, parent: sub })];
+  const subFile = new SmartFile({ handle: { name: 'a.jpg' }, parent: sub });
+  subFile._meta = { size: 5, lastModified: 9 };
+  sub.files = [subFile];
   root.scanned = true;
   sub.scanned = true;
   root.treeNode.expanded = false;
@@ -156,13 +158,15 @@ describe('smartFolder scan 并发 + 信任', () => {
     const folder = new SmartFolder({ handle: makeDirHandle([a]), parent: null });
     const cachedA = cachedFile('a.jpg');
     const gone = cachedFile('gone.png');
+    // gone 模拟 scan 过的真实状态(池里有 entry),dispose → destroy 才会 revoke
+    await acquire(gone, gone, { name: 'gone.png', size: 100, lastModified: 1 });
     const revoke = vi.spyOn(URL, 'revokeObjectURL');
     folder.files = [cachedA, gone];
 
     await folder.scan({ trust: true });
 
     expect(folder.files.map(f => f.name)).toEqual(['a.jpg']);
-    expect(revoke).toHaveBeenCalled(); // gone 被 dispose(revoke blobUrl)
+    expect(revoke).toHaveBeenCalled(); // gone 被 dispose → destroy(revoke blobUrl)
   });
 
   it('非信任:既有项也 getFile 校验,size 变了就地刷新', async () => {
@@ -174,6 +178,6 @@ describe('smartFolder scan 并发 + 信任', () => {
     await folder.scan({ trust: false });
 
     expect(a.getFile).toHaveBeenCalledTimes(1);
-    expect(cachedA.size).toBe(999); // 用已 fetch 的 file 就地刷新
+    expect(cachedA.size).toBe(999); // destroy+acquire 后读池=999
   });
 });

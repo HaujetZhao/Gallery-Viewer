@@ -27,7 +27,7 @@ export const MetadataStrategies = {
         img.src = file.blobUrl;
       });
       try {
-        const fileObj = file.handle ? await file.handle.getFile() : file.file;
+        const fileObj = await file.handle.getFile();
         metadata.exif = await extractExif(fileObj);
       }
       catch (e) {

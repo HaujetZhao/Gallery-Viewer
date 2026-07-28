@@ -1,11 +1,12 @@
 import { FileTypes } from '../config/file-types';
 import { CONFIG } from '../config/index';
-import { runConcurrent } from '../utils/concurrency';
-import { windowsCompareStrings } from '../utils/format';
 /**
  * SmartFolder 类 - 表示一个文件夹。搬自源码 js/model.SmartFolder.js。
  * scan() 增量算法 + 并发 getFile + 信任快照短路(性能关键);appState 通过静态注入访问(保持纯逻辑,不依赖 Pinia)。
  */
+import { acquire, destroy } from '../services/fileResource';
+import { runConcurrent } from '../utils/concurrency';
+import { windowsCompareStrings } from '../utils/format';
 import { SmartFile } from './SmartFile';
 import { TreeNode } from './TreeNode';
 
@@ -227,19 +228,18 @@ export class SmartFolder {
         try {
           const file = await entry.getFile();
           if (existing) {
-            // 非 trust 校验:变了就用已 fetch 的 file 就地刷新(不二次 IO,不依赖 existing.handle)
-            if (existing.size !== file.size || existing.lastModified !== file.lastModified) {
-              if (existing.blobUrl)
-                URL.revokeObjectURL(existing.blobUrl);
-              existing.file = file;
-              existing.blobUrl = URL.createObjectURL(file);
-              existing._size = file.size;
-              existing._lastModified = file.lastModified;
+            // 非 trust 校验:destroy 前先读旧 size/mtime(destroy 后 getter 可能落空),变了就 destroy+acquire 重建池条目(复用已 fetch 的 file,零二次 IO)。
+            const oldSize = existing.size;
+            const oldMtime = existing.lastModified;
+            if (oldSize !== file.size || oldMtime !== file.lastModified) {
+              destroy(existing); // 清旧 url
+              await acquire(existing, existing, file); // 建 url + 缓存 size/mtime(复用 file)
               existing.md5 = null;
             }
           }
           else {
-            const fileObj = new SmartFile({ handle: entry, file, parent: this });
+            const fileObj = new SmartFile({ handle: entry, parent: this });
+            await acquire(fileObj, fileObj, file); // scan 急切 getFile(Phase 1 行为等价),preloaded 复用零重复 IO
             filesToKeep.push(fileObj);
             newFiles.push(fileObj);
           }
