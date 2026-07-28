@@ -99,21 +99,23 @@ onBeforeUnmount(() => {
   flex: 1;
   min-width: 0;
 }
+/* 像标题(folder-open 图标 + 名 + 小 caret),但可点:hover 淡白背景提示 */
 .root-current {
   width: 100%;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px;
-  border: 1px solid var(--color-gray-300, #ced4da);
+  padding: 6px 10px;
+  border: none;
   border-radius: 6px;
-  background: var(--bg-primary, #fff);
-  color: var(--text-primary, #333);
+  background: transparent;
+  color: var(--sidebar-text, #ecf0f1);
   cursor: pointer;
-  font-size: 13px;
+  font-size: 16px;
+  font-weight: 600;
 }
 .root-current:hover {
-  border-color: var(--color-primary, #3498db);
+  background: rgba(255, 255, 255, 0.1);
 }
 .root-name {
   flex: 1;
@@ -123,20 +125,27 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 .root-caret {
-  transition: transform 0.2s;
+  font-size: 12px;
+  opacity: 0.5;
+  transition: transform 0.2s, opacity 0.2s;
+}
+.root-current:hover .root-caret {
+  opacity: 1;
 }
 .root-caret.open {
   transform: rotate(180deg);
+  opacity: 1;
 }
+/* 下拉:白底浮动面板(在深色 sidebar 上对比) */
 .root-dropdown {
   position: absolute;
   top: calc(100% + 4px);
-  left: 10px;
-  right: 10px;
+  left: 0;
+  right: 0;
   background: var(--bg-primary, #fff);
   border: 1px solid var(--color-gray-300, #ced4da);
   border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   z-index: 50;
   max-height: 60vh;
   overflow-y: auto;
@@ -167,6 +176,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--text-primary, #333);
 }
 .root-item-meta {
   font-size: 11px;
