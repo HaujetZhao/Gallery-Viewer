@@ -27,5 +27,7 @@ export function computeRowHeight(containerWidth, colCount, gap) {
   if (containerWidth <= 0 || colCount <= 0)
     return 0;
   const colWidth = (containerWidth - (colCount - 1) * gap) / colCount;
+  // 行高 = 列宽,依赖 thumbnail aspect-ratio 1/1(方形)。
+  // 前瞻:未来若引入非方形缩略图策略,需同步改虚拟化(改用 measureElement 或动态行高),否则布局错位。
   return colWidth + gap;
 }

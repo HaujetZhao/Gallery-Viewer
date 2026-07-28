@@ -35,11 +35,11 @@ export class SmartFile {
     return this.handle.name;
   }
 
-  // _meta 优先(响应式):_meta 是 SmartFile 实例字段(在 store 的 reactive files 数组里,属性变更触发 Vue 响应式);
-  // peek 读普通 Map(不响应式)。enrich 写 _meta → Gallery sort computed 重排。若仍优先 peek,enrich 后 size 变了 Vue 不知道。
-  // `?? peek` 兜底(_meta 漏写时,如 ensureBlobUrl 后池里有但 _meta 未写)。
+  // R4:_meta 是 size/mtime 的单一数据源(只读 _meta,不回退池)。
+  // _meta 是 SmartFile 实例字段(在 store 的 reactive files 数组里,属性变更触发 Vue 响应式);
+  // enrich 收齐后批量写 _meta → Gallery sort computed 重排一次。
   get size() {
-    return this._meta?.size; // R4:单源(池不放 size/mtime,消双数据源 stale)
+    return this._meta?.size;
   }
 
   get lastModified() {

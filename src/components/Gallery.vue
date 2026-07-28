@@ -61,6 +61,7 @@ const rowHeight = ref(300); // 初值;ResizeObserver 实测后覆盖(弃旧 estH
 
 // 整页滚动:用 useWindowVirtualizer(window 版,observe window 的 resize/scroll 事件,
 // 而非 ResizeObserver.observe(window)——后者因 window 非 Element 会抛错)。固定行高,无需 measureElement。
+// 固定行高依赖缩略图 1:1 方形;未来若引入非方形缩略图策略,需改用 measureElement 或动态行高,否则布局错位。
 const virtualizer = useWindowVirtualizer({
   get count() { return rows.value.length; },
   estimateSize: () => rowHeight.value,

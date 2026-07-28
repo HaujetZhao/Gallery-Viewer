@@ -201,7 +201,7 @@ export class SmartFolder {
       { concurrency: CONFIG.PERFORMANCE.SCAN_CONCURRENCY, token },
     );
     if (token?.cancelled)
-      return; // 取消则不批量写(下次 enrich 补;acquire 已建 url 无害,getter _meta??peek 兜底)
+      return; // 取消则不批量写 _meta(getter 此时返回 undefined,留待下次 enrich 补;acquire 已建 url 无害)
     // 同步批量写 _meta:Vue 把多次响应式变更批成一次 flush → sort computed 只重排一次
     for (const r of results) {
       if (r)
