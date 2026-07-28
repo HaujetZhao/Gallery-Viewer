@@ -9,17 +9,16 @@
     color: var(--sidebar-text);
     z-index: 900;
     transform: translateX(-100%);
-    transition: transform 0.3s ease;
+    transition: transform 0.25s ease 0.2s; /* 收回延迟 0.2s:鼠标短暂离开边界不立即收(容错) */
     box-shadow: 2px 0 10px rgba(0, 0, 0, 0.2);
+    display: flex;
+    flex-direction: column;
 }
 
-/* 内容包裹层 */
+/* 内容包裹层(flex 子元素;absolute 在 transform 父内边界 hover 易断,改 flex 更稳) */
 #sidebar-content {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
+    flex: 1;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     z-index: 2;
