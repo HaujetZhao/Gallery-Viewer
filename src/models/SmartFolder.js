@@ -171,33 +171,42 @@ export class SmartFolder {
     this.files = [];
   }
 
-  // 后台补全:并发 getFile 给"待补"文件填 size/mtime(_meta),触发 Vue 响应式让 sort 重排。
+  // 后台补全:并发 getFile 给"待补"文件,收齐后同步批量写 _meta(Vue 批成一次 flush → sort 一次重排)。
+  // R5:worker 只 getFile + acquire(池缓存 size/mtime,不响应式),返回结果;不再逐个写 _meta(避免 N 次 sort 重排)。
   // targets = 池空(peek null)且 _meta 未写的文件 —— 即 scanFolder 新建的项。
   // 信任短路后既有项 _meta 有 → targets 空 → 零 getFile(信任路零 IO)。
-  // 写 _meta 是响应式关键:_meta 是 SmartFile 实例字段(在 store 的 reactive files 数组里),
-  // 属性变更触发 Vue 重渲;peek 读普通 Map 不响应式 —— 不能依赖 peek 触发 sort。
+  // 写 _meta 是响应式关键:_meta 是 SmartFile 实例字段(在 store 的 reactive files 数组里);
+  // 批量同步写让 Vue 合并成一次 flush,sort computed 只重排一次(修 size/date 排序 O(N²) 风暴)。
   async enrich({ token } = {}) {
     if (!this.files || this.files.length === 0)
       return;
     const targets = this.files.filter(f => peek(f) == null && f._meta == null);
     if (targets.length === 0)
       return;
-    await runConcurrent(
+    const results = await runConcurrent(
       targets,
       async (f) => {
         if (token?.cancelled)
-          return;
+          return null;
         try {
           const file = await f.handle.getFile();
-          await acquire(f, f, file); // 建 url + 缓存 size/mtime
-          f._meta = { size: file.size, lastModified: file.lastModified }; // 写 _meta 触发响应式
+          await acquire(f, f, file); // 建 url + 缓存 size/mtime(池,不响应式)
+          return { f, size: file.size, lastModified: file.lastModified };
         }
         catch (e) {
           console.warn(`enrich ${f.name} 失败:`, e);
+          return null;
         }
       },
       { concurrency: CONFIG.PERFORMANCE.SCAN_CONCURRENCY, token },
     );
+    if (token?.cancelled)
+      return; // 取消则不批量写(下次 enrich 补;acquire 已建 url 无害,getter _meta??peek 兜底)
+    // 同步批量写 _meta:Vue 把多次响应式变更批成一次 flush → sort computed 只重排一次
+    for (const r of results) {
+      if (r)
+        r.f._meta = { size: r.size, lastModified: r.lastModified };
+    }
   }
 
   async validate() {
