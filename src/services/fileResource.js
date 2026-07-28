@@ -7,9 +7,11 @@
 // - release(file, owner?):减一个 owner;owners 归零 → revoke + 删条目。
 // - destroy(file):无视 owners 强制 revoke(文件从树移除/dispose 用)。
 // - peek(file):读已 acquire 的条目(不建),SmartFile getter 用。
+// - 并发安全:acquire 同 file 用 in-flight promise 去重(共享一次 getFile + 一个 url),不因并发泄漏。
 //
 // owner 默认 = file 自身(SmartFile 当自己的 owner,池与 SmartFile 生命周期 1:1)。
-const pool = new Map(); // SmartFile -> entry
+const pool = new Map(); // SmartFile -> entry(已建)
+const inflight = new Map(); // SmartFile -> Promise<entry>(建中);并发 acquire 同 file 复用在途,根治 url 泄漏(enrich 后台 + 缩略图 ensureBlobUrl 并发)
 
 function makeEntry(file) {
   return {
@@ -29,18 +31,34 @@ function dropEntry(file, entry) {
 // 懒取 File + 建 url + 缓存。preloaded=已 fetch 的 File(scan/undo 复用,避免重复 IO)。
 // owner=引用身份,默认 file 自身;多次 acquire 复用同一 url,owners 记账。
 //
-// ponytail 前置约束:不得【并发】acquire 同一 file——两个 in-flight acquire 会各自 getFile+建 url,
-// 第二个覆盖池条目,第一个 url 泄漏。Phase 1-2 无此调用模式(scan 每 file 一次、ensureBlobUrl 单文件、
-// 缩略图走 handle.getFile 不经池);并发安全随 handle-identity 共享一并加(设计文档 §8 YAGNI)。
+// 并发安全:并发 acquire 同一 file 用 in-flight promise 去重——共享一次 getFile + 一个 url,不泄漏。
+// (Phase 2 场景:enrich 后台并发 getFile + 缩略图进视口 ensureBlobUrl,可能同时 acquire 同一 file。)
 export async function acquire(file, owner = file, preloaded = null) {
-  let entry = pool.get(file);
-  if (!entry) {
-    const f = preloaded ?? await file.handle.getFile();
-    entry = makeEntry(f);
-    pool.set(file, entry);
+  const existing = pool.get(file);
+  if (existing) {
+    existing.owners.add(owner);
+    return existing;
   }
-  entry.owners.add(owner);
-  return entry;
+  // 复用在途 promise(并发 acquire 同 file 共享一次 getFile + 一个 url)
+  if (inflight.has(file)) {
+    const entry = await inflight.get(file);
+    entry.owners.add(owner);
+    return entry;
+  }
+  const p = (async () => {
+    const f = preloaded ?? await file.handle.getFile();
+    return makeEntry(f);
+  })();
+  inflight.set(file, p);
+  try {
+    const entry = await p;
+    pool.set(file, entry);
+    entry.owners.add(owner);
+    return entry;
+  }
+  finally {
+    inflight.delete(file); // 建完(成功/失败)清在途
+  }
 }
 
 // 释放一个 owner;owners 归零 → revoke + 删 entry。
@@ -56,6 +74,8 @@ export function release(file, owner = file) {
 }
 
 // 强制释放(无视 owners):文件从树移除/dispose 用。
+// ponytail: 若此刻有 inflight(文件移除时正好在 getFile,罕见),建完仍会 pool.set——边角泄漏一个 url,
+//           不阻断(destroy 通常在文件已 acquire 完后调)。需要时再加取消语义。
 export function destroy(file) {
   const entry = pool.get(file);
   if (entry)

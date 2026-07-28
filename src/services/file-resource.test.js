@@ -58,6 +58,15 @@ describe('fileResource acquire', () => {
     expect(entry.mtime).toBe(888);
     expect(f.handle.getFile).not.toHaveBeenCalled();
   });
+
+  it('并发 acquire 同 file:共享一次 getFile + 一个 url(in-flight 去重,不泄漏)', async () => {
+    const f = fakeFile();
+    const [e1, e2] = await Promise.all([acquire(f), acquire(f)]);
+    expect(e1).toBe(e2); // 复用同一 entry
+    expect(f.handle.getFile).toHaveBeenCalledTimes(1); // 只 getFile 一次(in-flight 合并)
+    destroy(f);
+    expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1); // 一个 url → 一次 revoke(无泄漏)
+  });
 });
 
 describe('fileResource release / peek / destroy', () => {

@@ -13,9 +13,11 @@ export class SmartFile {
     this.md5 = null; // 懒加载,外部计算后赋值
   }
 
-  // 懒建 blobUrl(池里无 → getFile + 建 url)。scan 正常路径已 acquire,fromSnapshot 重建需懒。
+  // 懒建 blobUrl(池里无 → getFile + 建 url)。enrich 正常路径已 acquire,listFolder 新建/fromSnapshot 重建需懒。
+  // peek 短路:enrich 已 acquire 则直接复用(省一次 acquire,也避开并发边角)。
   async ensureBlobUrl() {
-    return (await acquire(this)).url;
+    const existing = peek(this);
+    return existing ? existing.url : (await acquire(this)).url;
   }
 
   _extractType(filename) {

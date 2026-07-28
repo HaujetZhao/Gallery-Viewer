@@ -27,6 +27,10 @@ describe('startBackgroundScan', () => {
     expect(a.scan).toHaveBeenCalledWith({ trust: true });
     expect(b.scan).toHaveBeenCalledWith({ trust: true });
     expect(c.scan).toHaveBeenCalledWith({ trust: true });
+    // Phase 2:进入每个节点先 enrich 当前层(补 size/mtime)
+    expect(root.enrich).toHaveBeenCalled();
+    expect(a.enrich).toHaveBeenCalled();
+    expect(c.enrich).toHaveBeenCalled();
   });
 
   it('无 subFolders 时安全返回(undefined / 空)', async () => {
