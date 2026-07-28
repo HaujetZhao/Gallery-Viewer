@@ -20,6 +20,8 @@ export const MetadataStrategies = {
     types: [...FileTypes.image.standard, ...FileTypes.image.gif],
     async getMetadata(file) {
       const metadata = {};
+      // Phase 2:listFolder 零 getFile → 新文件 blobUrl 可能 null(属性面板路径晚调,通常 enrich 完成,但边界保险懒建)
+      await file.ensureBlobUrl();
       metadata.dimensions = await new Promise((resolve) => {
         const img = new Image();
         img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
@@ -40,6 +42,7 @@ export const MetadataStrategies = {
     types: FileTypes.video.all,
     async getMetadata(file) {
       const metadata = {};
+      await file.ensureBlobUrl();
       metadata.dimensions = await new Promise((resolve) => {
         const v = document.createElement('video');
         v.preload = 'metadata';
@@ -76,6 +79,7 @@ export const MetadataStrategies = {
     types: FileTypes.audio.all,
     async getMetadata(file) {
       const metadata = {};
+      await file.ensureBlobUrl();
       metadata.dimensions = await new Promise((resolve) => {
         const a = new Audio();
         a.preload = 'metadata';
@@ -118,6 +122,7 @@ export const MetadataStrategies = {
     types: FileTypes.image.svg,
     async getMetadata(file) {
       const metadata = {};
+      await file.ensureBlobUrl();
       metadata.dimensions = await new Promise((resolve) => {
         const img = new Image();
         img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });

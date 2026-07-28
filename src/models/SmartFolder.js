@@ -2,9 +2,10 @@ import { FileTypes } from '../config/file-types';
 import { CONFIG } from '../config/index';
 /**
  * SmartFolder 类 - 表示一个文件夹。搬自源码 js/model.SmartFolder.js。
- * scan() 增量算法 + 并发 getFile + 信任快照短路(性能关键);appState 通过静态注入访问(保持纯逻辑,不依赖 Pinia)。
+ * scan() 纯列名差集(零 getFile,瞬间出列表);enrich() 后台并发 getFile 补 size/mtime(响应式触发 sort 重排)。
+ * appState 通过静态注入访问(保持纯逻辑,不依赖 Pinia)。
  */
-import { acquire, destroy } from '../services/fileResource';
+import { acquire, peek } from '../services/fileResource';
 import { runConcurrent } from '../utils/concurrency';
 import { windowsCompareStrings } from '../utils/format';
 import { SmartFile } from './SmartFile';
@@ -164,10 +165,10 @@ export class SmartFolder {
     this.files = [];
   }
 
-  // 增量扫描算法,性能关键。
-  // 两阶段思想:① values() 单次遍历做差集(免费,无 per-file IO);② 需要元数据的项并发 getFile。
-  // trust 模式(后台重扫):名字集合与缓存一致 → 零 getFile,直接信快照;有差异 → 只对新增项 getFile,既有项信任保留。
-  // 非 trust 模式(首次/手动重载):既有项也 getFile 校验 size/mtime,变了就地刷新(用已 fetch 的 file,不二次 IO)。
+  // 纯列表 scan:values() 单次遍历做差集 + 名字集合信任短路,零 getFile。
+  // 新建文件 `new SmartFile` 不 acquire、不 getFile、_meta=null —— size/mtime 缺省,由 enrich() 后台补全。
+  // Phase 2 简化:不再 size/mtime 校验(原地同名替换检测不到,文档 §2.3 接受,reload 兜底抓增删改名)。
+  // trust 模式(后台重扫):名字集合一致 → 零 IO,沿用缓存对象。
   async scan({ trust = false } = {}) {
     if (!this.handle)
       throw new Error('scan 需要有效的 handle');
@@ -205,53 +206,22 @@ export class SmartFolder {
     const foldersToKeep = [];
     const newFiles = [];
     const newSubFolders = [];
-    const needGetFile = []; // { entry, existing? } 并发取元数据
 
-    // ④ 文件差集:既有项信任保留(trust)或排进校验队列(非 trust);新项一律取元数据
+    // ④ 文件差集(纯名字比对,零 IO):既有信任保留,新建 SmartFile 不 acquire/getFile
     for (const entry of currentFileEntries) {
       const existing = existingFilesMap.get(entry.name);
       if (existing) {
         filesToKeep.push(existing);
         existingFilesMap.delete(entry.name);
-        if (!trust)
-          needGetFile.push({ entry, existing });
       }
       else {
-        needGetFile.push({ entry, existing: null });
+        const fileObj = new SmartFile({ handle: entry, parent: this }); // 不 acquire / 不 getFile / _meta=null
+        filesToKeep.push(fileObj);
+        newFiles.push(fileObj);
       }
     }
 
-    // ⑤ 并发 getFile(SCAN_CONCURRENCY 上限,错误隔离)
-    await runConcurrent(
-      needGetFile,
-      async ({ entry, existing }) => {
-        try {
-          const file = await entry.getFile();
-          if (existing) {
-            // 非 trust 校验:destroy 前先读旧 size/mtime(destroy 后 getter 可能落空),变了就 destroy+acquire 重建池条目(复用已 fetch 的 file,零二次 IO)。
-            const oldSize = existing.size;
-            const oldMtime = existing.lastModified;
-            if (oldSize !== file.size || oldMtime !== file.lastModified) {
-              destroy(existing); // 清旧 url
-              await acquire(existing, existing, file); // 建 url + 缓存 size/mtime(复用 file)
-              existing.md5 = null;
-            }
-          }
-          else {
-            const fileObj = new SmartFile({ handle: entry, parent: this });
-            await acquire(fileObj, fileObj, file); // scan 急切 getFile(Phase 1 行为等价),preloaded 复用零重复 IO
-            filesToKeep.push(fileObj);
-            newFiles.push(fileObj);
-          }
-        }
-        catch (e) {
-          console.warn(`文件 ${entry.name} 读取失败,已跳过:`, e);
-        }
-      },
-      { concurrency: CONFIG.PERFORMANCE.SCAN_CONCURRENCY },
-    );
-
-    // ⑥ 目录差集(无 IO)
+    // ⑤ 目录差集(无 IO)
     for (const entry of currentDirEntries) {
       const existing = existingFoldersMap.get(entry.name);
       if (existing) {
@@ -267,7 +237,7 @@ export class SmartFolder {
       }
     }
 
-    // ⑦ 清理"已被删除"的:留在 Map 里没被 delete 的 = 目录里已不存在
+    // ⑥ 清理"已被删除"的:留在 Map 里没被 delete 的 = 目录里已不存在
     for (const fileObj of existingFilesMap.values())
       fileObj.dispose();
     for (const folderObj of existingFoldersMap.values()) {
@@ -275,7 +245,7 @@ export class SmartFolder {
       folderObj.treeNode?.destroy(); // 源码是 removeDOMNodes(),退化后改为数据清理
     }
 
-    // ⑧ 排序(Windows 风格)
+    // ⑦ 排序(Windows 风格)
     filesToKeep.sort((a, b) => windowsCompareStrings(a.name, b.name));
     foldersToKeep.sort((a, b) => windowsCompareStrings(a.name, b.name));
 
@@ -291,6 +261,35 @@ export class SmartFolder {
       removedFileCount: existingFilesMap.size,
       removedFolderCount: existingFoldersMap.size,
     };
+  }
+
+  // 后台补全:并发 getFile 给"待补"文件填 size/mtime(_meta),触发 Vue 响应式让 sort 重排。
+  // targets = 池空(peek null)且 _meta 未写的文件 —— 即 scan/listFolder 新建的项。
+  // 信任短路后既有项 _meta 有 → targets 空 → 零 getFile(信任路零 IO)。
+  // 写 _meta 是响应式关键:_meta 是 SmartFile 实例字段(在 store 的 reactive files 数组里),
+  // 属性变更触发 Vue 重渲;peek 读普通 Map 不响应式 —— 不能依赖 peek 触发 sort。
+  async enrich({ token } = {}) {
+    if (!this.files || this.files.length === 0)
+      return;
+    const targets = this.files.filter(f => peek(f) == null && f._meta == null);
+    if (targets.length === 0)
+      return;
+    await runConcurrent(
+      targets,
+      async (f) => {
+        if (token?.cancelled)
+          return;
+        try {
+          const file = await f.handle.getFile();
+          await acquire(f, f, file); // 建 url + 缓存 size/mtime
+          f._meta = { size: file.size, lastModified: file.lastModified }; // 写 _meta 触发响应式
+        }
+        catch (e) {
+          console.warn(`enrich ${f.name} 失败:`, e);
+        }
+      },
+      { concurrency: CONFIG.PERFORMANCE.SCAN_CONCURRENCY, token },
+    );
   }
 
   async validate() {

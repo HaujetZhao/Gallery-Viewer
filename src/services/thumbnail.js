@@ -7,6 +7,7 @@ import { useUserSettingsStore } from '../stores/userSettings';
 // IntersectionObserver + 并发队列留到阶段 5 gallery 的 useThumbnail composable。
 import { calculateMD5 } from '../utils/file';
 import { deleteThumbnail, getThumbnailFromDB, saveThumbnailToDB, touchThumbnailInDB } from './db';
+import { peek } from './fileResource';
 import { getThumbnailStrategy } from './thumbnail-strategies';
 
 // 把缓存 blob 画到 canvas(缓存恢复,不做缩放,blob 本就是 targetSize 方图)。
@@ -40,9 +41,13 @@ export async function generateThumbnail(file, canvas, targetSize = 400) {
     return { cached: false, strategyName: strategy.name };
   }
 
+  // listFolder 零 getFile 后,新文件 blobUrl 为 null。先 ensureBlobUrl 懒 acquire(复用 enrich 的池,不重复 IO)。
+  await file.ensureBlobUrl();
+
   // 缓存路径:image/video/audio。md5 懒加载(首次算后存 file.md5)。
   if (!file.md5) {
-    const raw = await file.handle.getFile();
+    // ensureBlobUrl 已 acquire,peek 有 File —— 直接复用,省一次 getFile
+    const raw = peek(file)?.file ?? await file.handle.getFile();
     file.md5 = await calculateMD5(raw);
   }
   const cached = await getThumbnailFromDB(file.md5, targetSize);

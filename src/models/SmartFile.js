@@ -29,15 +29,15 @@ export class SmartFile {
     return this.handle.name;
   }
 
-  // 池里有读池(实时元数据);否则读 _meta(fromSnapshot 缓存态)。
+  // _meta 优先(响应式):_meta 是 SmartFile 实例字段(在 store 的 reactive files 数组里,属性变更触发 Vue 响应式);
+  // peek 读普通 Map(不响应式)。enrich 写 _meta → Gallery sort computed 重排。若仍优先 peek,enrich 后 size 变了 Vue 不知道。
+  // `?? peek` 兜底(_meta 漏写时,如 ensureBlobUrl 后池里有但 _meta 未写)。
   get size() {
-    const e = peek(this);
-    return e ? e.size : this._meta?.size;
+    return this._meta?.size ?? peek(this)?.size;
   }
 
   get lastModified() {
-    const e = peek(this);
-    return e ? e.mtime : this._meta?.lastModified;
+    return this._meta?.lastModified ?? peek(this)?.mtime;
   }
 
   get type() {
@@ -90,13 +90,20 @@ export class SmartFile {
     destroy(this);
     try {
       await this.handle.move(newName);
-      await acquire(this); // 重新 getFile 建 url
+      const entry = await acquire(this); // 重新 getFile 建 url
+      // 写 _meta(响应式一致): rename 后 size/mtime 沿用新 File,与池同步
+      this._meta = { size: entry.file.size, lastModified: entry.file.lastModified };
       this.md5 = null;
       return true;
     }
     catch (err) {
       // move 失败,文件还在,重建 url(getFile 通常仍成功;失败则 blobUrl=null,记 warn 便于排查图裂)
-      await acquire(this).catch(e => console.warn('重命名失败后重建资源失败,blobUrl 将为 null:', e));
+      const entry = await acquire(this).catch((e) => {
+        console.warn('重命名失败后重建资源失败,blobUrl 将为 null:', e);
+        return null;
+      });
+      if (entry)
+        this._meta = { size: entry.file.size, lastModified: entry.file.lastModified };
       console.error('重命名失败:', err);
       throw err;
     }

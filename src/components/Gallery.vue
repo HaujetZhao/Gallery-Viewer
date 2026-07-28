@@ -26,9 +26,10 @@ const displayFiles = computed(() => {
   list = [...list].sort((a, b) => {
     if (sortField.value === 'name')
       return windowsCompareStrings(a.name, b.name) * dir;
+    // enrich 前 size/lastModified undefined → NaN 排序乱。兜底 undefined 排末尾(enrich 写 _meta 后响应式重排)
     if (sortField.value === 'size')
-      return (a.size - b.size) * dir;
-    return (a.lastModified - b.lastModified) * dir;
+      return ((a.size ?? Infinity) - (b.size ?? Infinity)) * dir;
+    return ((a.lastModified ?? Infinity) - (b.lastModified ?? Infinity)) * dir;
   });
   return list;
 });

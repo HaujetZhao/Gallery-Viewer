@@ -15,14 +15,17 @@ const { loading, svgText, mediaKind, isHoveringVideo, onImgLoad } = useModal(
   mediaEl,
 );
 
-// 图片/视频 src:ensureBlobUrl 取(fromSnapshot 重建的文件 blobUrl 懒,首次显示时单文件 IO)。
+// 所有类型先 ensureBlobUrl(确保 peek 有 url):
+// image/video 直接读 blobUrl 设 imgSrc;audio(AudioPlayer :src)/svg(loadSvg fetch)靠 ensureBlobUrl 后 peek 有 url。
+// Phase 2:listFolder 零 getFile → 新文件 blobUrl 可能 null,enrich 完成前打开 Modal 也要懒建。
 const imgSrc = ref('');
 watch(
   [() => modal.currentFile, () => mediaKind.value],
   async () => {
     const f = modal.currentFile;
-    if (f && (mediaKind.value === 'image' || mediaKind.value === 'video')) {
-      imgSrc.value = await f.ensureBlobUrl();
+    if (f) {
+      await f.ensureBlobUrl();
+      imgSrc.value = (mediaKind.value === 'image' || mediaKind.value === 'video') ? f.blobUrl : '';
     }
     else {
       imgSrc.value = '';

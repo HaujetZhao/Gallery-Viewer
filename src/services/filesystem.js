@@ -150,13 +150,17 @@ export async function loadProject(handle) {
   return await getFolderData(handle);
 }
 
-// 后台递归扫描子目录(并发遍历 + 信任 + 可取消)。
-// 各子文件夹 scan({trust:true}):名字集合一致 → 零 getFile;有差异 → 只取差异项。
+// 后台递归扫描(并发遍历 + 信任 + 可取消)。
+// Phase 2:进入节点先 enrich 当前层 files(补 size/mtime,响应式触发 sort 重排),再遍历子目录 scan({trust:true}) + 递归。
 // ponytail: 并发为每节点上限(SCAN_FOLDER_CONCURRENCY),整棵树嵌套 fan-out 可能瞬时在途较多,
-//           但 getFile 受各 scan 内 SCAN_CONCURRENCY 约束、且 trust 使多数文件夹零 IO;若超大树需收紧,加全局信号量。
-// ⚠️ 必须从「代理」folder 起步(调用方传 fs.rootFolder):scan 改代理才触发响应式。
+//           但 getFile 受各 enrich 的 SCAN_CONCURRENCY 约束、且 trust 使多数文件夹零 IO;若超大树需收紧,加全局信号量。
+// ⚠️ 必须从「代理」folder 起步(调用方传 fs.rootFolder):scan/enrich 改代理才触发响应式。
 export async function startBackgroundScan(parentFolder, token = bgToken) {
-  if (!parentFolder || !parentFolder.subFolders)
+  if (!parentFolder)
+    return;
+  // Phase 2:先补当前层 files 的 size/mtime(listFolder 零 getFile 后,新文件 _meta=null)
+  await parentFolder.enrich({ token });
+  if (!parentFolder.subFolders)
     return;
   await runConcurrent(
     [...parentFolder.subFolders],
@@ -164,8 +168,8 @@ export async function startBackgroundScan(parentFolder, token = bgToken) {
       if (token.cancelled)
         return;
       try {
-        await subFolderData.scan({ trust: true });
-        await startBackgroundScan(subFolderData, token);
+        await subFolderData.scan({ trust: true }); // 纯列名(零 getFile)
+        await startBackgroundScan(subFolderData, token); // 递归:enrich sub + 遍历
       }
       catch (e) {
         console.warn('后台扫描子文件夹失败:', subFolderData.name, e);
@@ -176,6 +180,7 @@ export async function startBackgroundScan(parentFolder, token = bgToken) {
 }
 
 // 重载当前根(绕过缓存,重新扫描)+ 更新快照。设置面板"重载项目"用。
+// Phase 2:initProject(listFolder 根,纯名字集合)+ scanAndPersist(enrich 由 startBackgroundScan 触发)。
 export async function reloadProject() {
   const fs = useFsStore();
   const rootStore = useRootStore();
@@ -187,10 +192,12 @@ export async function reloadProject() {
   return root;
 }
 
-// 重扫单文件夹。失败(NotFoundError)时从 foldersData 删 + treeNode 数据清理。
+// 重扫单文件夹(listFolder + enrich)。小文件夹点击:listFolder 秒显 + enrich 补全 size/mtime。
+// 失败(NotFoundError)时从 foldersData 删 + treeNode 数据清理。
 export async function refreshFolder(folder) {
   try {
     await folder.scan();
+    await folder.enrich();
     folder.treeNode?.refreshState();
   }
   catch (err) {

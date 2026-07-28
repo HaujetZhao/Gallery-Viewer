@@ -98,8 +98,8 @@ describe('smartFolder rehydrate', () => {
   });
 });
 
-describe('smartFolder scan 并发 + 信任', () => {
-  it('并发 getFile:所有媒体文件都被读 + 排序 + size 正确', async () => {
+describe('smartFolder scan 纯列表(零 getFile)+ enrich', () => {
+  it('scan 只列名:不 getFile,files 排序对但 size 缺省(undefined)', async () => {
     const entries = [
       fileEntry('b.jpg', 200),
       fileEntry('a.png', 100),
@@ -110,16 +110,41 @@ describe('smartFolder scan 并发 + 信任', () => {
     const folder = new SmartFolder({ handle: makeDirHandle(entries), parent: null });
     await folder.scan();
 
-    expect(entries[0].getFile).toHaveBeenCalled(); // b.jpg
-    expect(entries[1].getFile).toHaveBeenCalled(); // a.png
-    expect(entries[2].getFile).toHaveBeenCalled(); // c.gif
+    // Phase 2:scan 零 getFile —— 仅列名 + 差集,所有 size/mtime 由 enrich 补
+    expect(entries[0].getFile).not.toHaveBeenCalled(); // b.jpg
+    expect(entries[1].getFile).not.toHaveBeenCalled(); // a.png
+    expect(entries[2].getFile).not.toHaveBeenCalled(); // c.gif
     expect(entries[4].getFile).not.toHaveBeenCalled(); // notes.txt 被跳过
     expect(folder.files.map(f => f.name)).toEqual(['a.png', 'b.jpg', 'c.gif']); // Windows 排序
-    expect(folder.files[0].size).toBe(100);
+    // listFolder 阶段:池空 + _meta 未写 → size 缺省(undefined)
+    expect(folder.files[0].size).toBeUndefined();
+    expect(folder.files[0]._meta).toBeNull();
+    expect(folder.files[0].md5).toBeNull();
     expect(folder.subFolders.map(f => f.name)).toEqual(['sub']);
   });
 
-  it('信任短路:名字集合一致 → getFile 一次都不调,对象引用不变', async () => {
+  it('enrich 补全: getFile + acquire + 写 _meta,size 正确', async () => {
+    const entries = [
+      fileEntry('b.jpg', 200),
+      fileEntry('a.png', 100),
+    ];
+    const folder = new SmartFolder({ handle: makeDirHandle(entries), parent: null });
+    await folder.scan();
+
+    expect(entries[0].getFile).not.toHaveBeenCalled(); // scan 阶段零 IO
+    expect(folder.files[0].size).toBeUndefined(); // 缺省
+
+    await folder.enrich();
+
+    expect(entries[0].getFile).toHaveBeenCalledTimes(1); // enrich 阶段才 getFile
+    expect(entries[1].getFile).toHaveBeenCalledTimes(1);
+    // enrich 后 _meta 写 → getter 读 _meta(响应式)
+    expect(folder.files.find(f => f.name === 'a.png').size).toBe(100);
+    expect(folder.files.find(f => f.name === 'a.png')._meta).toEqual({ size: 100, lastModified: 1 });
+    expect(folder.files.find(f => f.name === 'b.jpg').size).toBe(200);
+  });
+
+  it('信任短路: scan 名字集合一致 → getFile 未调;enrich targets 空 → getFile 仍未调', async () => {
     const a = fileEntry('a.jpg');
     const b = fileEntry('b.png');
     const folder = new SmartFolder({ handle: makeDirHandle([a, b]), parent: null });
@@ -134,9 +159,14 @@ describe('smartFolder scan 并发 + 信任', () => {
     expect(b.getFile).not.toHaveBeenCalled();
     expect(folder.files).toEqual([cachedA, cachedB]); // 原对象,零 IO
     expect(folder.scanned).toBe(true);
+
+    // enrich 阶段:既有项 _meta 有 → filter 待补(targets 空)→ 零 getFile
+    await folder.enrich();
+    expect(a.getFile).not.toHaveBeenCalled();
+    expect(b.getFile).not.toHaveBeenCalled();
   });
 
-  it('信任差异(新增):只对新增项 getFile,既有项信任保留', async () => {
+  it('信任差异(新增):scan 零 getFile;enrich 只补新增,既有保留', async () => {
     const a = fileEntry('a.jpg');
     const b = fileEntry('b.png');
     const c = fileEntry('c.gif'); // 新增
@@ -147,10 +177,17 @@ describe('smartFolder scan 并发 + 信任', () => {
 
     await folder.scan({ trust: true });
 
-    expect(a.getFile).not.toHaveBeenCalled(); // 既有,信任
+    // scan 纯列名,既有 + 新增都不 getFile
+    expect(a.getFile).not.toHaveBeenCalled();
     expect(b.getFile).not.toHaveBeenCalled();
-    expect(c.getFile).toHaveBeenCalledTimes(1); // 新增,取元数据
+    expect(c.getFile).not.toHaveBeenCalled();
     expect(folder.files.map(f => f.name)).toEqual(['a.jpg', 'b.png', 'c.gif']);
+
+    // enrich 阶段:既有 _meta 有 → 不补;新增 _meta=null → 补
+    await folder.enrich();
+    expect(a.getFile).not.toHaveBeenCalled();
+    expect(b.getFile).not.toHaveBeenCalled();
+    expect(c.getFile).toHaveBeenCalledTimes(1); // 仅新增项 getFile
   });
 
   it('信任差异(删除):消失的文件被 dispose', async () => {
@@ -167,17 +204,5 @@ describe('smartFolder scan 并发 + 信任', () => {
 
     expect(folder.files.map(f => f.name)).toEqual(['a.jpg']);
     expect(revoke).toHaveBeenCalled(); // gone 被 dispose → destroy(revoke blobUrl)
-  });
-
-  it('非信任:既有项也 getFile 校验,size 变了就地刷新', async () => {
-    const a = fileEntry('a.jpg', 999, 2); // 磁盘上 size/mtime 都变了
-    const folder = new SmartFolder({ handle: makeDirHandle([a]), parent: null });
-    const cachedA = cachedFile('a.jpg', 100, 1); // 缓存里是旧的
-    folder.files = [cachedA];
-
-    await folder.scan({ trust: false });
-
-    expect(a.getFile).toHaveBeenCalledTimes(1);
-    expect(cachedA.size).toBe(999); // destroy+acquire 后读池=999
   });
 });

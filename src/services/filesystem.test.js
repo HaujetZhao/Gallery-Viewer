@@ -3,13 +3,14 @@ import { CONFIG } from '../config/index';
 import { makeCancelToken } from '../utils/concurrency';
 import { startBackgroundScan } from './filesystem';
 
-// 假文件夹:只含 startBackgroundScan 用到的字段(subFolders / scan / treeNode)。
+// 假文件夹:只含 startBackgroundScan 用到的字段(subFolders / scan / enrich / treeNode)。
 function fakeFolder(name, subFolders = []) {
   return {
     name,
     subFolders,
     scanned: false,
     scan: vi.fn(async () => {}),
+    enrich: vi.fn(async () => {}), // Phase 2:startBackgroundScan 进入节点先 enrich 当前层
     treeNode: { refreshState: vi.fn(), destroy: vi.fn() },
   };
 }
