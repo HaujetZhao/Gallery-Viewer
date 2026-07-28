@@ -92,6 +92,19 @@ async function scanAndPersist(id) {
   }
 }
 
+// R3:仅树脏时持久化(W2/W3:未变则零 saveScan / 零 getAllFiles)。
+export async function persistIfDirty(id) {
+  const fs = useFsStore();
+  if (!id || !fs.rootDirty)
+    return;
+  const root = fs.rootFolder;
+  if (!root)
+    return;
+  await saveScan(id, root.toSnapshot());
+  await useRootStore().updateMeta(id, { fileCount: root.getAllFiles().length });
+  fs.rootDirty = false;
+}
+
 // 打开新文件夹(picker)。扫描 + 记录到 handleStore + 存快照 + 切换。
 export async function openFolderPicker() {
   if (!isFileSystemAccessSupported()) {

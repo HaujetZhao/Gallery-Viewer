@@ -2,8 +2,12 @@ import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CONFIG } from '../config/index';
 import { makeCancelToken } from '../utils/concurrency';
-import { integrateScanResult, startBackgroundScan } from './filesystem';
+vi.mock('./scanCache', () => ({ saveScan: vi.fn(async () => {}), loadScan: vi.fn(async () => null), clearScan: vi.fn(async () => {}) }));
+vi.mock('./handleStore', () => ({ add: vi.fn(async () => 'id'), getHandle: vi.fn(async () => null), verifyPermission: vi.fn(async () => true), loadAll: vi.fn(async () => []), update: vi.fn(async () => {}), remove: vi.fn(async () => {}) }));
+import { saveScan } from './scanCache';
+import { integrateScanResult, persistIfDirty, startBackgroundScan } from './filesystem';
 import { useFsStore } from '../stores/fs';
+import { useRootStore } from '../stores/root';
 
 // startBackgroundScan Phase 3 起调 integrateScanResult → useFsStore(),需要激活 Pinia。
 beforeEach(() => {
@@ -122,5 +126,44 @@ describe('integrateScanResult dirty', () => {
     const result = { files: [], subFolders: [], newFiles: [], newSubFolders: [], removedFiles: [], removedFolders: [] };
     integrateScanResult(folder, result, fs);
     expect(fs.rootDirty).toBe(false);
+  });
+});
+
+describe('persistIfDirty', () => {
+  beforeEach(() => saveScan.mockClear());
+
+  it('非 dirty → no-op(不 saveScan / 不 getAllFiles)', async () => {
+    const fs = useFsStore();
+    fs.rootDirty = false;
+    const toSnapshot = vi.fn(() => ({}));
+    const getAllFiles = vi.fn(() => []);
+    fs.rootFolder = { toSnapshot, getAllFiles };
+    await persistIfDirty('r1');
+    expect(saveScan).not.toHaveBeenCalled();
+    expect(toSnapshot).not.toHaveBeenCalled();
+    expect(getAllFiles).not.toHaveBeenCalled();
+  });
+
+  it('dirty → saveScan + getAllFiles + 清 dirty', async () => {
+    const fs = useFsStore();
+    fs.rootDirty = true;
+    const snap = { fake: 'snap' };
+    const toSnapshot = vi.fn(() => snap);
+    const getAllFiles = vi.fn(() => [{}, {}, {}]);
+    fs.rootFolder = { toSnapshot, getAllFiles };
+    const root = useRootStore();
+    root.add('r1', 'name', 0, 0);
+    saveScan.mockClear();
+    await persistIfDirty('r1');
+    expect(saveScan).toHaveBeenCalledWith('r1', snap);
+    expect(getAllFiles).toHaveBeenCalled();
+    expect(fs.rootDirty).toBe(false);
+  });
+
+  it('无 id → no-op', async () => {
+    const fs = useFsStore();
+    fs.rootDirty = true;
+    await persistIfDirty(null);
+    expect(saveScan).not.toHaveBeenCalled();
   });
 });
