@@ -12,10 +12,11 @@ export const useFsStore = defineStore('fs', () => {
   const currentFolder = ref(null); // SmartFolder(当前显示)
   const foldersData = ref(new Map()); // path -> SmartFolder(去重缓存)
   const allMediaFolder = ref(null); // ALL_MEDIA 虚拟文件夹
+  const rootDirty = ref(false); // 树变更标记:scanFolder 增删 / 文件操作(rename/delete/move)置脏;persistIfDirty 清
 
   // 初始化 ALL_MEDIA 虚拟文件夹(原 model.SmartFolder.js 模块加载副作用挪到这里)
   allMediaFolder.value = createAllMediaFolder();
   foldersData.value.set('ALL_MEDIA', allMediaFolder.value);
 
-  return { rootHandle, rootFolder, currentFolder, foldersData, allMediaFolder };
+  return { rootHandle, rootFolder, currentFolder, foldersData, allMediaFolder, rootDirty };
 });
