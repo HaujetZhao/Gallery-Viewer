@@ -1,4 +1,5 @@
 // 文件夹删除业务。两步确认 + 物理 removeEntry recursive(不可逆,不进撤销栈)。
+import { deleteFolder } from '../models/SmartFolder';
 import { useConfirmStore } from '../stores/confirm';
 import { useFsStore } from '../stores/fs';
 import { useToastStore } from '../stores/uiToast';
@@ -26,7 +27,7 @@ export async function handleDeleteFolder(folder) {
 
   try {
     const path = folder.path;
-    await folder.delete(); // SmartFolder.delete: removeEntry recursive + 从 parent.subFolders 移除
+    await deleteFolder(folder); // removeEntry recursive + 从 parent.subFolders 移除
     fs.foldersData.delete(path);
     // 递归清后代缓存(否则 ALL_MEDIA 聚合仍含已删子树的文件)
     const prefix = `${path}/`;

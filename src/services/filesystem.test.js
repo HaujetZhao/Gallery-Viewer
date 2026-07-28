@@ -15,6 +15,25 @@ beforeEach(() => {
   setActivePinia(createPinia());
 });
 
+// P3:model 函数化后,filesystem 编排测试用 spy 隔离 SmartFolder 模块函数(真实 enrich/snapshot/validate 行为
+// 在 smart-folder.test.js 单测)。个别测试(如 cancel)覆盖 enrichFolder 做关卡。
+let folderFns;
+beforeEach(async () => {
+  const mod = await import('../models/SmartFolder');
+  folderFns = {
+    enrichFolder: vi.spyOn(mod, 'enrichFolder').mockResolvedValue(),
+    folderToSnapshot: vi.spyOn(mod, 'folderToSnapshot').mockReturnValue({}),
+    countAllFiles: vi.spyOn(mod, 'countAllFiles').mockReturnValue(0),
+    validateFolder: vi.spyOn(mod, 'validateFolder').mockResolvedValue(true),
+  };
+});
+afterEach(() => {
+  folderFns?.enrichFolder.mockRestore();
+  folderFns?.folderToSnapshot.mockRestore();
+  folderFns?.countAllFiles.mockRestore();
+  folderFns?.validateFolder.mockRestore();
+});
+
 // 假文件夹:Phase 3 Step 1 起 startBackgroundScan 调 scanFolder(读 handle.values())+ enrich。
 // handle.values() 吐出与声明 subFolders 同名的 directory 条目 —— 信任短路命中 → 子文件夹保留(不被当 removed)。
 // enrich mock(Phase 2:进入节点先 enrich 当前层)保留。
@@ -27,7 +46,6 @@ function fakeFolder(name, subFolders = []) {
       name,
       values: () => makeValuesIter(subFolders.map(s => ({ kind: 'directory', name: s.name }))),
     },
-    enrich: vi.fn(async () => {}),
   };
 }
 
@@ -56,12 +74,8 @@ describe('startBackgroundScan', () => {
 
     await startBackgroundScan(root);
 
-    // Phase 2:进入每个节点先 enrich 当前层(补 size/mtime)。
-    // Phase 3:scanFolder 在 subFolderData(代理)上跑,无需 scan mock。
-    expect(root.enrich).toHaveBeenCalled();
-    expect(a.enrich).toHaveBeenCalled();
-    expect(c.enrich).toHaveBeenCalled();
-    expect(b.enrich).toHaveBeenCalled();
+    // P3:enrichFolder 是模块函数,spy 断言每节点(root/a/b/c)调一次。
+    expect(folderFns.enrichFolder).toHaveBeenCalledTimes(4);
   });
 
   it('无 subFolders 时安全返回(undefined / 空)', async () => {
@@ -77,17 +91,15 @@ describe('startBackgroundScan', () => {
       resolveHold = r;
     });
     const enriched = [];
-    const subs = Array.from({ length: cap + 2 }, (_, i) => {
-      const f = fakeFolder(`s${i}`);
-      // 关卡挪到 enrich:子节点进入后 startBackgroundScan 先 enrich(在派发 scanFolder/integrate 之前)。
-      // cancel 后首批 cap 个 enrich 卡 hold,超出的子节点不再派发。
-      f.enrich = vi.fn(async () => {
-        enriched.push(i);
-        await hold;
-      });
-      return f;
+    const root = fakeFolder('root', Array.from({ length: cap + 2 }, (_, i) => fakeFolder(`s${i}`)));
+    // P3:关卡挪到 enrichFolder spy。root 立即返回(让遍历进入 subs),subs 卡 hold。
+    // cancel 后首批 cap 个 enrichFolder 卡 hold,超出的子节点不再派发。
+    folderFns.enrichFolder.mockImplementation(async (folder) => {
+      if (folder === root)
+        return;
+      enriched.push(folder.name);
+      await hold;
     });
-    const root = fakeFolder('root', subs);
 
     const token = makeCancelToken();
     const done = startBackgroundScan(root, token);
@@ -133,31 +145,28 @@ describe('integrateScanResult dirty', () => {
 describe('persistIfDirty', () => {
   beforeEach(() => saveScan.mockClear());
 
-  it('非 dirty → no-op(不 saveScan / 不 countAllFiles)', async () => {
+  it('非 dirty → no-op(不 saveScan / 不 folderToSnapshot)', async () => {
     const fs = useFsStore();
     fs.rootDirty = false;
-    const toSnapshot = vi.fn(() => ({}));
-    const countAllFiles = vi.fn(() => 0);
-    fs.rootFolder = { toSnapshot, countAllFiles };
+    fs.rootFolder = {};
     await persistIfDirty('r1');
     expect(saveScan).not.toHaveBeenCalled();
-    expect(toSnapshot).not.toHaveBeenCalled();
-    expect(countAllFiles).not.toHaveBeenCalled();
+    expect(folderFns.folderToSnapshot).not.toHaveBeenCalled();
+    expect(folderFns.countAllFiles).not.toHaveBeenCalled();
   });
 
   it('dirty → saveScan + countAllFiles + 清 dirty', async () => {
     const fs = useFsStore();
     fs.rootDirty = true;
     const snap = { fake: 'snap' };
-    const toSnapshot = vi.fn(() => snap);
-    const countAllFiles = vi.fn(() => 3);
-    fs.rootFolder = { toSnapshot, countAllFiles };
+    folderFns.folderToSnapshot.mockReturnValue(snap);
+    fs.rootFolder = {};
     const root = useRootStore();
     root.add('r1', 'name', 0, 0);
     saveScan.mockClear();
     await persistIfDirty('r1');
     expect(saveScan).toHaveBeenCalledWith('r1', snap);
-    expect(countAllFiles).toHaveBeenCalled();
+    expect(folderFns.countAllFiles).toHaveBeenCalled();
     expect(fs.rootDirty).toBe(false);
   });
 
@@ -188,7 +197,7 @@ describe('持久化调度(schedulePersist / cancelPendingPersist)与点击不阻
     rootStore.add('r1', 'root', 0, 0);
     rootStore.setCurrent('r1');
     fs.rootDirty = false;
-    fs.rootFolder = { toSnapshot: () => ({}), countAllFiles: () => 0 };
+    fs.rootFolder = {};
 
     // 假 folder:validate=true,scan 返回 newFiles 使 dirty=true,enrich/loadFolder 立即 resolve。
     const folder = {
@@ -196,8 +205,6 @@ describe('持久化调度(schedulePersist / cancelPendingPersist)与点击不阻
       files: [],
       subFolders: [],
       path: 'root/sub',
-      validate: vi.fn(async () => true),
-      enrich: vi.fn(async () => {}),
     };
     // scanFolder 是 SmartFolder 模块导出,这里直接 mock 模块拿结果。
     const smartFolderMod = await import('../models/SmartFolder');
@@ -232,7 +239,7 @@ describe('持久化调度(schedulePersist / cancelPendingPersist)与点击不阻
     rootStore.add('r1', 'root', 0, 0);
     rootStore.setCurrent('r1');
     fs.rootDirty = true;
-    fs.rootFolder = { toSnapshot: () => ({}), countAllFiles: () => 0 };
+    fs.rootFolder = {};
 
     schedulePersist('r1');
     schedulePersist('r1');
@@ -248,7 +255,7 @@ describe('持久化调度(schedulePersist / cancelPendingPersist)与点击不阻
     rootStore.add('r1', 'root', 0, 0);
     rootStore.setCurrent('r1');
     fs.rootDirty = true;
-    fs.rootFolder = { toSnapshot: () => ({}), countAllFiles: () => 0 };
+    fs.rootFolder = {};
 
     schedulePersist('r1');
     cancelPendingPersist(); // 模拟切根时清旧根 timer
@@ -262,7 +269,7 @@ describe('持久化调度(schedulePersist / cancelPendingPersist)与点击不阻
     rootStore.add('r1', 'root', 0, 0);
     rootStore.setCurrent('r1');
     fs.rootDirty = true;
-    fs.rootFolder = { toSnapshot: () => ({}), countAllFiles: () => 0 };
+    fs.rootFolder = {};
 
     schedulePersist('r1');
     await flushPendingPersist(); // 模拟切根前 flush 旧根待写(不等 1s)
@@ -285,7 +292,7 @@ describe('持久化调度(schedulePersist / cancelPendingPersist)与点击不阻
     rootStore.add('r2', 'root2', 0, 0);
     rootStore.setCurrent('r1');
     fs.rootDirty = true;
-    fs.rootFolder = { toSnapshot: () => ({}), countAllFiles: () => 0 };
+    fs.rootFolder = {};
 
     schedulePersist('r1');
     rootStore.setCurrent('r2'); // 切根:currentRootId 不再是 r1

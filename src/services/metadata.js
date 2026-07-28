@@ -1,6 +1,7 @@
 // 元数据提取策略。搬自源码 js/metadata-strategies.js。
 // image:dimensions + EXIF;video:loadedmetadata;audio:时长 + MP3 ID3;svg:dimensions。
 import { FileTypes } from '../config/file-types';
+import { ensureBlobUrl } from '../models/SmartFile';
 import { extractExif } from './exif';
 import { peek } from './fileResource';
 import { extractID3Tags } from './id3-parser';
@@ -22,7 +23,7 @@ export const MetadataStrategies = {
     async getMetadata(file) {
       const metadata = {};
       // Phase 2:listFolder 零 getFile → 新文件 blobUrl 可能 null(属性面板路径晚调,通常 enrich 完成,但边界保险懒建)
-      await file.ensureBlobUrl();
+      await ensureBlobUrl(file);
       metadata.dimensions = await new Promise((resolve) => {
         const img = new Image();
         img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
@@ -44,7 +45,7 @@ export const MetadataStrategies = {
     types: FileTypes.video.all,
     async getMetadata(file) {
       const metadata = {};
-      await file.ensureBlobUrl();
+      await ensureBlobUrl(file);
       metadata.dimensions = await new Promise((resolve) => {
         const v = document.createElement('video');
         v.preload = 'metadata';
@@ -81,7 +82,7 @@ export const MetadataStrategies = {
     types: FileTypes.audio.all,
     async getMetadata(file) {
       const metadata = {};
-      await file.ensureBlobUrl();
+      await ensureBlobUrl(file);
       metadata.dimensions = await new Promise((resolve) => {
         const a = new Audio();
         a.preload = 'metadata';
@@ -124,7 +125,7 @@ export const MetadataStrategies = {
     types: FileTypes.image.svg,
     async getMetadata(file) {
       const metadata = {};
-      await file.ensureBlobUrl();
+      await ensureBlobUrl(file);
       metadata.dimensions = await new Promise((resolve) => {
         const img = new Image();
         img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });

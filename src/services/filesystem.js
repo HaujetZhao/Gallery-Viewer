@@ -1,5 +1,6 @@
 import { CONFIG } from '../config/index';
-import { scanFolder, SmartFolder } from '../models/SmartFolder';
+import { disposeFile } from '../models/SmartFile';
+import { countAllFiles, createFolder, disposeFolder, enrichFolder, folderFromSnapshot, folderToSnapshot, scanFolder, validateFolder } from '../models/SmartFolder';
 // 文件系统服务。内部用 useFsStore() 操作状态。多文件夹:switchToRoot 切换(秒显缓存+后台校验)。
 import { useFsStore } from '../stores/fs';
 import { useRootStore } from '../stores/root';
@@ -23,7 +24,7 @@ function newBackgroundToken() {
 // 切根/重载用——Phase 1 池化后,clear 不 dispose 会让旧文件 url/File 驻留池泄漏(切文件夹内存增长)。
 function resetFoldersData(fs) {
   for (const folder of fs.foldersData.values())
-    folder.dispose?.(); // → file.dispose() → destroy 池条目(幂等:ALL_MEDIA 聚合引用与真实 folder 共享 file,重复 destroy 无害)
+    disposeFolder(folder); // → disposeFile → destroy 池条目(幂等:ALL_MEDIA 聚合引用与真实 folder 共享 file,重复 destroy 无害)
   fs.foldersData.clear();
   fs.foldersData.set('ALL_MEDIA', fs.allMediaFolder);
 }
@@ -51,7 +52,7 @@ export function integrateScanResult(folder, result, fs) {
   for (const sub of result.removedFolders)
     fs.foldersData.delete(sub.path);
   for (const f of result.removedFiles)
-    f.dispose(); // 旧文件 dispose → destroy 池条目(revoke blobUrl)
+    disposeFile(f); // 旧文件 dispose → destroy 池条目(revoke blobUrl)
   // R3:有增删 → 标树脏(persistIfDirty 据此决定是否持久化)
   if (
     result.newFiles.length
@@ -108,8 +109,8 @@ export async function persistIfDirty(id) {
   const root = fs.rootFolder;
   if (!root)
     return;
-  await saveScan(id, root.toSnapshot());
-  await useRootStore().updateMeta(id, { fileCount: root.countAllFiles() }); // 递归计数,不分配万级数组(P0-1)
+  await saveScan(id, folderToSnapshot(root));
+  await useRootStore().updateMeta(id, { fileCount: countAllFiles(root) }); // 递归计数,不分配万级数组(P0-1)
   fs.rootDirty = false;
 }
 
@@ -169,7 +170,7 @@ async function rootEagerScan(root, token) {
   const fs = useFsStore();
   const result = await scanFolder(root, { trust: true });
   integrateScanResult(root, result, fs);
-  await root.enrich({ token });
+  await enrichFolder(root, { token });
 }
 
 // 打开新文件夹(picker)。扫描 + 记录到 handleStore + 存快照 + 切换。
@@ -226,7 +227,7 @@ export async function switchToRoot(id) {
     resetFoldersData(fs);
     fs.rootHandle = handle;
     if (snap) {
-      const root = SmartFolder.fromSnapshot(snap, null); // 秒显(零 IO,纯函数不注册 foldersData)
+      const root = folderFromSnapshot(snap, null); // 秒显(零 IO,纯函数不注册 foldersData)
       registerFolderTree(root, fs); // 递归注册 folder 树(替代 fromSnapshot 内的 appState 注册副作用)
       fs.rootFolder = root;
       fs.currentFolder = root;
@@ -276,7 +277,7 @@ export async function getFolderData(dirHandle) {
 
   // create 内部 scanFolder(纯函数,不改 folder 入参、不碰 foldersData)。
   // 原始 folder 不能直接写回——registerAndIntegrate 内部 set 进 reactive Map 取代理再 integrate(收口代理陷阱)。
-  const createResult = await SmartFolder.create({ handle: dirHandle, parent });
+  const createResult = await createFolder({ handle: dirHandle, parent });
   return registerAndIntegrate(createResult.folder, createResult, fs);
 }
 
@@ -297,7 +298,7 @@ export async function startBackgroundScan(parentFolder, token = bgToken) {
     return;
   const fs = useFsStore();
   // Phase 2/3:先补当前层 files 的 size/mtime(scanFolder 零 getFile 后,新文件 _meta=null)
-  await parentFolder.enrich({ token });
+  await enrichFolder(parentFolder, { token });
   if (!parentFolder.subFolders)
     return;
   await runConcurrent(
@@ -344,7 +345,7 @@ export async function refreshFolder(folder) {
   try {
     const result = await scanFolder(folder); // 纯函数(不信任:reload 抓增删改名)
     integrateScanResult(folder, result, fs); // 写回代理 + 注册/清理
-    await folder.enrich();
+    await enrichFolder(folder);
   }
   catch (err) {
     if (err.name === 'NotFoundError') {
@@ -391,7 +392,7 @@ export async function handleFolderClick(folder) {
     return;
   }
   try {
-    const isValid = await folder.validate();
+    const isValid = await validateFolder(folder);
     if (!isValid) {
       await handleFolderNotFound(folder);
       return;
@@ -401,7 +402,7 @@ export async function handleFolderClick(folder) {
     //           → loadFolder(await,先显示)。持久化晚 1s 触发;切根时由 flushPendingPersist 落盘旧根改动(reload 则 cancel)。
     const result = await scanFolder(folder, { trust: true });
     integrateScanResult(folder, result, fs);
-    await folder.enrich();
+    await enrichFolder(folder);
     schedulePersist(rootStore.currentRootId);
     await loadFolder(folder);
   }

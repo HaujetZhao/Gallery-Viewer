@@ -1,6 +1,7 @@
 <script setup>
 import { ref, watch } from 'vue';
 import { useModal } from '../composables/useModal';
+import { ensureBlobUrl } from '../models/SmartFile';
 import { useModalStore } from '../stores/modal';
 import AudioPlayer from './AudioPlayer.vue';
 
@@ -24,7 +25,7 @@ watch(
   async () => {
     const f = modal.currentFile;
     if (f) {
-      await f.ensureBlobUrl();
+      await ensureBlobUrl(f);
       imgSrc.value = (mediaKind.value === 'image' || mediaKind.value === 'video') ? f.blobUrl : '';
     }
     else {

@@ -1,6 +1,8 @@
 // 文件操作命令(命令模式)。搬自源码 js/operation-history.js 的 3 个 Operation 类。
 // FileDelete 含 .trash 回收站逻辑(镜像目录 + 防重名);Rename/Move 委托 SmartFile。
 // 文件删除进撤销栈;文件夹删除不进(物理 removeEntry,不可逆,见 fileOps.handleDeleteFolder)。
+import { moveFile, renameFile } from '../models/SmartFile';
+import { addFileAndSort, removeFileFromFolder } from '../models/SmartFolder';
 import { useFsStore } from '../stores/fs';
 import { acquire, destroy } from './fileResource';
 
@@ -94,7 +96,7 @@ export class FileDeleteOperation extends Operation {
     await this.fileData.handle.move(trashDirHandle, trashName); // move(dir, name) 双参
     const relativePath = this._getRelativePath();
     this.trashPath = relativePath ? `${relativePath}/${trashName}` : trashName;
-    this.parentFolder.removeFile(this.fileData);
+    removeFileFromFolder(this.parentFolder, this.fileData);
     // Vue 响应式:removeFile 改了 parent.files,Gallery 自动重渲
   }
 
@@ -119,7 +121,7 @@ export class FileDeleteOperation extends Operation {
     // 写 _meta(响应式一致): 与池同步,getter 读 _meta 触发 Vue 重渲
     this.fileData._meta = { size: restoredFile.size, lastModified: restoredFile.lastModified };
     this.fileData.md5 = null;
-    this.parentFolder.addFileAndSort(this.fileData);
+    addFileAndSort(this.parentFolder, this.fileData);
   }
 
   getDescription() {
@@ -136,11 +138,11 @@ export class FileRenameOperation extends Operation {
   }
 
   async execute() {
-    await this.fileData.rename(this.newName);
+    await renameFile(this.fileData, this.newName);
   }
 
   async undo() {
-    await this.fileData.rename(this.oldName);
+    await renameFile(this.fileData, this.oldName);
     // SmartFile.rename 内部已重建 blobUrl + 清 md5,Vue 响应式自动更新
   }
 
@@ -160,13 +162,13 @@ export class FileMoveOperation extends Operation {
   }
 
   async execute() {
-    await this.fileData.move(this.targetFolder);
+    await moveFile(this.fileData, this.targetFolder);
   }
 
   async undo() {
     if (!this.sourceFolder)
       throw new Error('源文件夹引用丢失');
-    await this.fileData.move(this.sourceFolder);
+    await moveFile(this.fileData, this.sourceFolder);
   }
 
   getDescription() {

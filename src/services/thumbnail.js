@@ -1,4 +1,5 @@
 import { triggerRedraw } from '../composables/useThumbnail';
+import { ensureBlobUrl } from '../models/SmartFile';
 import { useFsStore } from '../stores/fs';
 import { useToastStore } from '../stores/uiToast';
 import { useUserSettingsStore } from '../stores/userSettings';
@@ -38,7 +39,7 @@ export async function generateThumbnail(file, canvas, targetSize = 400) {
   }
 
   // listFolder 零 getFile 后,新文件 blobUrl 为 null。先 ensureBlobUrl 懒 acquire(复用 enrich 的池,不重复 IO)。
-  await file.ensureBlobUrl();
+  await ensureBlobUrl(file);
 
   // 缓存路径:image/video/audio。md5 懒加载(首次算后存 file.md5)。
   if (!file.md5) {

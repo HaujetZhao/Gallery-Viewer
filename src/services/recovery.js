@@ -1,4 +1,4 @@
-import { scanFolder } from '../models/SmartFolder';
+import { findValidFolderAncestor, scanFolder } from '../models/SmartFolder';
 // 句柄失效恢复服务。搬自源码 js/recovery.js。
 // 失效检测由调用方触发(validate 失败 / NotFoundError);本服务负责:找祖先→重扫→递归扫新增子目录。
 // syncTreeStructure(源码 sidebar)阶段5 接入;handleFileNotFound 推迟阶段6 gallery。
@@ -12,7 +12,7 @@ export async function handleFolderNotFound(folderData) {
   const fs = useFsStore();
   console.warn('文件夹可能已失效:', folderData?.name);
 
-  const validAncestor = await folderData.findValidAncestor();
+  const validAncestor = await findValidFolderAncestor(folderData);
   if (!validAncestor) {
     console.error('无法恢复:根目录已失效,请重新打开文件夹');
     fs.rootHandle = null; // 回启动页,让用户重开
