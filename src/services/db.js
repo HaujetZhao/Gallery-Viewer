@@ -24,10 +24,6 @@ export function initDB() {
   });
 }
 
-export function getDB() {
-  return db;
-}
-
 // 源码原本 fire-and-forget,改为返回 Promise(等 tx.oncomplete),便于调用方确认落盘。
 export function saveThumbnailToDB(data) {
   return new Promise((resolve) => {
