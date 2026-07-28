@@ -2,6 +2,7 @@
 // image:dimensions + EXIF;video:loadedmetadata;audio:时长 + MP3 ID3;svg:dimensions。
 import { FileTypes } from '../config/file-types';
 import { extractExif } from './exif';
+import { peek } from './fileResource';
 import { extractID3Tags } from './id3-parser';
 
 export function formatDuration(seconds) {
@@ -29,7 +30,8 @@ export const MetadataStrategies = {
         img.src = file.blobUrl;
       });
       try {
-        const fileObj = await file.handle.getFile();
+        // 复用资源池(ensureBlobUrl 已 acquire,peek 命中省一次 getFile;未命中回退 handle.getFile)
+        const fileObj = peek(file)?.file ?? await file.handle.getFile();
         metadata.exif = await extractExif(fileObj);
       }
       catch (e) {

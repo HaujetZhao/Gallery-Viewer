@@ -56,18 +56,15 @@ function buildTree() {
   const subFile = new SmartFile({ handle: { name: 'a.jpg' }, parent: sub });
   subFile._meta = { size: 5, lastModified: 9 };
   sub.files = [subFile];
-  root.scanned = true;
-  sub.scanned = true;
-  root.treeNode.expanded = false;
+  root.expanded = false;
   return root;
 }
 
 describe('smartFolder rehydrate', () => {
-  it('toSnapshot 序列化整棵树(name/scanned/expanded/subFolders/files)', () => {
+  it('toSnapshot 序列化整棵树(name/expanded/subFolders/files)', () => {
     const root = buildTree();
     const snap = root.toSnapshot();
     expect(snap.name).toBe('root');
-    expect(snap.scanned).toBe(true);
     expect(snap.expanded).toBe(false);
     expect(snap.subFolders).toHaveLength(1);
     expect(snap.subFolders[0].name).toBe('sub');
@@ -84,7 +81,7 @@ describe('smartFolder rehydrate', () => {
     expect(root2.subFolders[0].parent).toBe(root2);
     expect(root2.subFolders[0].files[0].name).toBe('a.jpg');
     expect(root2.subFolders[0].files[0].size).toBe(5);
-    expect(root2.treeNode.expanded).toBe(false);
+    expect(root2.expanded).toBe(false);
   });
 
   // Phase 3 Step 2:fromSnapshot 纯函数化后,不再注册 foldersData(副作用移到 switchToRoot 的 registerFolderTree)。
@@ -127,7 +124,6 @@ describe('scanFolder 纯函数(不改入参,零 getFile)+ enrich', () => {
     // Phase 3:scanFolder 纯函数 —— 不改 folder 入参,结果在 result
     expect(folder.files).toBe(originalFiles); // 入参未被替换
     expect(folder.subFolders).toBe(originalSubFolders);
-    expect(folder.scanned).toBe(false); // 不写 scanned
 
     // Phase 2:scan 零 getFile —— 仅列名 + 差集,所有 size/mtime 由 enrich 补
     expect(entries[0].getFile).not.toHaveBeenCalled(); // b.jpg
@@ -184,7 +180,6 @@ describe('scanFolder 纯函数(不改入参,零 getFile)+ enrich', () => {
     const cachedA = cachedFile('a.jpg');
     const cachedB = cachedFile('b.png');
     folder.files = [cachedA, cachedB];
-    folder.scanned = true;
     const originalFiles = folder.files;
 
     const result = await scanFolder(folder, { trust: true });
@@ -192,7 +187,6 @@ describe('scanFolder 纯函数(不改入参,零 getFile)+ enrich', () => {
     expect(a.getFile).not.toHaveBeenCalled();
     expect(b.getFile).not.toHaveBeenCalled();
     expect(folder.files).toBe(originalFiles); // 入参未改
-    expect(folder.scanned).toBe(true); // 不动 scanned
     // 信任短路 → result.files === folder.files(沿用缓存)
     expect(result.files).toBe(folder.files);
     expect(result.newFiles).toEqual([]);
@@ -268,14 +262,11 @@ describe('integrateScanResult helper(service 层整合副作用)', () => {
     const { integrateScanResult } = await import('../services/filesystem');
 
     // 造假 folder(代理形式,普通对象够用:本测试只验写回 + Map 操作)
-    const folder = {
-      scanned: false,
-      treeNode: { refreshState: vi.fn() },
-    };
+    const folder = {};
 
-    // 造假 result:newSubFolders / removedFolders(含 treeNode.destroy) / removedFiles(含 dispose spy)
-    const newSub = { path: 'root/newSub', treeNode: { destroy: vi.fn() } };
-    const removedSub = { path: 'root/old', treeNode: { destroy: vi.fn() } };
+    // 造假 result:newSubFolders / removedFolders / removedFiles(含 dispose spy)
+    const newSub = { path: 'root/newSub' };
+    const removedSub = { path: 'root/old' };
     const keptFile = { name: 'keep.jpg' };
     const removedFile = { name: 'gone.jpg', dispose: vi.fn() };
     const result = {
@@ -293,11 +284,8 @@ describe('integrateScanResult helper(service 层整合副作用)', () => {
 
     expect(folder.files).toBe(result.files); // 写回(代理 folder 属性变更触发响应式)
     expect(folder.subFolders).toBe(result.subFolders);
-    expect(folder.scanned).toBe(true);
-    expect(folder.treeNode.refreshState).toHaveBeenCalled();
     expect(fakeFs.foldersData.get('root/newSub')).toBe(newSub); // 注册新子目录
     expect(fakeFs.foldersData.has('root/old')).toBe(false); // 删旧子目录
-    expect(removedSub.treeNode.destroy).toHaveBeenCalled(); // 旧子目录 treeNode 数据清理
     expect(removedFile.dispose).toHaveBeenCalled(); // 旧文件 dispose(destroy 池条目)
   });
 });

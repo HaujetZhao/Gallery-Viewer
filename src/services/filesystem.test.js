@@ -16,14 +16,12 @@ function fakeFolder(name, subFolders = []) {
   return {
     name,
     subFolders,
-    scanned: false,
     files: [],
     handle: {
       name,
       values: () => makeValuesIter(subFolders.map(s => ({ kind: 'directory', name: s.name }))),
     },
     enrich: vi.fn(async () => {}),
-    treeNode: { refreshState: vi.fn(), destroy: vi.fn() },
   };
 }
 

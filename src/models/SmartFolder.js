@@ -11,7 +11,6 @@ import { acquire, peek } from '../services/fileResource';
 import { runConcurrent } from '../utils/concurrency';
 import { windowsCompareStrings } from '../utils/format';
 import { SmartFile } from './SmartFile';
-import { TreeNode } from './TreeNode';
 
 // 名字集合比对(信任短路的依据):现有 Map 的 key 集合与当前条目名集合是否完全一致。
 // FS Access API 读不到目录 mtime(见设计文档),名字集合比对是最优的免费变更信号。
@@ -46,8 +45,17 @@ export class SmartFolder {
 
     this.files = [];
     this.subFolders = [];
-    this.scanned = false;
-    this.treeNode = new TreeNode(this);
+    this.expanded = true; // 侧栏树展开态(原 TreeNode 字段,Vue3 化后并入 folder)
+  }
+
+  // 实时算空状态(原 TreeNode.refreshState 的逻辑,改成 getter 免手动调用):
+  // files/subFolders 在 store 的 reactive 数组里,.length 响应式 → getter 读响应式(SidebarTreeItem 自动更新)。
+  get isEmpty() {
+    return this.files.length === 0 && this.subFolders.length === 0;
+  }
+
+  toggleExpanded() {
+    this.expanded = !this.expanded;
   }
 
   // 工厂:建 SmartFolder + scanFolder(纯函数,不改 this/不注册 foldersData)。
@@ -134,15 +142,14 @@ export class SmartFolder {
     return allFiles;
   }
 
-  // 序列化为可持久化快照(整棵树 plain,handle 可克隆进 IDB)。不含 parent/treeNode(重建时接回/新建)。
+  // 序列化为可持久化快照(整棵树 plain,handle 可克隆进 IDB)。不含 parent(重建时接回)。
   toSnapshot() {
     return {
       handle: this.handle,
       name: this.name,
       files: this.files.map(f => f.toSnapshot()),
       subFolders: this.subFolders.map(f => f.toSnapshot()),
-      expanded: this.treeNode?.expanded ?? true,
-      scanned: this.scanned,
+      expanded: this.expanded,
     };
   }
 
@@ -151,12 +158,9 @@ export class SmartFolder {
   // 切换后 handleFolderClick/getFolderData 按 path 查 foldersData 取到 folder。
   static fromSnapshot(snap, parent) {
     const folder = new SmartFolder({ handle: snap.handle, parent });
-    folder.scanned = snap.scanned;
+    folder.expanded = snap.expanded;
     folder.files = snap.files.map(f => SmartFile.fromSnapshot(f, folder));
     folder.subFolders = snap.subFolders.map(s => SmartFolder.fromSnapshot(s, folder));
-    if (folder.treeNode)
-      folder.treeNode.expanded = snap.expanded;
-    folder.treeNode?.refreshState();
     return folder;
   }
 
@@ -227,10 +231,11 @@ export class SmartFolder {
 }
 
 // 纯列表 scan:values() 单次遍历做差集 + 名字集合信任短路,零 getFile。
-// Phase 3 Step 1:纯函数化 —— 不改 folder 入参(files/subFolders/scanned/treeNode 原样保留)、
-// 不碰 foldersData、不调 dispose。新建 SmartFile/SmartFolder(parent=folder)是建对象(允许)。
+// Phase 3 Step 1:纯函数化 —— 不改 folder 入参(files/subFolders 原样保留)、不碰 foldersData、不调 dispose。
+// 新建 SmartFile/SmartFolder(parent=folder)是建对象(允许)。
 // removedFiles/removedFolders 暴露给调用方,integrateScanResult(service 层)统一处理副作用。
-// Phase 2 简化:不再 size/mtime 校验(原地同名替换检测不到,文档 §2.3 接受,reload 兜底抓增删改名)。
+// Phase 2 简化:不再 size/mtime 校验(原地同名替换检测不到,文档 §2.3 接受);reload 抓增删改名(含同名替换:
+// reload 走 initProject 清 foldersData + 重建树 + enrich 重 getFile,故 reload 能抓同名内容替换,扫描则不能)。
 // trust 模式(后台重扫):名字集合一致 → 零 IO,result.files 沿用 folder.files 缓存引用。
 export async function scanFolder(folder, { trust = false } = {}) {
   if (!folder.handle)

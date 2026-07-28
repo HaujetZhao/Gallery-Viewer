@@ -38,22 +38,18 @@ function registerFolderTree(folder, fs) {
 }
 
 // Phase 3 Step 1 整合副作用:把 scanFolder 纯函数结果写回「代理」folder(Vue 响应式)。
-// 集中:① 写回 folder.files/subFolders/scanned ② refreshState ③ 注册 newSubFolders 到 foldersData
-// ④ 删 removedFolders + treeNode.destroy ⑤ dispose removedFiles(destroy 池条目)。
+// 集中:① 写回 folder.files/subFolders(isEmpty getter 实时算,无需 refreshState)② 注册 newSubFolders 到 foldersData
+// ③ 删 removedFolders ④ dispose removedFiles(destroy 池条目)。
 // ⚠️ folder 必须是「代理」(从 store 取或 foldersData.get);SmartFolder.create 返回的原始 folder 写回不触发响应式。
 export function integrateScanResult(folder, result, fs) {
   folder.files = result.files; // 写回代理 folder(Vue3 reactive 触发重渲)
   folder.subFolders = result.subFolders;
-  folder.scanned = true;
-  folder.treeNode?.refreshState();
   // result.newSubFolders 是 scanFolder 新建的「原始」对象,set 进 reactive Map 后被代理化。
   // 后续若要写回某 sub,必须 foldersData.get(sub.path) 取代理(recovery.js startBackgroundScan 即如此),勿直接用原始 sub 写回(不响应式)。
   for (const sub of result.newSubFolders)
     fs.foldersData.set(sub.path, sub); // 注册新子目录(path→folder)
-  for (const sub of result.removedFolders) {
+  for (const sub of result.removedFolders)
     fs.foldersData.delete(sub.path);
-    sub.treeNode?.destroy(); // 旧子目录 treeNode 数据清理
-  }
   for (const f of result.removedFiles)
     f.dispose(); // 旧文件 dispose → destroy 池条目(revoke blobUrl)
 }
@@ -241,19 +237,18 @@ export async function reloadProject() {
 }
 
 // 重扫单文件夹(scanFolder + integrateScanResult + enrich)。小文件夹点击:秒显 + enrich 补全 size/mtime。
-// 失败(NotFoundError)时从 foldersData 删 + treeNode 数据清理。
+// 失败(NotFoundError)时从 foldersData 删。
 // ⚠️ folder 必须是代理(从 store 取);integrateScanResult 写回代理才触发响应式。
 export async function refreshFolder(folder) {
   const fs = useFsStore();
   try {
     const result = await scanFolder(folder); // 纯函数(不信任:reload 抓增删改名)
-    integrateScanResult(folder, result, fs); // 写回代理 + 注册/清理 + refreshState
+    integrateScanResult(folder, result, fs); // 写回代理 + 注册/清理
     await folder.enrich();
   }
   catch (err) {
     if (err.name === 'NotFoundError') {
       fs.foldersData.delete(folder.path);
-      folder.treeNode?.destroy();
       if (fs.currentFolder === folder) {
         fs.currentFolder = folder.parent || fs.allMediaFolder;
       }

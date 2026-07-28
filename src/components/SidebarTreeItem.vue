@@ -25,7 +25,7 @@ async function onClick() {
 }
 function toggle(e) {
   e.stopPropagation();
-  props.folder.treeNode.toggleExpanded();
+  props.folder.toggleExpanded();
 }
 
 function onContextmenu(e) {
@@ -80,7 +80,7 @@ function findFileByPath(path) {
       {
         'root-node': isRoot,
         'active': fsStore.currentFolder === folder,
-        'empty-folder': folder.treeNode.isEmpty,
+        'empty-folder': folder.isEmpty,
         'drag-over': dragOver,
       },
     ]"
@@ -91,13 +91,13 @@ function findFileByPath(path) {
     @drop="onDrop"
   >
     <i
-      :class="folder.treeNode.expanded ? 'fas fa-folder-open' : 'fas fa-folder'"
+      :class="folder.expanded ? 'fas fa-folder-open' : 'fas fa-folder'"
       @click="toggle"
     />
     <span class="tree-node-name">{{ folder.name }}</span>
     <span class="tree-node-count">({{ folder.files.length }})</span>
   </li>
-  <ul class="tree-sub-list" :class="[{ expanded: folder.treeNode.expanded }]">
+  <ul class="tree-sub-list" :class="[{ expanded: folder.expanded }]">
     <SidebarTreeItem v-for="child in folder.subFolders" :key="child.path" :folder="child" />
   </ul>
 </template>
