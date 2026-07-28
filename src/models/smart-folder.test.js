@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { acquire } from '../services/fileResource';
 import { SmartFile } from './SmartFile';
-import { SmartFolder } from './SmartFolder';
+import { scanFolder, SmartFolder } from './SmartFolder';
 
 beforeEach(() => {
   URL.createObjectURL = vi.fn(() => 'blob:fake');
@@ -98,8 +98,8 @@ describe('smartFolder rehydrate', () => {
   });
 });
 
-describe('smartFolder scan 纯列表(零 getFile)+ enrich', () => {
-  it('scan 只列名:不 getFile,files 排序对但 size 缺省(undefined)', async () => {
+describe('scanFolder 纯函数(不改入参,零 getFile)+ enrich', () => {
+  it('scanFolder 只列名:不 getFile,files 排序对但 size 缺省(undefined)', async () => {
     const entries = [
       fileEntry('b.jpg', 200),
       fileEntry('a.png', 100),
@@ -107,29 +107,51 @@ describe('smartFolder scan 纯列表(零 getFile)+ enrich', () => {
       dirEntry('sub'), // 非媒体目录,应建子文件夹
       fileEntry('notes.txt'), // 非媒体扩展名,应跳过(getFile 不该被调)
     ];
+    const originalFiles = [];
+    const originalSubFolders = [];
     const folder = new SmartFolder({ handle: makeDirHandle(entries), parent: null });
-    await folder.scan();
+    folder.files = originalFiles; // 入参引用(空数组)
+    folder.subFolders = originalSubFolders;
+    const result = await scanFolder(folder);
+
+    // Phase 3:scanFolder 纯函数 —— 不改 folder 入参,结果在 result
+    expect(folder.files).toBe(originalFiles); // 入参未被替换
+    expect(folder.subFolders).toBe(originalSubFolders);
+    expect(folder.scanned).toBe(false); // 不写 scanned
 
     // Phase 2:scan 零 getFile —— 仅列名 + 差集,所有 size/mtime 由 enrich 补
     expect(entries[0].getFile).not.toHaveBeenCalled(); // b.jpg
     expect(entries[1].getFile).not.toHaveBeenCalled(); // a.png
     expect(entries[2].getFile).not.toHaveBeenCalled(); // c.gif
     expect(entries[4].getFile).not.toHaveBeenCalled(); // notes.txt 被跳过
-    expect(folder.files.map(f => f.name)).toEqual(['a.png', 'b.jpg', 'c.gif']); // Windows 排序
+    expect(result.files.map(f => f.name)).toEqual(['a.png', 'b.jpg', 'c.gif']); // Windows 排序
+    expect(result.subFolders.map(f => f.name)).toEqual(['sub']);
+    // newFiles 是遍历插入序(未排序);result.files 才排序
+    expect(result.newFiles.map(f => f.name)).toEqual(['b.jpg', 'a.png', 'c.gif']);
+    expect(result.newSubFolders.map(f => f.name)).toEqual(['sub']);
+    expect(result.removedFiles).toEqual([]);
+    expect(result.removedFolders).toEqual([]);
+
     // listFolder 阶段:池空 + _meta 未写 → size 缺省(undefined)
-    expect(folder.files[0].size).toBeUndefined();
-    expect(folder.files[0]._meta).toBeNull();
-    expect(folder.files[0].md5).toBeNull();
-    expect(folder.subFolders.map(f => f.name)).toEqual(['sub']);
+    expect(result.files[0].size).toBeUndefined();
+    expect(result.files[0]._meta).toBeNull();
+    expect(result.files[0].md5).toBeNull();
+
+    // newSubFolders 不应注册到 appState.foldersData(纯函数不碰 appState)
+    expect(SmartFolder.appState.foldersData.has('root/sub')).toBe(false);
   });
 
-  it('enrich 补全: getFile + acquire + 写 _meta,size 正确', async () => {
+  it('enrich 补全: getFile + acquire + 写 _meta,size 正确(用 integrateScanResult 写回 folder)', async () => {
+    const { integrateScanResult } = await import('../services/filesystem');
     const entries = [
       fileEntry('b.jpg', 200),
       fileEntry('a.png', 100),
     ];
     const folder = new SmartFolder({ handle: makeDirHandle(entries), parent: null });
-    await folder.scan();
+    const result = await scanFolder(folder);
+    // 模拟 service 层写回(folder 在真实 store 里是代理,这里直接写也行)
+    const fakeFs = { foldersData: new Map() };
+    integrateScanResult(folder, result, fakeFs);
 
     expect(entries[0].getFile).not.toHaveBeenCalled(); // scan 阶段零 IO
     expect(folder.files[0].size).toBeUndefined(); // 缺省
@@ -144,7 +166,7 @@ describe('smartFolder scan 纯列表(零 getFile)+ enrich', () => {
     expect(folder.files.find(f => f.name === 'b.jpg').size).toBe(200);
   });
 
-  it('信任短路: scan 名字集合一致 → getFile 未调;enrich targets 空 → getFile 仍未调', async () => {
+  it('信任短路: scanFolder 名字集合一致 → getFile 未调,result.files 沿用原对象引用', async () => {
     const a = fileEntry('a.jpg');
     const b = fileEntry('b.png');
     const folder = new SmartFolder({ handle: makeDirHandle([a, b]), parent: null });
@@ -152,13 +174,20 @@ describe('smartFolder scan 纯列表(零 getFile)+ enrich', () => {
     const cachedB = cachedFile('b.png');
     folder.files = [cachedA, cachedB];
     folder.scanned = true;
+    const originalFiles = folder.files;
 
-    await folder.scan({ trust: true });
+    const result = await scanFolder(folder, { trust: true });
 
     expect(a.getFile).not.toHaveBeenCalled();
     expect(b.getFile).not.toHaveBeenCalled();
-    expect(folder.files).toEqual([cachedA, cachedB]); // 原对象,零 IO
-    expect(folder.scanned).toBe(true);
+    expect(folder.files).toBe(originalFiles); // 入参未改
+    expect(folder.scanned).toBe(true); // 不动 scanned
+    // 信任短路 → result.files === folder.files(沿用缓存)
+    expect(result.files).toBe(folder.files);
+    expect(result.newFiles).toEqual([]);
+    expect(result.newSubFolders).toEqual([]);
+    expect(result.removedFiles).toEqual([]);
+    expect(result.removedFolders).toEqual([]);
 
     // enrich 阶段:既有项 _meta 有 → filter 待补(targets 空)→ 零 getFile
     await folder.enrich();
@@ -166,7 +195,7 @@ describe('smartFolder scan 纯列表(零 getFile)+ enrich', () => {
     expect(b.getFile).not.toHaveBeenCalled();
   });
 
-  it('信任差异(新增):scan 零 getFile;enrich 只补新增,既有保留', async () => {
+  it('信任差异(新增):scan 零 getFile;既有保留,新增进 newFiles', async () => {
     const a = fileEntry('a.jpg');
     const b = fileEntry('b.png');
     const c = fileEntry('c.gif'); // 新增
@@ -174,23 +203,28 @@ describe('smartFolder scan 纯列表(零 getFile)+ enrich', () => {
     const cachedA = cachedFile('a.jpg');
     const cachedB = cachedFile('b.png');
     folder.files = [cachedA, cachedB];
+    const originalFiles = folder.files;
 
-    await folder.scan({ trust: true });
+    const result = await scanFolder(folder, { trust: true });
 
     // scan 纯列名,既有 + 新增都不 getFile
     expect(a.getFile).not.toHaveBeenCalled();
     expect(b.getFile).not.toHaveBeenCalled();
     expect(c.getFile).not.toHaveBeenCalled();
-    expect(folder.files.map(f => f.name)).toEqual(['a.jpg', 'b.png', 'c.gif']);
+    expect(folder.files).toBe(originalFiles); // 入参未改
+    expect(result.files.map(f => f.name)).toEqual(['a.jpg', 'b.png', 'c.gif']);
+    expect(result.newFiles.map(f => f.name)).toEqual(['c.gif']); // 仅新增进 newFiles
+    expect(result.removedFiles).toEqual([]);
 
     // enrich 阶段:既有 _meta 有 → 不补;新增 _meta=null → 补
+    folder.files = result.files; // 模拟 integrateScanResult 写回
     await folder.enrich();
     expect(a.getFile).not.toHaveBeenCalled();
     expect(b.getFile).not.toHaveBeenCalled();
     expect(c.getFile).toHaveBeenCalledTimes(1); // 仅新增项 getFile
   });
 
-  it('信任差异(删除):消失的文件被 dispose', async () => {
+  it('信任差异(删除):scanFolder 不 dispose,removedFiles 含消失项;integrateScanResult 才 dispose', async () => {
     const a = fileEntry('a.jpg');
     const folder = new SmartFolder({ handle: makeDirHandle([a]), parent: null });
     const cachedA = cachedFile('a.jpg');
@@ -199,10 +233,60 @@ describe('smartFolder scan 纯列表(零 getFile)+ enrich', () => {
     await acquire(gone, gone, { name: 'gone.png', size: 100, lastModified: 1 });
     const revoke = vi.spyOn(URL, 'revokeObjectURL');
     folder.files = [cachedA, gone];
+    const originalFiles = folder.files;
 
-    await folder.scan({ trust: true });
+    const result = await scanFolder(folder, { trust: true });
 
-    expect(folder.files.map(f => f.name)).toEqual(['a.jpg']);
+    // scanFolder 纯函数:不 dispose,removedFiles 暴露给调用方
+    expect(revoke).not.toHaveBeenCalled();
+    expect(folder.files).toBe(originalFiles); // 入参未改
+    expect(result.files.map(f => f.name)).toEqual(['a.jpg']);
+    expect(result.removedFiles.map(f => f.name)).toEqual(['gone.png']);
+
+    // integrateScanResult 才 dispose(走 service 层副作用)
+    const { integrateScanResult } = await import('../services/filesystem');
+    const fakeFs = { foldersData: new Map() };
+    integrateScanResult(folder, result, fakeFs);
     expect(revoke).toHaveBeenCalled(); // gone 被 dispose → destroy(revoke blobUrl)
+    expect(folder.files.map(f => f.name)).toEqual(['a.jpg']); // 写回代理 folder
+  });
+});
+
+describe('integrateScanResult helper(service 层整合副作用)', () => {
+  it('写回代理 folder.files/subFolders + 注册 newSubFolders + 删 removedFolders + dispose removedFiles', async () => {
+    const { integrateScanResult } = await import('../services/filesystem');
+
+    // 造假 folder(代理形式,普通对象够用:本测试只验写回 + Map 操作)
+    const folder = {
+      scanned: false,
+      treeNode: { refreshState: vi.fn() },
+    };
+
+    // 造假 result:newSubFolders / removedFolders(含 treeNode.destroy) / removedFiles(含 dispose spy)
+    const newSub = { path: 'root/newSub', treeNode: { destroy: vi.fn() } };
+    const removedSub = { path: 'root/old', treeNode: { destroy: vi.fn() } };
+    const keptFile = { name: 'keep.jpg' };
+    const removedFile = { name: 'gone.jpg', dispose: vi.fn() };
+    const result = {
+      files: [keptFile],
+      subFolders: [newSub],
+      newFiles: [],
+      newSubFolders: [newSub],
+      removedFiles: [removedFile],
+      removedFolders: [removedSub],
+    };
+
+    const fakeFs = { foldersData: new Map([['root/old', removedSub]]) };
+
+    integrateScanResult(folder, result, fakeFs);
+
+    expect(folder.files).toBe(result.files); // 写回(代理 folder 属性变更触发响应式)
+    expect(folder.subFolders).toBe(result.subFolders);
+    expect(folder.scanned).toBe(true);
+    expect(folder.treeNode.refreshState).toHaveBeenCalled();
+    expect(fakeFs.foldersData.get('root/newSub')).toBe(newSub); // 注册新子目录
+    expect(fakeFs.foldersData.has('root/old')).toBe(false); // 删旧子目录
+    expect(removedSub.treeNode.destroy).toHaveBeenCalled(); // 旧子目录 treeNode 数据清理
+    expect(removedFile.dispose).toHaveBeenCalled(); // 旧文件 dispose(destroy 池条目)
   });
 });

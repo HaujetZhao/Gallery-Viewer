@@ -2,7 +2,8 @@ import { FileTypes } from '../config/file-types';
 import { CONFIG } from '../config/index';
 /**
  * SmartFolder 类 - 表示一个文件夹。搬自源码 js/model.SmartFolder.js。
- * scan() 纯列名差集(零 getFile,瞬间出列表);enrich() 后台并发 getFile 补 size/mtime(响应式触发 sort 重排)。
+ * scanFolder()(模块级纯函数,Phase 3 Step 1)纯列名差集(零 getFile,瞬间出列表,不改入参);
+ * enrich() 后台并发 getFile 补 size/mtime(响应式触发 sort 重排)。
  * appState 通过静态注入访问(保持纯逻辑,不依赖 Pinia)。
  */
 import { acquire, peek } from '../services/fileResource';
@@ -51,9 +52,12 @@ export class SmartFolder {
     this.treeNode = new TreeNode(this);
   }
 
+  // 工厂:建 SmartFolder + scanFolder(纯函数,不改 this/不注册 foldersData)。
+  // 调用方拿 result 自己 integrateScanResult(写回代理 folder —— Vue 响应式关键)。
   static async create({ handle, parent = null }) {
     const folder = new SmartFolder({ handle, parent });
-    return await folder.scan();
+    const result = await scanFolder(folder);
+    return { folder, ...result };
   }
 
   static createVirtual({ virtualName, virtualConfig = {} }) {
@@ -165,104 +169,6 @@ export class SmartFolder {
     this.files = [];
   }
 
-  // 纯列表 scan:values() 单次遍历做差集 + 名字集合信任短路,零 getFile。
-  // 新建文件 `new SmartFile` 不 acquire、不 getFile、_meta=null —— size/mtime 缺省,由 enrich() 后台补全。
-  // Phase 2 简化:不再 size/mtime 校验(原地同名替换检测不到,文档 §2.3 接受,reload 兜底抓增删改名)。
-  // trust 模式(后台重扫):名字集合一致 → 零 IO,沿用缓存对象。
-  async scan({ trust = false } = {}) {
-    if (!this.handle)
-      throw new Error('scan 需要有效的 handle');
-    const dirHandle = this.handle;
-
-    // ① 现有 files/subFolders 的 name→obj 映射(用于差集)
-    const existingFilesMap = new Map(this.files.map(f => [f.name, f]));
-    const existingFoldersMap = new Map(this.subFolders.map(f => [f.name, f]));
-
-    // ② 单次遍历目录,收齐当前条目(不 IO)
-    const currentFileEntries = [];
-    const currentDirEntries = [];
-    for await (const entry of dirHandle.values()) {
-      if (entry.kind === 'file') {
-        const ext = entry.name.split('.').pop().toLowerCase();
-        if (!FileTypes.allMedia.includes(ext))
-          continue; // 仅媒体
-        currentFileEntries.push(entry);
-      }
-      else if (entry.kind === 'directory') {
-        if (entry.name.startsWith('.'))
-          continue; // 跳过隐藏目录
-        currentDirEntries.push(entry);
-      }
-    }
-
-    // ③ 信任短路:文件名 + 目录名集合都与缓存一致 → 零 IO,沿用缓存对象
-    if (trust && sameNameSet(existingFilesMap, currentFileEntries) && sameNameSet(existingFoldersMap, currentDirEntries)) {
-      this.scanned = true;
-      this.treeNode?.refreshState();
-      return { folder: this, newFiles: [], newSubFolders: [], removedFileCount: 0, removedFolderCount: 0 };
-    }
-
-    const filesToKeep = [];
-    const foldersToKeep = [];
-    const newFiles = [];
-    const newSubFolders = [];
-
-    // ④ 文件差集(纯名字比对,零 IO):既有信任保留,新建 SmartFile 不 acquire/getFile
-    for (const entry of currentFileEntries) {
-      const existing = existingFilesMap.get(entry.name);
-      if (existing) {
-        filesToKeep.push(existing);
-        existingFilesMap.delete(entry.name);
-      }
-      else {
-        const fileObj = new SmartFile({ handle: entry, parent: this }); // 不 acquire / 不 getFile / _meta=null
-        filesToKeep.push(fileObj);
-        newFiles.push(fileObj);
-      }
-    }
-
-    // ⑤ 目录差集(无 IO)
-    for (const entry of currentDirEntries) {
-      const existing = existingFoldersMap.get(entry.name);
-      if (existing) {
-        foldersToKeep.push(existing);
-        existingFoldersMap.delete(entry.name);
-      }
-      else {
-        const subFolderData = new SmartFolder({ handle: entry, parent: this });
-        const subPath = `${this.path}/${entry.name}`;
-        SmartFolder.appState.foldersData.set(subPath, subFolderData); // 全局注册
-        foldersToKeep.push(subFolderData);
-        newSubFolders.push(subFolderData);
-      }
-    }
-
-    // ⑥ 清理"已被删除"的:留在 Map 里没被 delete 的 = 目录里已不存在
-    for (const fileObj of existingFilesMap.values())
-      fileObj.dispose();
-    for (const folderObj of existingFoldersMap.values()) {
-      SmartFolder.appState.foldersData.delete(folderObj.path);
-      folderObj.treeNode?.destroy(); // 源码是 removeDOMNodes(),退化后改为数据清理
-    }
-
-    // ⑦ 排序(Windows 风格)
-    filesToKeep.sort((a, b) => windowsCompareStrings(a.name, b.name));
-    foldersToKeep.sort((a, b) => windowsCompareStrings(a.name, b.name));
-
-    this.files = filesToKeep;
-    this.subFolders = foldersToKeep;
-    this.scanned = true;
-    this.treeNode?.refreshState();
-
-    return {
-      folder: this,
-      newFiles,
-      newSubFolders,
-      removedFileCount: existingFilesMap.size,
-      removedFolderCount: existingFoldersMap.size,
-    };
-  }
-
   // 后台补全:并发 getFile 给"待补"文件填 size/mtime(_meta),触发 Vue 响应式让 sort 重排。
   // targets = 池空(peek null)且 _meta 未写的文件 —— 即 scan/listFolder 新建的项。
   // 信任短路后既有项 _meta 有 → targets 空 → 零 getFile(信任路零 IO)。
@@ -320,6 +226,101 @@ export class SmartFolder {
     }
     return null;
   }
+}
+
+// 纯列表 scan:values() 单次遍历做差集 + 名字集合信任短路,零 getFile。
+// Phase 3 Step 1:纯函数化 —— 不改 folder 入参(files/subFolders/scanned/treeNode 原样保留)、
+// 不碰 appState.foldersData、不调 dispose。新建 SmartFile/SmartFolder(parent=folder)是建对象(允许)。
+// removedFiles/removedFolders 暴露给调用方,integrateScanResult(service 层)统一处理副作用。
+// Phase 2 简化:不再 size/mtime 校验(原地同名替换检测不到,文档 §2.3 接受,reload 兜底抓增删改名)。
+// trust 模式(后台重扫):名字集合一致 → 零 IO,result.files 沿用 folder.files 缓存引用。
+export async function scanFolder(folder, { trust = false } = {}) {
+  if (!folder.handle)
+    throw new Error('scanFolder 需要有效的 handle');
+  const dirHandle = folder.handle;
+
+  // ① 现有 files/subFolders 的 name→obj 映射(用于差集)
+  const existingFilesMap = new Map(folder.files.map(f => [f.name, f]));
+  const existingFoldersMap = new Map(folder.subFolders.map(f => [f.name, f]));
+
+  // ② 单次遍历目录,收齐当前条目(不 IO)
+  const currentFileEntries = [];
+  const currentDirEntries = [];
+  for await (const entry of dirHandle.values()) {
+    if (entry.kind === 'file') {
+      const ext = entry.name.split('.').pop().toLowerCase();
+      if (!FileTypes.allMedia.includes(ext))
+        continue; // 仅媒体
+      currentFileEntries.push(entry);
+    }
+    else if (entry.kind === 'directory') {
+      if (entry.name.startsWith('.'))
+        continue; // 跳过隐藏目录
+      currentDirEntries.push(entry);
+    }
+  }
+
+  // ③ 信任短路:文件名 + 目录名集合都与缓存一致 → 零 IO,result.files 沿用 folder.files
+  if (trust && sameNameSet(existingFilesMap, currentFileEntries) && sameNameSet(existingFoldersMap, currentDirEntries)) {
+    return {
+      files: folder.files,
+      subFolders: folder.subFolders,
+      newFiles: [],
+      newSubFolders: [],
+      removedFiles: [],
+      removedFolders: [],
+    };
+  }
+
+  const filesToKeep = [];
+  const foldersToKeep = [];
+  const newFiles = [];
+  const newSubFolders = [];
+
+  // ④ 文件差集(纯名字比对,零 IO):既有信任保留,新建 SmartFile 不 acquire/getFile
+  for (const entry of currentFileEntries) {
+    const existing = existingFilesMap.get(entry.name);
+    if (existing) {
+      filesToKeep.push(existing);
+      existingFilesMap.delete(entry.name);
+    }
+    else {
+      const fileObj = new SmartFile({ handle: entry, parent: folder }); // 不 acquire / 不 getFile / _meta=null
+      filesToKeep.push(fileObj);
+      newFiles.push(fileObj);
+    }
+  }
+
+  // ⑤ 目录差集(无 IO):既有信任保留;新建 SmartFolder(**不 appState.foldersData.set**,纯函数)
+  for (const entry of currentDirEntries) {
+    const existing = existingFoldersMap.get(entry.name);
+    if (existing) {
+      foldersToKeep.push(existing);
+      existingFoldersMap.delete(entry.name);
+    }
+    else {
+      const subFolderData = new SmartFolder({ handle: entry, parent: folder });
+      foldersToKeep.push(subFolderData);
+      newSubFolders.push(subFolderData);
+    }
+  }
+
+  // ⑥ 删除项 = 差集后还在 Map 里的(目录已不存在)。不 dispose,交给 integrateScanResult。
+  const removedFiles = [...existingFilesMap.values()];
+  const removedFolders = [...existingFoldersMap.values()];
+
+  // ⑦ 排序(Windows 风格)
+  filesToKeep.sort((a, b) => windowsCompareStrings(a.name, b.name));
+  foldersToKeep.sort((a, b) => windowsCompareStrings(a.name, b.name));
+
+  return {
+    files: filesToKeep,
+    subFolders: foldersToKeep,
+    newFiles,
+    newSubFolders,
+    removedFiles,
+    removedFolders,
+  };
 }
 
 // 工厂:创建 ALL_MEDIA 虚拟文件夹(聚合所有已扫描文件夹的文件)。

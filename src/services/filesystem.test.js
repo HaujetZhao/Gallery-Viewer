@@ -1,22 +1,50 @@
-import { describe, expect, it, vi } from 'vitest';
+import { createPinia, setActivePinia } from 'pinia';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CONFIG } from '../config/index';
 import { makeCancelToken } from '../utils/concurrency';
 import { startBackgroundScan } from './filesystem';
 
-// 假文件夹:只含 startBackgroundScan 用到的字段(subFolders / scan / enrich / treeNode)。
+// startBackgroundScan Phase 3 起调 integrateScanResult → useFsStore(),需要激活 Pinia。
+beforeEach(() => {
+  setActivePinia(createPinia());
+});
+
+// 假文件夹:Phase 3 Step 1 起 startBackgroundScan 调 scanFolder(读 handle.values())+ enrich。
+// handle.values() 吐出与声明 subFolders 同名的 directory 条目 —— 信任短路命中 → 子文件夹保留(不被当 removed)。
+// enrich mock(Phase 2:进入节点先 enrich 当前层)保留。
 function fakeFolder(name, subFolders = []) {
   return {
     name,
     subFolders,
     scanned: false,
-    scan: vi.fn(async () => {}),
-    enrich: vi.fn(async () => {}), // Phase 2:startBackgroundScan 进入节点先 enrich 当前层
+    files: [],
+    handle: {
+      name,
+      values: () => makeValuesIter(subFolders.map(s => ({ kind: 'directory', name: s.name }))),
+    },
+    enrich: vi.fn(async () => {}),
     treeNode: { refreshState: vi.fn(), destroy: vi.fn() },
   };
 }
 
+// 异步迭代器:吐出给定 entries(file/dir)。scanFolder 用它读 handle.values()。
+function makeValuesIter(entries) {
+  let i = 0;
+  return {
+    [Symbol.asyncIterator]() {
+      return {
+        next: () => {
+          if (i < entries.length)
+            return Promise.resolve({ value: entries[i++], done: false });
+          return Promise.resolve({ value: undefined, done: true });
+        },
+      };
+    },
+  };
+}
+
 describe('startBackgroundScan', () => {
-  it('递归遍历所有子文件夹(含嵌套),全部 scan 且传 trust:true', async () => {
+  it('递归遍历所有子文件夹(含嵌套),每节点 enrich', async () => {
     const c = fakeFolder('c');
     const b = fakeFolder('b');
     const a = fakeFolder('a', [c]);
@@ -24,13 +52,12 @@ describe('startBackgroundScan', () => {
 
     await startBackgroundScan(root);
 
-    expect(a.scan).toHaveBeenCalledWith({ trust: true });
-    expect(b.scan).toHaveBeenCalledWith({ trust: true });
-    expect(c.scan).toHaveBeenCalledWith({ trust: true });
-    // Phase 2:进入每个节点先 enrich 当前层(补 size/mtime)
+    // Phase 2:进入每个节点先 enrich 当前层(补 size/mtime)。
+    // Phase 3:scanFolder 在 subFolderData(代理)上跑,无需 scan mock。
     expect(root.enrich).toHaveBeenCalled();
     expect(a.enrich).toHaveBeenCalled();
     expect(c.enrich).toHaveBeenCalled();
+    expect(b.enrich).toHaveBeenCalled();
   });
 
   it('无 subFolders 时安全返回(undefined / 空)', async () => {
@@ -45,12 +72,14 @@ describe('startBackgroundScan', () => {
     const hold = new Promise((r) => {
       resolveHold = r;
     });
-    const scanned = [];
+    const enriched = [];
     const subs = Array.from({ length: cap + 2 }, (_, i) => {
       const f = fakeFolder(`s${i}`);
-      f.scan = vi.fn(async () => {
-        scanned.push(i);
-        await hold; // 全部卡住,模拟在途
+      // 关卡挪到 enrich:子节点进入后 startBackgroundScan 先 enrich(在派发 scanFolder/integrate 之前)。
+      // cancel 后首批 cap 个 enrich 卡 hold,超出的子节点不再派发。
+      f.enrich = vi.fn(async () => {
+        enriched.push(i);
+        await hold;
       });
       return f;
     });
@@ -63,6 +92,6 @@ describe('startBackgroundScan', () => {
     resolveHold(); // 放行首批
     await done;
 
-    expect(scanned.length).toBe(cap); // 首 cap 个启动,剩 2 因 cancel 不派发
+    expect(enriched.length).toBe(cap); // 首 cap 个启动,剩 2 因 cancel 不派发
   });
 });
