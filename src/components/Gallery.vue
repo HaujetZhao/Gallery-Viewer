@@ -126,7 +126,7 @@ onBeforeUnmount(() => {
       <i class="fas fa-images empty-icon" />
       <p>{{ debouncedTerm ? '没有匹配的文件' : '此文件夹为空' }}</p>
     </div>
-    <div v-else ref="gridRef" class="gallery-grid">
+    <div v-else ref="gridRef" class="gallery-grid" :style="{ '--col-count': colCount }">
       <div class="gallery-track" :style="{ height: `${virtualizer.getTotalSize()}px` }">
         <div
           v-for="vi in virtualizer.getVirtualItems()"
