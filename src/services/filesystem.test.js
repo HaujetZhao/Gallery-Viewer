@@ -1,10 +1,10 @@
 import { createPinia, setActivePinia } from 'pinia';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CONFIG } from '../config/index';
 import { useFsStore } from '../stores/fs';
 import { useRootStore } from '../stores/root';
 import { makeCancelToken } from '../utils/concurrency';
-import { integrateScanResult, persistIfDirty, startBackgroundScan } from './filesystem';
+import { cancelPendingPersist, handleFolderClick, integrateScanResult, persistIfDirty, schedulePersist, startBackgroundScan } from './filesystem';
 import { saveScan } from './scanCache';
 
 vi.mock('./scanCache', () => ({ saveScan: vi.fn(async () => {}), loadScan: vi.fn(async () => null), clearScan: vi.fn(async () => {}) }));
@@ -165,6 +165,117 @@ describe('persistIfDirty', () => {
     const fs = useFsStore();
     fs.rootDirty = true;
     await persistIfDirty(null);
+    expect(saveScan).not.toHaveBeenCalled();
+  });
+});
+
+// R3-2 + R3-3:debounced 持久化调度 + handleFolderClick 不阻塞。
+// 用 vi.useFakeTimers 控制 schedulePersist 的 1s debounce timer。
+describe('持久化调度(schedulePersist / cancelPendingPersist)与点击不阻塞', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    saveScan.mockClear();
+    cancelPendingPersist(); // 清掉上一用例残留的 timer
+  });
+  afterEach(() => {
+    cancelPendingPersist();
+    vi.useRealTimers();
+  });
+
+  it('handleFolderClick 命中变更:loadFolder 先返回,saveScan 推进 timer 后才调(R3-2 不阻塞)', async () => {
+    const fs = useFsStore();
+    const rootStore = useRootStore();
+    rootStore.add('r1', 'root', 0, 0);
+    rootStore.setCurrent('r1');
+    fs.rootDirty = false;
+    fs.rootFolder = { toSnapshot: () => ({}), getAllFiles: () => [] };
+
+    // 假 folder:validate=true,scan 返回 newFiles 使 dirty=true,enrich/loadFolder 立即 resolve。
+    const folder = {
+      name: 'sub',
+      files: [],
+      subFolders: [],
+      path: 'root/sub',
+      validate: vi.fn(async () => true),
+      enrich: vi.fn(async () => {}),
+    };
+    // scanFolder 是 SmartFolder 模块导出,这里直接 mock 模块拿结果。
+    const smartFolderMod = await import('../models/SmartFolder');
+    vi.spyOn(smartFolderMod, 'scanFolder').mockResolvedValue({
+      files: [],
+      subFolders: [],
+      newFiles: [{}],
+      newSubFolders: [],
+      removedFiles: [],
+      removedFolders: [],
+    });
+
+    await handleFolderClick(folder);
+
+    // 不推进 timer:loadFolder 已完成(点击不阻塞),saveScan 尚未触发(debounce 等待中)。
+    // 注:fs.currentFolder 经 reactive 代理化,与原始 folder 引用不等,用路径断言。
+    expect(fs.currentFolder.path).toBe(folder.path); // loadFolder 已设 currentFolder
+    expect(saveScan).not.toHaveBeenCalled(); // debounce 未到 1s
+    expect(fs.rootDirty).toBe(true); // dirty 仍在(尚未持久化)
+
+    // 推进 1s:debounced persist 触发。
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(saveScan).toHaveBeenCalledTimes(1);
+    expect(fs.rootDirty).toBe(false); // 持久化后清 dirty
+
+    smartFolderMod.scanFolder.mockRestore();
+  });
+
+  it('debounce 合并:短时间内多次 schedulePersist → saveScan 只调 1 次(R3-3)', async () => {
+    const fs = useFsStore();
+    const rootStore = useRootStore();
+    rootStore.add('r1', 'root', 0, 0);
+    rootStore.setCurrent('r1');
+    fs.rootDirty = true;
+    fs.rootFolder = { toSnapshot: () => ({}), getAllFiles: () => [] };
+
+    schedulePersist('r1');
+    schedulePersist('r1');
+    schedulePersist('r1'); // 三次连续,应合并成一次 trailing 写
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(saveScan).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancelPendingPersist:取消后推进 timer → saveScan 不被调(切根清旧根在途写)', async () => {
+    const fs = useFsStore();
+    const rootStore = useRootStore();
+    rootStore.add('r1', 'root', 0, 0);
+    rootStore.setCurrent('r1');
+    fs.rootDirty = true;
+    fs.rootFolder = { toSnapshot: () => ({}), getAllFiles: () => [] };
+
+    schedulePersist('r1');
+    cancelPendingPersist(); // 模拟切根时清旧根 timer
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(saveScan).not.toHaveBeenCalled();
+  });
+
+  it('id 校验:切根后 currentRootId 变 → schedulePersist(oldId) 推进 timer 时跳过(defense in depth)', async () => {
+    const fs = useFsStore();
+    const rootStore = useRootStore();
+    rootStore.add('r1', 'root1', 0, 0);
+    rootStore.add('r2', 'root2', 0, 0);
+    rootStore.setCurrent('r1');
+    fs.rootDirty = true;
+    fs.rootFolder = { toSnapshot: () => ({}), getAllFiles: () => [] };
+
+    schedulePersist('r1');
+    rootStore.setCurrent('r2'); // 切根:currentRootId 不再是 r1
+    await vi.advanceTimersByTimeAsync(1000);
+
+    // 跳过(避免写错根 IDB + 误清新根 dirty)。
+    expect(saveScan).not.toHaveBeenCalled();
+  });
+
+  it('schedulePersist 无 id → no-op(推进 timer 无副作用)', async () => {
+    schedulePersist(null);
+    await vi.advanceTimersByTimeAsync(1000);
     expect(saveScan).not.toHaveBeenCalled();
   });
 });

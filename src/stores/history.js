@@ -2,8 +2,10 @@
 // 文件级操作(删除/重命名/移动)进栈,Ctrl+Z 撤销;文件夹删除不进栈。
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
+import { schedulePersist } from '../services/filesystem';
 import { FileDeleteOperation, FileMoveOperation, FileRenameOperation } from '../services/operations';
 import { useFsStore } from './fs';
+import { useRootStore } from './root';
 
 const MAX_SIZE = 50;
 
@@ -15,14 +17,20 @@ export const useHistoryStore = defineStore('history', () => {
     stack.value.push(op);
     if (stack.value.length > MAX_SIZE)
       stack.value.shift();
-    useFsStore().rootDirty = true; // R3:rename/delete/move 后标树脏,下次 persistIfDirty 持久化
+    const fs = useFsStore();
+    fs.rootDirty = true; // R3:rename/delete/move 后标树脏,下次 persistIfDirty 持久化
+    // R3-3:debounced 持久化(1s 合并连续改名/删除/移动)。之前只置 dirty 无 persist 路径,
+    //       rename 后关浏览器重开会丢改动 —— 现由 schedulePersist 兜底落 IDB。
+    schedulePersist(useRootStore().currentRootId);
   }
   async function undoLastOperation() {
     if (!stack.value.length)
       throw new Error('没有可撤销的操作');
     const op = stack.value.pop();
     await op.undo();
-    useFsStore().rootDirty = true; // undo 也改了树
+    const fs = useFsStore();
+    fs.rootDirty = true; // undo 也改了树
+    schedulePersist(useRootStore().currentRootId); // undo 同样 debounced 持久化
     return op;
   }
   function clear() {
