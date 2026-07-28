@@ -33,7 +33,7 @@ src/
 ├── main.js              # createApp + Pinia + 全局 CSS + font-awesome
 ├── App.vue              # 根布局(启动页/主界面 + 全局浮层 + 启动恢复多根)
 ├── config/              # CONFIG + UserSettings、FileTypes(纯数据)
-├── models/              # SmartFile(身份+_meta+md5,资源走池) / SmartFolder(scanFolder 纯函数 + enrich + toSnapshot/fromSnapshot)
+├── models/              # SmartFile/SmartFolder(纯数据类+派生 getter)+ 同文件模块函数(scanFolder/enrichFolder/snapshot/CRUD/validate,P3 函数化)
 ├── services/            # fileResource(资源池) / filesystem(scan 整合+持久化调度) / handleStore(多根句柄) / scanCache(快照) / thumbnail+thumbnail-strategies(createImageBitmap) / metadata / db / recovery / operations(.trash) / fileOps / exif / gps / id3-parser
 ├── stores/              # Pinia: fs(含 rootDirty) / root(多根元数据) / modal / theme / userSettings / history / contextMenu / confirm / properties / uiToast
 ├── composables/         # useThumbnail / useModal / useSidebar(边缘拖拽调宽) / useScrollZone / useGallerySearch / useStorageEstimate
@@ -47,12 +47,12 @@ docs/superpowers/        # specs(设计 + 实现记录)+ plans(实施计划)
 
 ## 关键约定（请遵守）
 
-1. **model 层纯函数、副作用归 service**（`models/` 不 import Pinia/Vue、不反向依赖 store）：
-   - `scanFolder(folder,{trust})` / `SmartFolder.fromSnapshot` 是**模块级纯函数**——不改入参、不碰 `foldersData`、不 dispose；返回 `{files, subFolders, newFiles, newSubFolders, removedFiles, removedFolders}`。`SmartFile/SmartFolder` 的 `toSnapshot`/`fromSnapshot`（rehydrate，多文件夹秒切换用）也是纯数据操作。
-   - **副作用集中 service 层**：`integrateScanResult(folder,result,fs)`（写回**代理** folder + 注册/删 foldersData + dispose removedFiles + 检测增删置 `rootDirty`）、`registerFolderTree`、`resetFoldersData`。⚠️ **写回必须是「代理」**（从 store 取或 `foldersData.get(path)`）；`SmartFolder.create` 返回的是原始对象，直接写回不触发响应式（见下方 reactive 陷阱）。
+1. **model 层纯数据 + 模块函数、副作用归 service**（`models/` 不 import Pinia/Vue、不反向依赖 store）：
+   - `SmartFile`/`SmartFolder` 是**纯数据类**（字段 + 派生 getter，无实例方法，P3 函数化）；所有行为是**同文件模块级函数**：`scanFolder` / `enrichFolder` / `folderToSnapshot` / `folderFromSnapshot` / `createFolder` / `validateFolder` / `ensureBlobUrl` / `renameFile` / `moveFile` / `disposeFile` 等。`scanFolder(folder,{trust})` 是纯函数——不改入参、不碰 `foldersData`、不 dispose，返回 `{files, subFolders, newFiles, newSubFolders, removedFiles, removedFolders}`。模板用的 getter（`path`/`isEmpty`/`name`/`size`/`blobUrl` 等）保留——Vue 响应式追踪属性访问，**勿函数化**。
+   - **副作用集中 service 层**：`integrateScanResult(folder,result,fs)`（写回**代理** folder + 注册/删 foldersData + `disposeFile` removedFiles + 检测增删置 `rootDirty`）、`registerFolderTree`、`resetFoldersData`、`registerAndIntegrate`（P0-2：收口"set 进 Map→get 取代理→integrate"，新建 folder 必走）。⚠️ **写回必须是「代理」**（从 store 取或 `foldersData.get(path)`）；`createFolder` 返回的原始对象直接写回不触发响应式（见下方 reactive 陷阱）。
 2. **service 层操作 store**：`services/` 内部 `useFsStore()` / `useToastStore()` 等直接调（在函数体内，不在模块顶层）。
 3. **资源走 fileResource 池**（[fileResource.js](src/services/fileResource.js)）：blobUrl/File 集中管理（`acquire`/`destroy`/`peek`，带 in-flight 去重 + inflight cancel）。SmartFile 是池的门面（`blobUrl`/`size`/`lastModified` 是 getter）。**不要直接 `URL.createObjectURL`/`revokeObjectURL`**；size/mtime 单源在 `SmartFile._meta`（响应式），不进池。
-4. **持久化走 schedulePersist**：改树（scan 命中增删 / rename / delete / move）由 `integrateScanResult` 或 `history` 置 `fs.rootDirty=true` + `schedulePersist(id)`（1s debounce 合并写，不阻塞点击）。**不要直接 `saveScan`**。切根前 `flushPendingPersist` 落盘旧根（reload 用 `cancelPendingPersist`——重扫从盘重建）；`persistIfDirty` 仅 dirty 时 `toSnapshot`+`getAllFiles`。
+4. **持久化走 schedulePersist**：改树（scan 命中增删 / rename / delete / move）由 `integrateScanResult` 或 `history` 置 `fs.rootDirty=true` + `schedulePersist(id)`（1s debounce 合并写，不阻塞点击）。**不要直接 `saveScan`**。切根前 `flushPendingPersist` 落盘旧根（reload 用 `cancelPendingPersist`——重扫从盘重建）；`persistIfDirty` 仅 dirty 时 `folderToSnapshot`+`countAllFiles`。关浏览器/切后台由 `visibilitychange:hidden` 触发 `flushPendingPersist` 兜底（P0-3）。
 5. **CSS 全局复用**：`src/styles/` 的全局 CSS（`main.js` 全局 import）。组件**不重写这些 CSS**，模板直接用其 class（如 `.photo-card` / `.gallery-row` / `.tree-node` / `.modal-audio-player`）。组件 scoped 样式只补 CSS 里没有的。
 6. **核心算法稳定**：scan 纯列表差集 + 信任名字集合短路、enrich 并发 getFile 补 size/mtime、GPS（魔数）、ID3、`.trash` 镜像回收站、calculateMD5（前 2MB 缓存键——**内容寻址：跨文件夹/复制副本的同图共享一份缩略图缓存（size+mtime 做不到，mtime 随复制变）；md5 随快照持久化 → 秒切零重算；按需计算（视窗触发）非万张预扫。chunkSize 锁定保旧 IDB key 兼容，不动**）。后续改动配测试。
 7. **跨组件状态进 Pinia store；组件私有状态用 `ref`/`reactive`**。
@@ -62,7 +62,7 @@ docs/superpowers/        # specs(设计 + 实现记录)+ plans(实施计划)
 
 > 并发：getFile 批处理 / 后台目录遍历用 `runConcurrent`（[concurrency.js](src/utils/concurrency.js)，并发上限 + 错误隔离）；后台遍历带 `makeCancelToken`，切根时 bump token 退出在途任务。
 
-> ⚠️ **Vue3 reactive 陷阱**：后台异步任务改 store 对象时**必须从 store 取代理**（`fs.rootFolder` / `foldersData.get(path)`），不要用 `SmartFolder.create` / `initProject` 返回的原始对象——改原始对象不触发响应式（子目录停在半透明不更新）。`scanAndPersist`/`flushPendingPersist` 内部已统一 `useFsStore().rootFolder` 取代理。详见 [架构重构 round1 spec](docs/superpowers/specs/2026-07-28-架构重构-资源层分离与纯model-design.md)。
+> ⚠️ **Vue3 reactive 陷阱**：后台异步任务改 store 对象时**必须从 store 取代理**（`fs.rootFolder` / `foldersData.get(path)`），不要用 `createFolder` / `initProject` 返回的原始对象——改原始对象不触发响应式（子目录停在半透明不更新）。新建 folder 一律走 `registerAndIntegrate`（set 进 reactive Map 取代理再 integrate，P0-2 收口）；`scanAndPersist`/`flushPendingPersist` 内部已统一 `useFsStore().rootFolder` 取代理。详见 [架构重构 round1 spec](docs/superpowers/specs/2026-07-28-架构重构-资源层分离与纯model-design.md) + [round4 model 函数化](docs/superpowers/specs/2026-07-29-架构重构-round4-第一性原理审查与model函数化.md)。
 
 ## 双 build
 
