@@ -86,4 +86,30 @@ describe('fileResource peek / destroy', () => {
     expect(peek(f)).toBeNull(); // 建完 drop,不 set pool(不泄漏)
     expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1); // drop revoke 了 url
   });
+
+  // reject 路径:destroy 在 inflight 期间标记 cancelled,随后 getFile reject。
+  // 修复前:reject 抛出走 finally,只清 inflight,cancelled 残留该 SmartFile 引用(泄漏 + 阻止 GC);
+  // 后续同 file 再 acquire(成功)会命中残留的 cancelled 标记 → 错误 drop,peek 仍 null。
+  it('r6+: inflight destroy + getFile reject → cancelled 不残留(后续 acquire 正常 set pool)', async () => {
+    const f = fakeFile();
+    // 用 controller 卡住 getFile:resolve/reject 由我们手动触发,避免 setTimeout 竞态。
+    let rejectGetFile;
+    f.handle.getFile = vi.fn(() => new Promise((_r, rej) => {
+      rejectGetFile = rej;
+    }));
+
+    const p = acquire(f); // 启动 acquire(同步进入 inflight)
+    await new Promise(r => setTimeout(r, 0)); // 让 inflight 标记落定
+    destroy(f); // 建中 destroy → 标记 cancelled
+    rejectGetFile(new Error('boom')); // 触发 getFile reject → acquire 抛出走 finally
+    await expect(p).rejects.toThrow('boom'); // 接住(避免 unhandled)
+    // 此时 inflight 已清;若 finally 没补 cancelled.delete,cancelled 仍持有 f
+
+    // 第二轮:同 file 再 acquire(这次 getFile 成功)。
+    // 修复前:cancelled 残留 → acquire 命中 cancelled 走 drop 路径 → peek(f) 仍 null(回归 bug)。
+    // 修复后:cancelled 在第一轮 finally 已清 → acquire 正常 set pool → peek(f) 拿到 entry。
+    f.handle.getFile = vi.fn(async () => ({ name: 'a.jpg', size: 100, lastModified: 200 }));
+    await acquire(f);
+    expect(peek(f)).not.toBeNull(); // 关键断言:pool 必须有 entry(证明 cancelled 没残留)
+  });
 });

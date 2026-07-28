@@ -52,6 +52,7 @@ export async function acquire(file, preloaded = null) {
   }
   finally {
     inflight.delete(file);
+    cancelled.delete(file); // reject 路径也要清,避免 Set 持有 SmartFile 阻止 GC(成功+cancelled 路径已在上方 delete,幂等)
   }
 }
 
