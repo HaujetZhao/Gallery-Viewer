@@ -20,18 +20,27 @@
 }
 
 .gallery-grid {
-    display: flex;
-    flex-direction: row;
-    gap: 15px;
-    align-items: flex-start;
+    position: relative;
     width: 100%;
 }
 
-.masonry-col {
-    flex: 1;
+/* 虚拟化:track 由 virtualizer.getTotalSize() 撑高,行绝对定位 translateY */
+.gallery-track {
+    position: relative;
+    width: 100%;
+}
+
+.gallery-row {
+    position: absolute;
+    left: 0;
+    right: 0;
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     gap: 15px;
+}
+
+.gallery-row > .photo-card {
+    flex: 1;
     min-width: 0;
 }
 
@@ -50,9 +59,7 @@
     cursor: pointer;
     position: relative;
     user-select: none;
-    content-visibility: auto;
     width: 100%;
-    contain-intrinsic-size: auto var(--estimated-height, 300px);
 }
 
 .photo-card:hover,
@@ -253,11 +260,7 @@
 }
 
 @media (max-width: 768px) {
-    .gallery-grid {
-        gap: 5px;
-    }
-
-    .masonry-col {
+    .gallery-row {
         gap: 5px;
     }
 }

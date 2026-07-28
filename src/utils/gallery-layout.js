@@ -9,7 +9,8 @@
  * @returns {Array<Array>} 行数组;n<=0 返回 []
  */
 export function chunkRows(list, n) {
-  if (n <= 0) return [];
+  if (n <= 0)
+    return [];
   const out = [];
   for (let i = 0; i < list.length; i += n) out.push(list.slice(i, i + n));
   return out;
@@ -23,7 +24,8 @@ export function chunkRows(list, n) {
  * @returns {number} 行高;containerWidth<=0 或 colCount<=0 返回 0
  */
 export function computeRowHeight(containerWidth, colCount, gap) {
-  if (containerWidth <= 0 || colCount <= 0) return 0;
+  if (containerWidth <= 0 || colCount <= 0)
+    return 0;
   const colWidth = (containerWidth - (colCount - 1) * gap) / colCount;
   return colWidth + gap;
 }
