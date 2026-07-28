@@ -1,15 +1,31 @@
 /**
  * SmartFile 类 - 表示一个媒体文件。搬自源码 js/model.SmartFile.js,零外部依赖。
- * blobUrl 构造时立即建;md5 是懒加载槽(外部算后赋值)。
+ * blobUrl 构造时立即建(正常 scan 路径有 file);fromSnapshot 重建时懒建(ensureBlobUrl)。
+ * _size/_lastModified 缓存:支持 fromSnapshot(file=null)时 getter 仍可读。
+ * md5 是懒加载槽(外部算后赋值)。
  */
 export class SmartFile {
   constructor({ handle, file, parent = null }) {
     this.handle = handle; // FileSystemFileHandle
-    this.file = file; // File 对象
+    this.file = file; // File 对象(可能为 null,fromSnapshot 重建时)
     this.parent = parent; // 父 SmartFolder 引用
-    this.blobUrl = URL.createObjectURL(file);
+    this._size = file?.size; // 缓存,file=null 时 getter fallback 用
+    this._lastModified = file?.lastModified;
+    this.blobUrl = file ? URL.createObjectURL(file) : null;
     this.dom = null; // deprecated: gallery 卡片 DOM 反向引用,新代码不依赖
     this.md5 = null; // 懒加载,外部计算后赋值
+  }
+
+  // 懒建 blobUrl(fromSnapshot 重建的文件无 blobUrl;显示原图/拖拽前调)。
+  // 单文件 IO,不影响秒切换(切换只重建结构)。
+  async ensureBlobUrl() {
+    if (!this.blobUrl) {
+      this.file = await this.handle.getFile();
+      this.blobUrl = URL.createObjectURL(this.file);
+      this._size = this.file.size;
+      this._lastModified = this.file.lastModified;
+    }
+    return this.blobUrl;
   }
 
   _extractType(filename) {
@@ -24,11 +40,11 @@ export class SmartFile {
   }
 
   get size() {
-    return this.file.size;
+    return this.file?.size ?? this._size;
   }
 
   get lastModified() {
-    return this.file.lastModified;
+    return this.file?.lastModified ?? this._lastModified;
   }
 
   get type() {
@@ -43,6 +59,31 @@ export class SmartFile {
       current = current.parent;
     }
     return parts.join('/');
+  }
+
+  // 序列化为可持久化快照(plain;handle 可结构化克隆进 IDB)。不含 file/blobUrl/parent。
+  toSnapshot() {
+    return {
+      handle: this.handle,
+      name: this.name,
+      size: this.size,
+      lastModified: this.lastModified,
+      md5: this.md5 ?? null,
+    };
+  }
+
+  // 从快照重建(sync,零 IO)。file/blobUrl 懒(ensureBlobUrl 时从 handle 取);parent 按传参接回。
+  static fromSnapshot(snap, parent) {
+    const f = Object.create(SmartFile.prototype);
+    f.handle = snap.handle;
+    f.file = null;
+    f.parent = parent;
+    f._size = snap.size;
+    f._lastModified = snap.lastModified;
+    f.blobUrl = null;
+    f.dom = null;
+    f.md5 = snap.md5 ?? null;
+    return f;
   }
 
   async rename(newName) {
@@ -65,7 +106,8 @@ export class SmartFile {
     }
     catch (err) {
       // move 失败,从原 file 重建 blobUrl(已 revoke)
-      this.blobUrl = URL.createObjectURL(this.file);
+      if (this.file)
+        this.blobUrl = URL.createObjectURL(this.file);
       console.error('重命名失败:', err);
       throw err;
     }
@@ -84,8 +126,6 @@ export class SmartFile {
       sourceFolder.removeFile(this);
       this.parent = targetFolder;
       targetFolder.addFileAndSort(this);
-      // 源码此处还有 sourceFolder.updateCount()/targetFolder.updateCount()
-      // 退化后 count 是计算属性(folder.files.length),无需手动更新,已删
       return true;
     }
     catch (err) {
@@ -101,8 +141,6 @@ export class SmartFile {
         if (this.blobUrl)
           URL.revokeObjectURL(this.blobUrl);
         this.file = file;
-        // 源码原本还有 this.size = file.size / this.lastModified = file.lastModified,
-        // 会遮蔽 getter,冗余且怪异,已删(getter 本就读 this.file)
         this.blobUrl = URL.createObjectURL(file);
         this.md5 = null;
       }
