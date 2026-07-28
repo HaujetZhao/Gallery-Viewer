@@ -9,6 +9,8 @@ export const CONFIG = {
     THUMBNAIL_QUEUE_SIZE: 4,
     INTERSECTION_MARGIN: '100px',
     DEBOUNCE_DELAY: 300,
+    SCAN_CONCURRENCY: 32, // scan 内 getFile 并发上限(串行→并发,大文件夹秒级)
+    SCAN_FOLDER_CONCURRENCY: 8, // 后台子目录遍历并发上限(原串行深度优先)
   },
   UI: {
     MODAL: { MIN_SCALE: 0.1, MAX_SCALE: 10, ZOOM_STEP: 0.1, ZOOM_SENSITIVITY: 0.002 },
