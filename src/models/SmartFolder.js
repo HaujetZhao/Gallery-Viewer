@@ -116,6 +116,32 @@ export class SmartFolder {
     return allFiles;
   }
 
+  // 序列化为可持久化快照(整棵树 plain,handle 可克隆进 IDB)。不含 parent/treeNode(重建时接回/新建)。
+  toSnapshot() {
+    return {
+      handle: this.handle,
+      name: this.name,
+      files: this.files.map(f => f.toSnapshot()),
+      subFolders: this.subFolders.map(f => f.toSnapshot()),
+      expanded: this.treeNode?.expanded ?? true,
+      scanned: this.scanned,
+    };
+  }
+
+  // 从快照重建整棵树(sync,零 IO)。parent 按传参接回;每节点注册 appState.foldersData(切换后 handleFolderClick/getFolderData 按 path 查)。
+  static fromSnapshot(snap, parent) {
+    const folder = new SmartFolder({ handle: snap.handle, parent });
+    folder.scanned = snap.scanned;
+    folder.files = snap.files.map(f => SmartFile.fromSnapshot(f, folder));
+    folder.subFolders = snap.subFolders.map(s => SmartFolder.fromSnapshot(s, folder));
+    if (folder.treeNode)
+      folder.treeNode.expanded = snap.expanded;
+    folder.treeNode?.refreshState();
+    if (SmartFolder.appState)
+      SmartFolder.appState.foldersData.set(folder.path, folder);
+    return folder;
+  }
+
   dispose() {
     for (const file of this.files) {
       file.dispose();
