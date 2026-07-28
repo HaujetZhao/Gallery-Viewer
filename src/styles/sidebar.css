@@ -9,7 +9,7 @@
     color: var(--sidebar-text);
     z-index: 900;
     transform: translateX(-100%);
-    transition: transform 0.25s ease 0.2s; /* 收回延迟 0.2s:鼠标短暂离开边界不立即收(容错) */
+    transition: transform 0.25s ease;
     box-shadow: 2px 0 10px rgba(0, 0, 0, 0.2);
     display: flex;
     flex-direction: column;
