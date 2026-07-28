@@ -133,31 +133,31 @@ describe('integrateScanResult dirty', () => {
 describe('persistIfDirty', () => {
   beforeEach(() => saveScan.mockClear());
 
-  it('非 dirty → no-op(不 saveScan / 不 getAllFiles)', async () => {
+  it('非 dirty → no-op(不 saveScan / 不 countAllFiles)', async () => {
     const fs = useFsStore();
     fs.rootDirty = false;
     const toSnapshot = vi.fn(() => ({}));
-    const getAllFiles = vi.fn(() => []);
-    fs.rootFolder = { toSnapshot, getAllFiles };
+    const countAllFiles = vi.fn(() => 0);
+    fs.rootFolder = { toSnapshot, countAllFiles };
     await persistIfDirty('r1');
     expect(saveScan).not.toHaveBeenCalled();
     expect(toSnapshot).not.toHaveBeenCalled();
-    expect(getAllFiles).not.toHaveBeenCalled();
+    expect(countAllFiles).not.toHaveBeenCalled();
   });
 
-  it('dirty → saveScan + getAllFiles + 清 dirty', async () => {
+  it('dirty → saveScan + countAllFiles + 清 dirty', async () => {
     const fs = useFsStore();
     fs.rootDirty = true;
     const snap = { fake: 'snap' };
     const toSnapshot = vi.fn(() => snap);
-    const getAllFiles = vi.fn(() => [{}, {}, {}]);
-    fs.rootFolder = { toSnapshot, getAllFiles };
+    const countAllFiles = vi.fn(() => 3);
+    fs.rootFolder = { toSnapshot, countAllFiles };
     const root = useRootStore();
     root.add('r1', 'name', 0, 0);
     saveScan.mockClear();
     await persistIfDirty('r1');
     expect(saveScan).toHaveBeenCalledWith('r1', snap);
-    expect(getAllFiles).toHaveBeenCalled();
+    expect(countAllFiles).toHaveBeenCalled();
     expect(fs.rootDirty).toBe(false);
   });
 
@@ -188,7 +188,7 @@ describe('持久化调度(schedulePersist / cancelPendingPersist)与点击不阻
     rootStore.add('r1', 'root', 0, 0);
     rootStore.setCurrent('r1');
     fs.rootDirty = false;
-    fs.rootFolder = { toSnapshot: () => ({}), getAllFiles: () => [] };
+    fs.rootFolder = { toSnapshot: () => ({}), countAllFiles: () => 0 };
 
     // 假 folder:validate=true,scan 返回 newFiles 使 dirty=true,enrich/loadFolder 立即 resolve。
     const folder = {
@@ -232,7 +232,7 @@ describe('持久化调度(schedulePersist / cancelPendingPersist)与点击不阻
     rootStore.add('r1', 'root', 0, 0);
     rootStore.setCurrent('r1');
     fs.rootDirty = true;
-    fs.rootFolder = { toSnapshot: () => ({}), getAllFiles: () => [] };
+    fs.rootFolder = { toSnapshot: () => ({}), countAllFiles: () => 0 };
 
     schedulePersist('r1');
     schedulePersist('r1');
@@ -248,7 +248,7 @@ describe('持久化调度(schedulePersist / cancelPendingPersist)与点击不阻
     rootStore.add('r1', 'root', 0, 0);
     rootStore.setCurrent('r1');
     fs.rootDirty = true;
-    fs.rootFolder = { toSnapshot: () => ({}), getAllFiles: () => [] };
+    fs.rootFolder = { toSnapshot: () => ({}), countAllFiles: () => 0 };
 
     schedulePersist('r1');
     cancelPendingPersist(); // 模拟切根时清旧根 timer
@@ -262,7 +262,7 @@ describe('持久化调度(schedulePersist / cancelPendingPersist)与点击不阻
     rootStore.add('r1', 'root', 0, 0);
     rootStore.setCurrent('r1');
     fs.rootDirty = true;
-    fs.rootFolder = { toSnapshot: () => ({}), getAllFiles: () => [] };
+    fs.rootFolder = { toSnapshot: () => ({}), countAllFiles: () => 0 };
 
     schedulePersist('r1');
     await flushPendingPersist(); // 模拟切根前 flush 旧根待写(不等 1s)
@@ -285,7 +285,7 @@ describe('持久化调度(schedulePersist / cancelPendingPersist)与点击不阻
     rootStore.add('r2', 'root2', 0, 0);
     rootStore.setCurrent('r1');
     fs.rootDirty = true;
-    fs.rootFolder = { toSnapshot: () => ({}), getAllFiles: () => [] };
+    fs.rootFolder = { toSnapshot: () => ({}), countAllFiles: () => 0 };
 
     schedulePersist('r1');
     rootStore.setCurrent('r2'); // 切根:currentRootId 不再是 r1

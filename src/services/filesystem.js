@@ -63,6 +63,16 @@ export function integrateScanResult(folder, result, fs) {
   }
 }
 
+// 收口 Vue3 reactive 代理陷阱(P0-2):新 scan 的原始 folder 不能直接 integrateScanResult
+// (写原始对象不触发响应式——子目录停半透明不更新)。标准姿势:set 进 reactive Map 代理化 → get 取代理 → integrate 写回。
+// 新建 folder 必走这里,避免"set→get 取代理"手法散落各处被未来调用点漏写。
+function registerAndIntegrate(plainFolder, scanResult, fs) {
+  fs.foldersData.set(plainFolder.path, plainFolder);
+  const proxy = fs.foldersData.get(plainFolder.path);
+  integrateScanResult(proxy, scanResult, fs);
+  return proxy;
+}
+
 // 从 handle 初始化项目状态(设 rootHandle + loadProject 扫根 + 设 rootFolder/currentFolder)。
 // 不启动后台扫描——由调用方在 fs.rootFolder 赋值后从代理起步 + 扫完后存快照(scanAndPersist)。
 export async function initProject(handle) {
@@ -99,7 +109,7 @@ export async function persistIfDirty(id) {
   if (!root)
     return;
   await saveScan(id, root.toSnapshot());
-  await useRootStore().updateMeta(id, { fileCount: root.getAllFiles().length });
+  await useRootStore().updateMeta(id, { fileCount: root.countAllFiles() }); // 递归计数,不分配万级数组(P0-1)
   fs.rootDirty = false;
 }
 
@@ -265,13 +275,9 @@ export async function getFolderData(dirHandle) {
   }
 
   // create 内部 scanFolder(纯函数,不改 folder 入参、不碰 foldersData)。
-  // 不用 create 返回的原始 folder 直接写回 —— 先 set 进 reactive Map 取代理,integrateScanResult 写代理。
+  // 原始 folder 不能直接写回——registerAndIntegrate 内部 set 进 reactive Map 取代理再 integrate(收口代理陷阱)。
   const createResult = await SmartFolder.create({ handle: dirHandle, parent });
-  const plainFolder = createResult.folder;
-  fs.foldersData.set(path, plainFolder); // 放进 reactive Map(代理化)
-  const proxy = fs.foldersData.get(path); // 取代理
-  integrateScanResult(proxy, createResult, fs); // 写回代理(Vue 响应式)
-  return proxy;
+  return registerAndIntegrate(createResult.folder, createResult, fs);
 }
 
 // 建根 SmartFolder(扫根目录)。后台递归扫描由调用方在设 fs.rootFolder 后触发。

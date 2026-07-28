@@ -142,6 +142,15 @@ export class SmartFolder {
     return allFiles;
   }
 
+  // 递归计数整树文件(不分配数组)。persistIfDirty 算 fileCount 用——
+  // 原 getAllFiles().length 为取一个数字分配万级数组(O(N) 内存),1 万+ 图每次 dirty 都付。
+  countAllFiles() {
+    let n = this.files.length;
+    for (const child of this.subFolders)
+      n += child.countAllFiles();
+    return n;
+  }
+
   // 序列化为可持久化快照(整棵树 plain,handle 可克隆进 IDB)。不含 parent(重建时接回)。
   toSnapshot() {
     return {
