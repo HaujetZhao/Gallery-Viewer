@@ -6,7 +6,6 @@ import { scanFolder, SmartFolder } from './SmartFolder';
 beforeEach(() => {
   URL.createObjectURL = vi.fn(() => 'blob:fake');
   URL.revokeObjectURL = vi.fn(() => {});
-  SmartFolder.appState = { foldersData: new Map() };
 });
 
 // 假目录句柄:values() 异步迭代 entries(file/dir)。file 项带 getFile spy。
@@ -77,7 +76,6 @@ describe('smartFolder rehydrate', () => {
 
   it('fromSnapshot 重建树 + parent 接回 + expanded 恢复', () => {
     const snap = buildTree().toSnapshot();
-    SmartFolder.appState.foldersData.clear();
     const root2 = SmartFolder.fromSnapshot(snap, null);
 
     expect(root2.name).toBe('root');
@@ -89,12 +87,24 @@ describe('smartFolder rehydrate', () => {
     expect(root2.treeNode.expanded).toBe(false);
   });
 
-  it('fromSnapshot 每节点注册 appState.foldersData(按 path)', () => {
+  // Phase 3 Step 2:fromSnapshot 纯函数化后,不再注册 foldersData(副作用移到 switchToRoot 的 registerFolderTree)。
+  // 这里用一个外部 Map 验证:fromSnapshot 不会偷偷往任何外部 Map 写(纯函数证据)。
+  it('fromSnapshot 不注册(纯函数):外部 foldersData 不含 folder(注册归 switchToRoot)', () => {
     const snap = buildTree().toSnapshot();
-    SmartFolder.appState.foldersData.clear();
+    const externalFoldersData = new Map();
     const root2 = SmartFolder.fromSnapshot(snap, null);
-    expect(SmartFolder.appState.foldersData.get('root')).toBe(root2);
-    expect(SmartFolder.appState.foldersData.get('root/sub')).toBe(root2.subFolders[0]);
+
+    // folder 树结构正确
+    expect(root2.name).toBe('root');
+    expect(root2.path).toBe('root');
+    expect(root2.subFolders[0].name).toBe('sub');
+    expect(root2.subFolders[0].path).toBe('root/sub');
+    expect(root2.subFolders[0].parent).toBe(root2);
+
+    // fromSnapshot 不碰外部 Map(注册是调用方责任)
+    expect(externalFoldersData.has('root')).toBe(false);
+    expect(externalFoldersData.has('root/sub')).toBe(false);
+    expect(externalFoldersData.size).toBe(0);
   });
 });
 
@@ -137,8 +147,9 @@ describe('scanFolder 纯函数(不改入参,零 getFile)+ enrich', () => {
     expect(result.files[0]._meta).toBeNull();
     expect(result.files[0].md5).toBeNull();
 
-    // newSubFolders 不应注册到 appState.foldersData(纯函数不碰 appState)
-    expect(SmartFolder.appState.foldersData.has('root/sub')).toBe(false);
+    // newSubFolders 是新建的原始对象(纯函数不注册任何外部 Map)
+    expect(result.newSubFolders[0].parent).toBe(folder);
+    expect(result.newSubFolders[0].name).toBe('sub');
   });
 
   it('enrich 补全: getFile + acquire + 写 _meta,size 正确(用 integrateScanResult 写回 folder)', async () => {

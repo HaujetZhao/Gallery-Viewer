@@ -28,6 +28,15 @@ function resetFoldersData(fs) {
   fs.foldersData.set('ALL_MEDIA', fs.allMediaFolder);
 }
 
+// Phase 3 Step 2:fromSnapshot 纯函数化后,递归注册 folder 树到 foldersData 的副作用归 service。
+// folder 是 fromSnapshot 新建的原始对象树,set 进 reactive Map 后被代理化(后续 foldersData.get 取代理)。
+// 替代旧 SmartFolder.fromSnapshot 内部的 appState.foldersData.set 注册副作用。
+function registerFolderTree(folder, fs) {
+  fs.foldersData.set(folder.path, folder);
+  for (const sub of folder.subFolders)
+    registerFolderTree(sub, fs);
+}
+
 // Phase 3 Step 1 整合副作用:把 scanFolder 纯函数结果写回「代理」folder(Vue 响应式)。
 // 集中:① 写回 folder.files/subFolders/scanned ② refreshState ③ 注册 newSubFolders 到 foldersData
 // ④ 删 removedFolders + treeNode.destroy ⑤ dispose removedFiles(destroy 池条目)。
@@ -127,7 +136,8 @@ export async function switchToRoot(id) {
     resetFoldersData(fs);
     fs.rootHandle = handle;
     if (snap) {
-      const root = SmartFolder.fromSnapshot(snap, null); // 秒显(零 IO)
+      const root = SmartFolder.fromSnapshot(snap, null); // 秒显(零 IO,纯函数不注册 foldersData)
+      registerFolderTree(root, fs); // 递归注册 folder 树(替代 fromSnapshot 内的 appState 注册副作用)
       fs.rootFolder = root;
       fs.currentFolder = root;
     }
@@ -169,7 +179,7 @@ export async function getFolderData(dirHandle) {
     parent = fs.foldersData.get(parentPath) || null;
   }
 
-  // create 内部 scanFolder(纯函数,不改 folder 入参、不碰 appState)。
+  // create 内部 scanFolder(纯函数,不改 folder 入参、不碰 foldersData)。
   // 不用 create 返回的原始 folder 直接写回 —— 先 set 进 reactive Map 取代理,integrateScanResult 写代理。
   const createResult = await SmartFolder.create({ handle: dirHandle, parent });
   const plainFolder = createResult.folder;

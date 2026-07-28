@@ -4,7 +4,8 @@ import { CONFIG } from '../config/index';
  * SmartFolder 类 - 表示一个文件夹。搬自源码 js/model.SmartFolder.js。
  * scanFolder()(模块级纯函数,Phase 3 Step 1)纯列名差集(零 getFile,瞬间出列表,不改入参);
  * enrich() 后台并发 getFile 补 size/mtime(响应式触发 sort 重排)。
- * appState 通过静态注入访问(保持纯逻辑,不依赖 Pinia)。
+ * Phase 3 Step 2:删 static appState 静态注入 —— fromSnapshot 改纯函数(不注册 foldersData),
+ * foldersData 注册归 service 层(switchToRoot 的 registerFolderTree),彻底去掉 model→store 反向依赖。
  */
 import { acquire, peek } from '../services/fileResource';
 import { runConcurrent } from '../utils/concurrency';
@@ -25,9 +26,6 @@ function sameNameSet(existingMap, currentEntries) {
 }
 
 export class SmartFolder {
-  // 静态注入:由 fsStore 初始化时设为 { get rootHandle(), get foldersData() }
-  static appState = null;
-
   constructor({ handle, parent = null, virtualName = null, virtualConfig = null }) {
     this.handle = handle;
     this.parent = parent;
@@ -148,7 +146,9 @@ export class SmartFolder {
     };
   }
 
-  // 从快照重建整棵树(sync,零 IO)。parent 按传参接回;每节点注册 appState.foldersData(切换后 handleFolderClick/getFolderData 按 path 查)。
+  // 从快照重建整棵树(sync,零 IO,纯函数)。parent 按传参接回。
+  // Phase 3 Step 2:不注册 foldersData(纯函数)—— 注册副作用移到 switchToRoot 的 registerFolderTree(service 层),
+  // 切换后 handleFolderClick/getFolderData 按 path 查 foldersData 取到 folder。
   static fromSnapshot(snap, parent) {
     const folder = new SmartFolder({ handle: snap.handle, parent });
     folder.scanned = snap.scanned;
@@ -157,8 +157,6 @@ export class SmartFolder {
     if (folder.treeNode)
       folder.treeNode.expanded = snap.expanded;
     folder.treeNode?.refreshState();
-    if (SmartFolder.appState)
-      SmartFolder.appState.foldersData.set(folder.path, folder);
     return folder;
   }
 
@@ -230,7 +228,7 @@ export class SmartFolder {
 
 // 纯列表 scan:values() 单次遍历做差集 + 名字集合信任短路,零 getFile。
 // Phase 3 Step 1:纯函数化 —— 不改 folder 入参(files/subFolders/scanned/treeNode 原样保留)、
-// 不碰 appState.foldersData、不调 dispose。新建 SmartFile/SmartFolder(parent=folder)是建对象(允许)。
+// 不碰 foldersData、不调 dispose。新建 SmartFile/SmartFolder(parent=folder)是建对象(允许)。
 // removedFiles/removedFolders 暴露给调用方,integrateScanResult(service 层)统一处理副作用。
 // Phase 2 简化:不再 size/mtime 校验(原地同名替换检测不到,文档 §2.3 接受,reload 兜底抓增删改名)。
 // trust 模式(后台重扫):名字集合一致 → 零 IO,result.files 沿用 folder.files 缓存引用。
@@ -292,7 +290,7 @@ export async function scanFolder(folder, { trust = false } = {}) {
     }
   }
 
-  // ⑤ 目录差集(无 IO):既有信任保留;新建 SmartFolder(**不 appState.foldersData.set**,纯函数)
+  // ⑤ 目录差集(无 IO):既有信任保留;新建 SmartFolder(**不注册 foldersData**,纯函数)
   for (const entry of currentDirEntries) {
     const existing = existingFoldersMap.get(entry.name);
     if (existing) {
