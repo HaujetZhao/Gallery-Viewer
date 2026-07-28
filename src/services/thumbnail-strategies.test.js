@@ -9,7 +9,7 @@
 // - canvas:真 createElement('canvas'),但 jsdom 的 getContext 返回 null → spy 替换为假 ctx;
 //   toBlob 也 stub(直接回调 jpeg blob,模拟浏览器编码完成)。
 // - peek(fileResource):vi.mock 在顶部 hoisted,工厂返回读 holder 的 peek —— 每测试改 holder 控制命中/未命中。
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ThumbnailStrategies } from './thumbnail-strategies';
 
 // vitest 会把 vi.mock 调用 hoist到所有 import 之前,所以 import 顺序与运行顺序无关。
@@ -41,6 +41,11 @@ function fakeCanvas() {
 beforeEach(() => {
   vi.stubGlobal('createImageBitmap', vi.fn());
   peekHolder.returns = null;
+});
+
+// M1 测试卫生:还原 stub 的 createImageBitmap,防漏到同文件/同 run 后续测试(createImageBitmap 是全局)。
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe('image 策略 generateThumbnail(R3-1:createImageBitmap 解码)', () => {

@@ -106,13 +106,16 @@ export async function persistIfDirty(id) {
 // R3-2 + R3-3:debounced 持久化调度。连续变更(改名/增删/扫描命中)合并成「最后一次后 1s」的一次写,
 // 避免写放大(每次变更不再全树 toSnapshot + 大 IDB write)。不阻塞调用方(handleFolderClick 点完即显示)。
 // 竞态防线:
-// ① 切根/重载入口调 cancelPendingPersist → 清旧根在途 timer,防晚到写错根 IDB / 误清新根 dirty;
+// ① 切根入口(switchToRoot)调 flushPendingPersist → 先落盘旧根在途写(防根切换静默丢改动),再换树;
+//    重载入口(reloadProject)调 cancelPendingPersist → 丢弃在途写(重扫从盘重建,改动已即时落盘);
 // ② trailing 执行时校验 id === currentRootId → 双保险(defense in depth),切根后跳过;
 // ③ trailing:每次 clearTimeout 重置 → 多次变更合并成一次写;
-// ④ dirty 清除:persistIfDirty 写完置 false(103);debounce 窗口内若又来变更会被再次置 true(integrateScanResult/history),下次 trailing 覆盖。
+// ④ dirty 清除:persistIfDirty 写完置 false;debounce 窗口内若又来变更会被再次置 true(integrateScanResult/history),下次 trailing 覆盖。
+//    flushPendingPersist 也走 persistIfDirty → 顺带清 dirty,治「旧根 dirty 串到新根」。
 let persistTimer = null;
 // 折中:1s 窗口内若用户立即关浏览器,在途 debounce 会丢(未 flush 落 IDB)。彻底解需 beforeunload flush,
 // 但 IDB async 写在 beforeunload 不可靠(浏览器不等 promise),故接受此窗口——连续改名/扫描的写放大收益 > 极端关闭场景的丢改动风险。
+// (注:根切换的丢改动窗口已由 flushPendingPersist 关闭;此处仅剩"关浏览器"窗口。)
 const PERSIST_DEBOUNCE_MS = 1000;
 
 export function schedulePersist(id) {
@@ -129,9 +132,23 @@ export function schedulePersist(id) {
 }
 
 // 切根 / 重载时取消在途的 debounced 写,避免旧根写晚到(竞态防线①)。
+// 用于 reloadProject(重扫从盘重建树,丢弃的 in-memory 改动本就已即时落盘 handle.move/removeEntry,rescan 会重新拾取)。
 export function cancelPendingPersist() {
   clearTimeout(persistTimer);
   persistTimer = null;
+}
+
+// 切根前:若有在途 debounced 写,先落盘旧根再换树(避免根切换静默丢改动——
+// rename 后 1s 内切根,旧 timer 被 cancel 会丢旧根改动;flush 先写旧根 snapshot)。
+// 此刻 currentRootId 还是旧根(switchToRoot 在 setCurrent 之前调),flush 写的是旧根。
+// 顺带治 rootDirty 串根:persistIfDirty 写完置 false,旧根 dirty 不带到新根。
+// 与 cancelPendingPersist 的区别:cancel=丢弃(reload 用,重扫重建);flush=落盘(switch 用,旧根树被弃需先存)。
+export async function flushPendingPersist() {
+  if (persistTimer === null)
+    return; // 无在途写,常见快路径
+  clearTimeout(persistTimer);
+  persistTimer = null;
+  await persistIfDirty(useRootStore().currentRootId);
 }
 
 // R2:只扫 root 一层(顶层增删即时),不递归深层(深层点开才校验)。
@@ -192,9 +209,10 @@ export async function switchToRoot(id) {
   let restoredFromSnap = false;
   try {
     const snap = await loadScan(id);
-    // 切到新根前:取消上一根在途的 debounced 写,防晚到写错根 IDB / 误清新根 dirty(竞态防线①)。
-    // 必须紧贴 resetFoldersData 之前:cancel 清旧 timer,reset 才安全清 store(顺序倒了,旧 timer fire 会撞新根)。
-    cancelPendingPersist();
+    // 切到新根前:先 flush 旧根在途的 debounced 写(落盘旧根改动,防根切换静默丢改动——rename 后 1s 内切根,
+    // 旧 timer 被弃会丢旧根改动)。必须紧贴 resetFoldersData 之前:flush 后旧根已存,reset 才安全清 store。
+    // 此刻 currentRootId 还是旧根(setCurrent 在 try 之后),flush 写的是旧根。
+    await flushPendingPersist();
     resetFoldersData(fs);
     fs.rootHandle = handle;
     if (snap) {
@@ -304,6 +322,8 @@ export async function reloadProject() {
   const id = rootStore.currentRootId;
   // 重载绕过缓存重扫:取消在途 debounced 写。reload 不换根 → id 仍 = currentRootId,防线②(id 校验)拦不住,
   // 故 cancel 是此处唯一防线,防旧 dirty 的 saveScan 覆盖刚扫出的新 snapshot(竞态防线①)。
+  // 用 cancel(丢弃)而非 flush:reload 走 initProject+scanAndPersist 从盘重建树,丢弃的 in-memory 改动
+  // 本就已即时落盘(handle.move/removeEntry),rescan 会重新拾取;flush 反而多一次冗余写。
   cancelPendingPersist();
   const root = await initProject(fs.rootHandle);
   scanAndPersist(id); // 内部取代理 root
@@ -372,7 +392,7 @@ export async function handleFolderClick(folder) {
     }
     // R2:对所有点击 trust 校验(深层按需;短路零 IO)+ enrich 新增 + dirty 才持久化
     // R3-2+R3-3:enrich(await,补 size/mtime 给 sort)→ schedulePersist(不 await,后台 debounce 合并写,不阻塞点击)
-    //           → loadFolder(await,先显示)。持久化晚 1s 触发,切根时由 cancelPendingPersist 清掉。
+    //           → loadFolder(await,先显示)。持久化晚 1s 触发;切根时由 flushPendingPersist 落盘旧根改动(reload 则 cancel)。
     const result = await scanFolder(folder, { trust: true });
     integrateScanResult(folder, result, fs);
     await folder.enrich();

@@ -4,7 +4,7 @@ import { CONFIG } from '../config/index';
 import { useFsStore } from '../stores/fs';
 import { useRootStore } from '../stores/root';
 import { makeCancelToken } from '../utils/concurrency';
-import { cancelPendingPersist, handleFolderClick, integrateScanResult, persistIfDirty, schedulePersist, startBackgroundScan } from './filesystem';
+import { cancelPendingPersist, flushPendingPersist, handleFolderClick, integrateScanResult, persistIfDirty, schedulePersist, startBackgroundScan } from './filesystem';
 import { saveScan } from './scanCache';
 
 vi.mock('./scanCache', () => ({ saveScan: vi.fn(async () => {}), loadScan: vi.fn(async () => null), clearScan: vi.fn(async () => {}) }));
@@ -253,6 +253,28 @@ describe('持久化调度(schedulePersist / cancelPendingPersist)与点击不阻
     schedulePersist('r1');
     cancelPendingPersist(); // 模拟切根时清旧根 timer
     await vi.advanceTimersByTimeAsync(1000);
+    expect(saveScan).not.toHaveBeenCalled();
+  });
+
+  it('flushPendingPersist:有在途写 → 立即落盘(saveScan 调 1 次,dirty 清;切根不丢改动)', async () => {
+    const fs = useFsStore();
+    const rootStore = useRootStore();
+    rootStore.add('r1', 'root', 0, 0);
+    rootStore.setCurrent('r1');
+    fs.rootDirty = true;
+    fs.rootFolder = { toSnapshot: () => ({}), getAllFiles: () => [] };
+
+    schedulePersist('r1');
+    await flushPendingPersist(); // 模拟切根前 flush 旧根待写(不等 1s)
+    expect(saveScan).toHaveBeenCalledTimes(1); // 旧根改动落盘
+    expect(fs.rootDirty).toBe(false); // dirty 清(顺带治 rootDirty 串根)
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(saveScan).toHaveBeenCalledTimes(1); // flush 已清 timer,不再二次触发
+  });
+
+  it('flushPendingPersist:无在途写 → no-op(saveScan 不调)', async () => {
+    await flushPendingPersist();
     expect(saveScan).not.toHaveBeenCalled();
   });
 
