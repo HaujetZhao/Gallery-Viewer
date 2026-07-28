@@ -1,11 +1,25 @@
 import { FileTypes } from '../config/file-types';
+import { CONFIG } from '../config/index';
+import { runConcurrent } from '../utils/concurrency';
 import { windowsCompareStrings } from '../utils/format';
 /**
  * SmartFolder 类 - 表示一个文件夹。搬自源码 js/model.SmartFolder.js。
- * scan() 增量算法原样保留(性能关键);appState 通过静态注入访问(保持纯逻辑,不依赖 Pinia)。
+ * scan() 增量算法 + 并发 getFile + 信任快照短路(性能关键);appState 通过静态注入访问(保持纯逻辑,不依赖 Pinia)。
  */
 import { SmartFile } from './SmartFile';
 import { TreeNode } from './TreeNode';
+
+// 名字集合比对(信任短路的依据):现有 Map 的 key 集合与当前条目名集合是否完全一致。
+// FS Access API 读不到目录 mtime(见设计文档),名字集合比对是最优的免费变更信号。
+function sameNameSet(existingMap, currentEntries) {
+  if (existingMap.size !== currentEntries.length)
+    return false;
+  for (const entry of currentEntries) {
+    if (!existingMap.has(entry.name))
+      return false;
+  }
+  return true;
+}
 
 export class SmartFolder {
   // 静态注入:由 fsStore 初始化时设为 { get rootHandle(), get foldersData() }
@@ -149,8 +163,11 @@ export class SmartFolder {
     this.files = [];
   }
 
-  // 增量扫描算法,性能关键,逻辑一字不改照搬源码(仅删 performance 调试日志 + removeDOMNodes→destroy)。
-  async scan() {
+  // 增量扫描算法,性能关键。
+  // 两阶段思想:① values() 单次遍历做差集(免费,无 per-file IO);② 需要元数据的项并发 getFile。
+  // trust 模式(后台重扫):名字集合与缓存一致 → 零 getFile,直接信快照;有差异 → 只对新增项 getFile,既有项信任保留。
+  // 非 trust 模式(首次/手动重载):既有项也 getFile 校验 size/mtime,变了就地刷新(用已 fetch 的 file,不二次 IO)。
+  async scan({ trust = false } = {}) {
     if (!this.handle)
       throw new Error('scan 需要有效的 handle');
     const dirHandle = this.handle;
@@ -159,74 +176,106 @@ export class SmartFolder {
     const existingFilesMap = new Map(this.files.map(f => [f.name, f]));
     const existingFoldersMap = new Map(this.subFolders.map(f => [f.name, f]));
 
-    const filesToKeep = [];
-    const foldersToKeep = [];
-    const newFiles = [];
-    const newSubFolders = [];
-
-    // ② 单次遍历目录
+    // ② 单次遍历目录,收齐当前条目(不 IO)
+    const currentFileEntries = [];
+    const currentDirEntries = [];
     for await (const entry of dirHandle.values()) {
       if (entry.kind === 'file') {
         const ext = entry.name.split('.').pop().toLowerCase();
         if (!FileTypes.allMedia.includes(ext))
           continue; // 仅媒体
-
-        const existingFile = existingFilesMap.get(entry.name);
-        if (existingFile) {
-          try {
-            const file = await entry.getFile();
-            if (existingFile.size !== file.size || existingFile.lastModified !== file.lastModified) {
-              await existingFile.refresh(); // 复用对象,只刷新
-            }
-            filesToKeep.push(existingFile);
-            existingFilesMap.delete(entry.name);
-          }
-          catch {
-            console.warn(`文件 ${entry.name} 的 handle 已失效，将被移除`);
-          }
-        }
-        else {
-          try {
-            const file = await entry.getFile();
-            const fileObj = new SmartFile({ handle: entry, file, parent: this });
-            filesToKeep.push(fileObj);
-            newFiles.push(fileObj);
-          }
-          catch (e) {
-            console.warn('无法读取文件:', entry.name, e);
-          }
-        }
+        currentFileEntries.push(entry);
       }
       else if (entry.kind === 'directory') {
         if (entry.name.startsWith('.'))
           continue; // 跳过隐藏目录
-
-        const existingFolder = existingFoldersMap.get(entry.name);
-        if (existingFolder) {
-          foldersToKeep.push(existingFolder);
-          existingFoldersMap.delete(entry.name);
-        }
-        else {
-          const subFolderData = new SmartFolder({ handle: entry, parent: this });
-          const subPath = `${this.path}/${entry.name}`;
-          SmartFolder.appState.foldersData.set(subPath, subFolderData); // 全局注册
-          foldersToKeep.push(subFolderData);
-          newSubFolders.push(subFolderData);
-        }
+        currentDirEntries.push(entry);
       }
     }
 
-    // ③ 清理"已被删除"的:留在 Map 里没被 delete 的 = 目录里已不存在
-    for (const fileObj of existingFilesMap.values()) {
-      fileObj.dispose();
+    // ③ 信任短路:文件名 + 目录名集合都与缓存一致 → 零 IO,沿用缓存对象
+    if (trust && sameNameSet(existingFilesMap, currentFileEntries) && sameNameSet(existingFoldersMap, currentDirEntries)) {
+      this.scanned = true;
+      this.treeNode?.refreshState();
+      return { folder: this, newFiles: [], newSubFolders: [], removedFileCount: 0, removedFolderCount: 0 };
     }
+
+    const filesToKeep = [];
+    const foldersToKeep = [];
+    const newFiles = [];
+    const newSubFolders = [];
+    const needGetFile = []; // { entry, existing? } 并发取元数据
+
+    // ④ 文件差集:既有项信任保留(trust)或排进校验队列(非 trust);新项一律取元数据
+    for (const entry of currentFileEntries) {
+      const existing = existingFilesMap.get(entry.name);
+      if (existing) {
+        filesToKeep.push(existing);
+        existingFilesMap.delete(entry.name);
+        if (!trust)
+          needGetFile.push({ entry, existing });
+      }
+      else {
+        needGetFile.push({ entry, existing: null });
+      }
+    }
+
+    // ⑤ 并发 getFile(SCAN_CONCURRENCY 上限,错误隔离)
+    await runConcurrent(
+      needGetFile,
+      async ({ entry, existing }) => {
+        try {
+          const file = await entry.getFile();
+          if (existing) {
+            // 非 trust 校验:变了就用已 fetch 的 file 就地刷新(不二次 IO,不依赖 existing.handle)
+            if (existing.size !== file.size || existing.lastModified !== file.lastModified) {
+              if (existing.blobUrl)
+                URL.revokeObjectURL(existing.blobUrl);
+              existing.file = file;
+              existing.blobUrl = URL.createObjectURL(file);
+              existing._size = file.size;
+              existing._lastModified = file.lastModified;
+              existing.md5 = null;
+            }
+          }
+          else {
+            const fileObj = new SmartFile({ handle: entry, file, parent: this });
+            filesToKeep.push(fileObj);
+            newFiles.push(fileObj);
+          }
+        }
+        catch (e) {
+          console.warn(`文件 ${entry.name} 读取失败,已跳过:`, e);
+        }
+      },
+      { concurrency: CONFIG.PERFORMANCE.SCAN_CONCURRENCY },
+    );
+
+    // ⑥ 目录差集(无 IO)
+    for (const entry of currentDirEntries) {
+      const existing = existingFoldersMap.get(entry.name);
+      if (existing) {
+        foldersToKeep.push(existing);
+        existingFoldersMap.delete(entry.name);
+      }
+      else {
+        const subFolderData = new SmartFolder({ handle: entry, parent: this });
+        const subPath = `${this.path}/${entry.name}`;
+        SmartFolder.appState.foldersData.set(subPath, subFolderData); // 全局注册
+        foldersToKeep.push(subFolderData);
+        newSubFolders.push(subFolderData);
+      }
+    }
+
+    // ⑦ 清理"已被删除"的:留在 Map 里没被 delete 的 = 目录里已不存在
+    for (const fileObj of existingFilesMap.values())
+      fileObj.dispose();
     for (const folderObj of existingFoldersMap.values()) {
-      const deletedPath = folderObj.path;
-      SmartFolder.appState.foldersData.delete(deletedPath);
+      SmartFolder.appState.foldersData.delete(folderObj.path);
       folderObj.treeNode?.destroy(); // 源码是 removeDOMNodes(),退化后改为数据清理
     }
 
-    // ④ 排序(Windows 风格)
+    // ⑧ 排序(Windows 风格)
     filesToKeep.sort((a, b) => windowsCompareStrings(a.name, b.name));
     foldersToKeep.sort((a, b) => windowsCompareStrings(a.name, b.name));
 

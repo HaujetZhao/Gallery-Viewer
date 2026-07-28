@@ -134,24 +134,6 @@ export class SmartFile {
     }
   }
 
-  async refresh() {
-    try {
-      const file = await this.handle.getFile();
-      if (this.size !== file.size || this.lastModified !== file.lastModified) {
-        if (this.blobUrl)
-          URL.revokeObjectURL(this.blobUrl);
-        this.file = file;
-        this.blobUrl = URL.createObjectURL(file);
-        this.md5 = null;
-      }
-      return true;
-    }
-    catch (err) {
-      console.error('刷新文件失败:', err);
-      throw err;
-    }
-  }
-
   dispose() {
     if (this.blobUrl) {
       URL.revokeObjectURL(this.blobUrl);
