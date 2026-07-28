@@ -130,10 +130,12 @@ function onKeydown(e) {
     <!-- 启动页(无 currentFolder) -->
     <div v-if="!fsStore.currentFolder" class="main-content-wrapper" :style="mainStyle">
       <div class="container">
+        <header class="header">
+          <h1><i class="fas fa-images" /> 相册浏览器</h1>
+        </header>
         <div id="hint">
           <div class="intro-content" @click="open">
             <i class="fas fa-images" />
-            <h1>相册浏览器</h1>
             <p>点击打开文件夹(纯本地处理)</p>
             <div class="features">
               <div class="feature">
@@ -175,6 +177,9 @@ function onKeydown(e) {
               </div>
             </div>
           </div>
+        </div>
+        <div class="footer">
+          <p>使用提示:拖动卡片到左侧文件夹可移动,右键菜单可重命名/删除,Ctrl+Z 撤销。</p>
         </div>
       </div>
     </div>
