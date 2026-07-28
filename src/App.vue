@@ -12,7 +12,7 @@ import Toast from './components/Toast.vue';
 import { useGallerySearch } from './composables/useGallerySearch';
 import { useScrollZone } from './composables/useScrollZone';
 import { initDB } from './services/db';
-import { openFolderPicker, switchToRoot } from './services/filesystem';
+import { flushPendingPersist, openFolderPicker, switchToRoot } from './services/filesystem';
 import * as handleStore from './services/handleStore';
 import { useFsStore } from './stores/fs';
 import { useHistoryStore } from './stores/history';
@@ -62,9 +62,13 @@ onMounted(async () => {
     console.warn('initDB 失败:', e);
   }
   document.addEventListener('keydown', onKeydown);
+  document.addEventListener('visibilitychange', onVisibilityChange);
   await tryRestoreFolder();
 });
-onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown));
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', onKeydown);
+  document.removeEventListener('visibilitychange', onVisibilityChange);
+});
 
 // 启动:加载历史 → 取最近 → 权限 granted 自动恢复;否则启动页显示"打开上次"(requestPermission 需用户手势)。
 async function tryRestoreFolder() {
@@ -118,6 +122,14 @@ function onKeydown(e) {
       .then(op => toast.success(`已撤销: ${op.getDescription()}`))
       .catch(err => toast.error(`撤销失败: ${err.message}`));
   }
+}
+
+// 切后台/关页面前 best-effort 落盘在途 debounce 写(防 1s 窗口内关浏览器丢改动)。
+// visibilitychange:hidden 在 pagehide 前触发,是 IDB 写的最后可靠时机之一(多数浏览器 hidden 下仍允许写完);
+// 真正的关标签页 IDB async 不可靠,但比不写强。无在途写时 flushPendingPersist 零成本快路径 return。
+function onVisibilityChange() {
+  if (document.visibilityState === 'hidden')
+    flushPendingPersist();
 }
 </script>
 
