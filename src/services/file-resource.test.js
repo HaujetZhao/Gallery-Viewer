@@ -118,4 +118,20 @@ describe('fileResource release / peek / destroy', () => {
     const f = fakeFile();
     expect(() => destroy(f)).not.toThrow();
   });
+
+  it('r6: destroy 建中(inflight)file → 建完即 drop,不 set pool(根治边角泄漏)', async () => {
+    const f = fakeFile();
+    let resolveGetFile;
+    f.handle.getFile = vi.fn(() => new Promise((r) => {
+      resolveGetFile = r;
+    })); // 卡住 getFile,让 acquire 停在 inflight
+    const p = acquire(f); // 启动 acquire(进入 inflight)
+    await new Promise(r => setTimeout(r, 0)); // 让 inflight 建
+    expect(peek(f)).toBeNull(); // 还在 inflight,pool 空
+    destroy(f); // 建中 destroy → 标记 cancelled
+    resolveGetFile({ name: 'a.jpg', size: 100, lastModified: 200 }); // 放行 getFile
+    await p; // acquire 完成
+    expect(peek(f)).toBeNull(); // 建完 drop,不 set pool(不泄漏)
+    expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1); // drop revoke 了 url
+  });
 });

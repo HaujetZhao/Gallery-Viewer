@@ -12,6 +12,7 @@
 // owner 默认 = file 自身(SmartFile 当自己的 owner,池与 SmartFile 生命周期 1:1)。
 const pool = new Map(); // SmartFile -> entry(已建)
 const inflight = new Map(); // SmartFile -> Promise<entry>(建中);并发 acquire 同 file 复用在途,根治 url 泄漏(enrich 后台 + 缩略图 ensureBlobUrl 并发)
+const cancelled = new Set(); // R6:destroy 标记的 inflight file —— 建完即 drop(不 set pool),根治「文件移除时正好在 getFile」的边角 url 泄漏
 
 function makeEntry(file) {
   return {
@@ -52,6 +53,11 @@ export async function acquire(file, owner = file, preloaded = null) {
   inflight.set(file, p);
   try {
     const entry = await p;
+    if (cancelled.has(file)) { // R6:建中 destroy 标记 → 建完即 drop(revoke url,不 set pool)
+      cancelled.delete(file);
+      dropEntry(file, entry);
+      return entry;
+    }
     pool.set(file, entry);
     entry.owners.add(owner);
     return entry;
@@ -74,12 +80,14 @@ export function release(file, owner = file) {
 }
 
 // 强制释放(无视 owners):文件从树移除/dispose 用。
-// ponytail: 若此刻有 inflight(文件移除时正好在 getFile,罕见),建完仍会 pool.set——边角泄漏一个 url,
-//           不阻断(destroy 通常在文件已 acquire 完后调)。需要时再加取消语义。
+// R6: 若此刻有 inflight(文件移除时正好在 getFile),标记 cancelled —— acquire 建完检查标记即 drop
+//     (不 set pool + revoke url),根治原「建完仍 pool.set 泄漏一个 url」的边角。
 export function destroy(file) {
   const entry = pool.get(file);
   if (entry)
     dropEntry(file, entry);
+  else if (inflight.has(file))
+    cancelled.add(file);
 }
 
 // 读已 acquire 的 entry(不建)。SmartFile getter 用。

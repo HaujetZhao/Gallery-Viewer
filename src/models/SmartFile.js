@@ -155,7 +155,7 @@ export class SmartFile {
   // 文件头魔数识别实际类型。位运算逐字符照搬源码。
   async getActualType() {
     try {
-      const file = await this.handle.getFile();
+      const file = peek(this)?.file ?? await this.handle.getFile(); // R6:复用池(已 acquire 则不重复 getFile),池空才 getFile
       const buffer = await file.slice(0, 12).arrayBuffer();
       const bytes = new Uint8Array(buffer);
 
