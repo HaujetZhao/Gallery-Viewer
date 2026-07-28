@@ -48,7 +48,7 @@ async function onAllMediaClick() {
         </ul>
       </div>
     </div>
-    <!-- 幽灵 resize 条(ResizeObserver 监听其 offsetWidth) -->
-    <div id="resize-helper" ref="resizeEl" />
+    <!-- 右边缘拖拽调宽 handle -->
+    <div ref="resizeEl" class="sidebar-resize-handle" />
   </div>
 </template>
