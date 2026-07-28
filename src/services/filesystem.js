@@ -322,6 +322,7 @@ export async function handleFolderClick(folder) {
   if (!folder)
     return;
   const fs = useFsStore();
+  const rootStore = useRootStore();
   if (folder === fs.allMediaFolder) {
     await loadFolder(folder);
     return;
@@ -332,9 +333,11 @@ export async function handleFolderClick(folder) {
       await handleFolderNotFound(folder);
       return;
     }
-    if (folder.files.length < 200) {
-      await refreshFolder(folder);
-    }
+    // R2:对所有点击 trust 校验(深层按需;短路零 IO)+ enrich 新增 + dirty 才持久化
+    const result = await scanFolder(folder, { trust: true });
+    integrateScanResult(folder, result, fs);
+    await folder.enrich();
+    await persistIfDirty(rootStore.currentRootId);
     await loadFolder(folder);
   }
   catch (err) {
