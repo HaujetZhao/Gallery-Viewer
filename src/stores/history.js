@@ -3,6 +3,7 @@
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 import { FileDeleteOperation, FileMoveOperation, FileRenameOperation } from '../services/operations';
+import { useFsStore } from './fs';
 
 const MAX_SIZE = 50;
 
@@ -14,12 +15,14 @@ export const useHistoryStore = defineStore('history', () => {
     stack.value.push(op);
     if (stack.value.length > MAX_SIZE)
       stack.value.shift();
+    useFsStore().rootDirty = true; // R3:rename/delete/move 后标树脏,下次 persistIfDirty 持久化
   }
   async function undoLastOperation() {
     if (!stack.value.length)
       throw new Error('没有可撤销的操作');
     const op = stack.value.pop();
     await op.undo();
+    useFsStore().rootDirty = true; // undo 也改了树
     return op;
   }
   function clear() {
