@@ -19,13 +19,21 @@ function newBackgroundToken() {
   return bgToken;
 }
 
+// 释放旧 foldersData 各 folder 的池条目(blobUrl/File)+ 清 Map + 重置 ALL_MEDIA。
+// 切根/重载用——Phase 1 池化后,clear 不 dispose 会让旧文件 url/File 驻留池泄漏(切文件夹内存增长)。
+function resetFoldersData(fs) {
+  for (const folder of fs.foldersData.values())
+    folder.dispose?.(); // → file.dispose() → destroy 池条目(幂等:ALL_MEDIA 聚合引用与真实 folder 共享 file,重复 destroy 无害)
+  fs.foldersData.clear();
+  fs.foldersData.set('ALL_MEDIA', fs.allMediaFolder);
+}
+
 // 从 handle 初始化项目状态(设 rootHandle + loadProject 扫根 + 设 rootFolder/currentFolder)。
 // 不启动后台扫描——由调用方在 fs.rootFolder 赋值后从代理起步 + 扫完后存快照(scanAndPersist)。
 export async function initProject(handle) {
   const fs = useFsStore();
   fs.rootHandle = handle;
-  fs.foldersData.clear();
-  fs.foldersData.set('ALL_MEDIA', fs.allMediaFolder);
+  resetFoldersData(fs);
   const root = await loadProject(handle);
   fs.rootFolder = root;
   fs.currentFolder = root;
@@ -95,8 +103,7 @@ export async function switchToRoot(id) {
   }
   try {
     const snap = await loadScan(id);
-    fs.foldersData.clear();
-    fs.foldersData.set('ALL_MEDIA', fs.allMediaFolder);
+    resetFoldersData(fs);
     fs.rootHandle = handle;
     if (snap) {
       const root = SmartFolder.fromSnapshot(snap, null); // 秒显(零 IO)
