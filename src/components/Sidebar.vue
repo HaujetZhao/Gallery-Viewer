@@ -19,14 +19,11 @@ async function onAllMediaClick() {
   <div id="sidebar" :class="{ pinned }" :style="{ '--sidebar-width': `${width}px` }">
     <div id="sidebar-content">
       <div class="sidebar-header">
-        <h3><i class="fas fa-folder-tree" /> 文件夹</h3>
+        <RootSwitcher />
         <button id="pinSidebarBtn" :title="pinned ? '取消固定' : '固定侧边栏'" @click="togglePin">
           <i class="fas fa-thumbtack" />
         </button>
       </div>
-
-      <!-- 多根切换器 -->
-      <RootSwitcher />
 
       <!-- 虚拟节点:ALL_MEDIA -->
       <div id="virtualContainer">

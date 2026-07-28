@@ -96,8 +96,8 @@ onBeforeUnmount(() => {
 <style scoped>
 .root-switcher {
   position: relative;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--color-gray-200, #dee2e6);
+  flex: 1;
+  min-width: 0;
 }
 .root-current {
   width: 100%;
