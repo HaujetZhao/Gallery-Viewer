@@ -33,7 +33,12 @@ export async function initProject(handle) {
 }
 
 // 后台递归扫描(并发 + 信任 + 可取消)+ 扫完存快照/更新 fileCount。openFolderPicker/switchToRoot/reloadProject 复用。
-async function scanAndPersist(id, root) {
+// ⚠️ 必须从 store 取「代理」root(Vue3 reactive:改原始对象不触发 UI)。调用方传来的 root 可能是 initProject 返回的原始对象,
+//    故此处一律 useFsStore().rootFolder 取代理,避免响应式陷阱(子目录停留在 isEmpty 半透明态不更新)。
+async function scanAndPersist(id) {
+  const root = useFsStore().rootFolder; // 代理
+  if (!root)
+    return;
   const token = newBackgroundToken(); // 取消上一轮在途后台扫描
   await startBackgroundScan(root, token);
   if (token.cancelled)
@@ -61,7 +66,7 @@ export async function openFolderPicker() {
     const rootStore = useRootStore();
     rootStore.add(id, handle.name, 0, Date.now());
     rootStore.setCurrent(id);
-    scanAndPersist(id, root); // 后台扫子目录 + 存快照(不阻塞)
+    scanAndPersist(id); // 后台扫子目录 + 存快照(不阻塞,内部取代理 root)
     return root;
   }
   catch (err) {
@@ -110,7 +115,7 @@ export async function switchToRoot(id) {
   }
   rootStore.setCurrent(id);
   await rootStore.updateMeta(id, { lastUsed: Date.now() });
-  scanAndPersist(id, fs.rootFolder); // 后台校验 + 更新快照
+  scanAndPersist(id); // 后台校验 + 更新快照(内部取代理 root)
   return fs.rootFolder;
 }
 
@@ -178,7 +183,7 @@ export async function reloadProject() {
     return null;
   const id = rootStore.currentRootId;
   const root = await initProject(fs.rootHandle);
-  scanAndPersist(id, root);
+  scanAndPersist(id); // 内部取代理 root
   return root;
 }
 
