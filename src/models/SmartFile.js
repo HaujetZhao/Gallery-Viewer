@@ -15,9 +15,13 @@ export class SmartFile {
 
   // 懒建 blobUrl(池里无 → getFile + 建 url)。enrich 正常路径已 acquire,listFolder 新建/fromSnapshot 重建需懒。
   // peek 短路:enrich 已 acquire 则直接复用(省一次 acquire,也避开并发边角)。
+  // R4:acquire 处统一写 _meta(单源)—— 消除原「ensureBlobUrl 路径 size 走 peek 兜底、其余走 _meta」的双数据源。
   async ensureBlobUrl() {
     const existing = peek(this);
-    return existing ? existing.url : (await acquire(this)).url;
+    const entry = existing ?? (await acquire(this));
+    if (this._meta == null && entry?.file)
+      this._meta = { size: entry.file.size, lastModified: entry.file.lastModified };
+    return entry.url;
   }
 
   _extractType(filename) {
@@ -35,11 +39,11 @@ export class SmartFile {
   // peek 读普通 Map(不响应式)。enrich 写 _meta → Gallery sort computed 重排。若仍优先 peek,enrich 后 size 变了 Vue 不知道。
   // `?? peek` 兜底(_meta 漏写时,如 ensureBlobUrl 后池里有但 _meta 未写)。
   get size() {
-    return this._meta?.size ?? peek(this)?.size;
+    return this._meta?.size; // R4:单源(池不放 size/mtime,消双数据源 stale)
   }
 
   get lastModified() {
-    return this._meta?.lastModified ?? peek(this)?.mtime;
+    return this._meta?.lastModified;
   }
 
   get type() {

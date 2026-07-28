@@ -190,7 +190,7 @@ export class SmartFolder {
           return null;
         try {
           const file = await f.handle.getFile();
-          await acquire(f, f, file); // 建 url + 缓存 size/mtime(池,不响应式)
+          await acquire(f, file); // R4:建 url(池,不响应式);size/mtime 由 _meta 单源(收齐后批量写)
           return { f, size: file.size, lastModified: file.lastModified };
         }
         catch (e) {

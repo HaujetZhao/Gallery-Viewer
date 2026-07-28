@@ -235,7 +235,7 @@ describe('scanFolder 纯函数(不改入参,零 getFile)+ enrich', () => {
     const cachedA = cachedFile('a.jpg');
     const gone = cachedFile('gone.png');
     // gone 模拟 scan 过的真实状态(池里有 entry),dispose → destroy 才会 revoke
-    await acquire(gone, gone, { name: 'gone.png', size: 100, lastModified: 1 });
+    await acquire(gone, { name: 'gone.png', size: 100, lastModified: 1 });
     const revoke = vi.spyOn(URL, 'revokeObjectURL');
     folder.files = [cachedA, gone];
     const originalFiles = folder.files;

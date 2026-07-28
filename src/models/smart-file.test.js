@@ -15,7 +15,8 @@ describe('smartFile rehydrate', () => {
       getFile: vi.fn(async () => ({ name: 'a.jpg', size: 100, lastModified: 200 })),
     };
     const f = new SmartFile({ handle, parent: null });
-    await acquire(f, f, { name: 'a.jpg', size: 100, lastModified: 200 });
+    await acquire(f, { name: 'a.jpg', size: 100, lastModified: 200 });
+    f._meta = { size: 100, lastModified: 200 }; // R4:_meta 单源(池不放 size/mtime)
     f.md5 = 'abc';
     const snap = f.toSnapshot();
     expect(snap).toMatchObject({ handle, name: 'a.jpg', size: 100, lastModified: 200, md5: 'abc' });
@@ -55,7 +56,8 @@ describe('smartFile rehydrate', () => {
       getFile: vi.fn(async () => ({ name: 'b.png', size: 999, lastModified: 111 })),
     };
     const f = new SmartFile({ handle, parent: null });
-    await acquire(f, f, { name: 'b.png', size: 999, lastModified: 111 });
+    await acquire(f, { name: 'b.png', size: 999, lastModified: 111 });
+    f._meta = { size: 999, lastModified: 111 };
     f.md5 = 'xyz';
     const f2 = SmartFile.fromSnapshot(f.toSnapshot(), null);
     expect(f2.name).toBe(f.name);

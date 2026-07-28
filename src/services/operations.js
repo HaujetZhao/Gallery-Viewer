@@ -115,7 +115,7 @@ export class FileDeleteOperation extends Operation {
     const restoredFile = await restoredHandle.getFile();
     destroy(this.fileData); // 清旧 url(池里有则 revoke)
     this.fileData.handle = restoredHandle;
-    await acquire(this.fileData, this.fileData, restoredFile); // 建 url + 缓存 size/mtime(复用 restoredFile 零重复 IO)
+    await acquire(this.fileData, restoredFile); // R4:建 url(复用 restoredFile 零重复 IO);size/mtime 由 _meta 单源
     // 写 _meta(响应式一致): 与池同步,getter 读 _meta 触发 Vue 重渲
     this.fileData._meta = { size: restoredFile.size, lastModified: restoredFile.lastModified };
     this.fileData.md5 = null;
