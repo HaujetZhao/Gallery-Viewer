@@ -3,6 +3,7 @@ import { ref } from 'vue';
 import { useSidebar } from '../composables/useSidebar';
 import { switchToAllPhotos } from '../services/filesystem';
 import { useFsStore } from '../stores/fs';
+import RootSwitcher from './RootSwitcher.vue';
 import SidebarTreeItem from './SidebarTreeItem.vue';
 
 const fsStore = useFsStore();
@@ -23,6 +24,9 @@ async function onAllMediaClick() {
           <i class="fas fa-thumbtack" />
         </button>
       </div>
+
+      <!-- 多根切换器 -->
+      <RootSwitcher />
 
       <!-- 虚拟节点:ALL_MEDIA -->
       <div id="virtualContainer">

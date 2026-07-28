@@ -19,7 +19,7 @@ function buildTree() {
   return root;
 }
 
-describe('SmartFolder rehydrate', () => {
+describe('smartFolder rehydrate', () => {
   it('toSnapshot 序列化整棵树(name/scanned/expanded/subFolders/files)', () => {
     const root = buildTree();
     const snap = root.toSnapshot();

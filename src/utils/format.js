@@ -34,3 +34,22 @@ export function debounce(func, wait) {
     timeout = setTimeout(() => func.apply(this, args), wait);
   };
 }
+
+// 相对时间(刚刚 / N 分钟前 / N 小时前 / N 天前 / 超 7 天回退日期)。
+export function formatRelativeTime(ts) {
+  if (!ts)
+    return '';
+  const diff = Date.now() - ts;
+  const min = 60 * 1000;
+  const hour = 60 * min;
+  const day = 24 * hour;
+  if (diff < min)
+    return '刚刚';
+  if (diff < hour)
+    return `${Math.floor(diff / min)} 分钟前`;
+  if (diff < day)
+    return `${Math.floor(diff / hour)} 小时前`;
+  if (diff < 7 * day)
+    return `${Math.floor(diff / day)} 天前`;
+  return new Date(ts).toLocaleDateString();
+}

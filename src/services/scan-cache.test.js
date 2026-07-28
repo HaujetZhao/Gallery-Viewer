@@ -1,16 +1,16 @@
+import { del, get, set } from 'idb-keyval';
+
 import { describe, expect, it, vi } from 'vitest';
+import { clearScan, loadScan, saveScan } from './scanCache';
 
 vi.mock('idb-keyval', () => {
   const store = new Map();
   return {
     get: vi.fn(k => store.get(k)),
     set: vi.fn((k, v) => { store.set(k, v); }),
-    del: vi.fn(k => { store.delete(k); }),
+    del: vi.fn((k) => { store.delete(k); }),
   };
 });
-
-import { del, get, set } from 'idb-keyval';
-import { clearScan, loadScan, saveScan } from './scanCache';
 
 describe('scanCache', () => {
   it('save → load 往返', async () => {

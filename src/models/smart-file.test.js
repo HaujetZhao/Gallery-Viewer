@@ -7,7 +7,7 @@ beforeEach(() => {
   URL.revokeObjectURL = vi.fn(() => {});
 });
 
-describe('SmartFile rehydrate', () => {
+describe('smartFile rehydrate', () => {
   it('toSnapshot 含 handle/name/size/lastModified/md5', () => {
     const handle = { name: 'a.jpg' };
     const f = new SmartFile({ handle, file: { name: 'a.jpg', size: 100, lastModified: 200 }, parent: null });

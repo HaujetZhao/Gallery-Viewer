@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import { useModal } from '../composables/useModal';
 import { useModalStore } from '../stores/modal';
 import AudioPlayer from './AudioPlayer.vue';
@@ -14,6 +14,22 @@ const { loading, svgText, mediaKind, isHoveringVideo, onImgLoad } = useModal(
   contentEl,
   mediaEl,
 );
+
+// 图片/视频 src:ensureBlobUrl 取(fromSnapshot 重建的文件 blobUrl 懒,首次显示时单文件 IO)。
+const imgSrc = ref('');
+watch(
+  [() => modal.currentFile, () => mediaKind.value],
+  async () => {
+    const f = modal.currentFile;
+    if (f && (mediaKind.value === 'image' || mediaKind.value === 'video')) {
+      imgSrc.value = await f.ensureBlobUrl();
+    }
+    else {
+      imgSrc.value = '';
+    }
+  },
+  { immediate: true },
+);
 </script>
 
 <template>
@@ -24,7 +40,7 @@ const { loading, svgText, mediaKind, isHoveringVideo, onImgLoad } = useModal(
           v-if="mediaKind === 'image'"
           ref="mediaEl"
           class="modal-media modal-image"
-          :src="modal.currentFile.blobUrl"
+          :src="imgSrc"
           draggable="false"
           alt="Full view"
           @load="onImgLoad"
@@ -33,7 +49,7 @@ const { loading, svgText, mediaKind, isHoveringVideo, onImgLoad } = useModal(
           v-else-if="mediaKind === 'video'"
           ref="mediaEl"
           class="modal-media modal-video"
-          :src="modal.currentFile.blobUrl"
+          :src="imgSrc"
           controls
           @loadeddata="loading = false"
           @mouseenter="isHoveringVideo = true"

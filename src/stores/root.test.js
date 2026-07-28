@@ -1,13 +1,13 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import * as handleStore from '../services/handleStore';
+import { useRootStore } from './root';
+
 vi.mock('../services/handleStore', () => ({
   loadAll: vi.fn(),
   update: vi.fn(async () => {}),
 }));
-
-import * as handleStore from '../services/handleStore';
-import { useRootStore } from './root';
 
 beforeEach(() => {
   setActivePinia(createPinia());

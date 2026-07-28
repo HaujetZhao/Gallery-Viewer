@@ -12,17 +12,20 @@ import Toast from './components/Toast.vue';
 import { useGallerySearch } from './composables/useGallerySearch';
 import { useScrollZone } from './composables/useScrollZone';
 import { initDB } from './services/db';
-import { initProject, openFolderPicker } from './services/filesystem';
-import { loadRootHandle, verifyPermission } from './services/handleStore';
+import { openFolderPicker, switchToRoot } from './services/filesystem';
+import * as handleStore from './services/handleStore';
 import { useFsStore } from './stores/fs';
 import { useHistoryStore } from './stores/history';
+import { useRootStore } from './stores/root';
 import { useThemeStore } from './stores/theme';
 import { useToastStore } from './stores/uiToast';
 import { useUserSettingsStore } from './stores/userSettings';
 import { isFileSystemAccessSupported } from './utils/browser';
+import { formatRelativeTime } from './utils/format';
 
 const themeStore = useThemeStore();
 const fsStore = useFsStore();
+const rootStore = useRootStore();
 const settings = useUserSettingsStore();
 const toast = useToastStore();
 const history = useHistoryStore();
@@ -46,7 +49,7 @@ const browserSupported = isFileSystemAccessSupported();
 const sidebarEl = ref(null);
 const settingsBtnEl = ref(null);
 const filterEl = ref(null);
-// 待恢复的句柄:权限需用户手势重新授权时,启动页显示"打开上次"按钮(requestPermission 需用户手势)
+// 待恢复:{ id, name } 权限需用户手势重新授权时,启动页显示"打开上次"按钮
 const restorableHandle = ref(null);
 useScrollZone([sidebarEl, settingsBtnEl, filterEl]);
 
@@ -63,18 +66,19 @@ onMounted(async () => {
 });
 onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown));
 
-// 启动时尝试恢复上次文件夹:权限仍在(granted)则直接恢复;否则记下句柄,启动页显示恢复按钮。
+// 启动:加载历史 → 取最近 → 权限 granted 自动恢复;否则启动页显示"打开上次"(requestPermission 需用户手势)。
 async function tryRestoreFolder() {
   try {
-    const handle = await loadRootHandle();
-    if (!handle)
+    await rootStore.loadFromHandleStore();
+    const last = await handleStore.getLastUsed();
+    if (!last)
       return;
-    const perm = await handle.queryPermission({ mode: 'readwrite' });
+    const perm = await last.handle.queryPermission({ mode: 'readwrite' });
     if (perm === 'granted') {
-      await initProject(handle);
+      await switchToRoot(last.id);
     }
     else {
-      restorableHandle.value = handle;
+      restorableHandle.value = { id: last.id, name: last.handle.name };
     }
   }
   catch (e) {
@@ -82,23 +86,18 @@ async function tryRestoreFolder() {
   }
 }
 
-// 用户点击"打开上次":此时有用户手势,requestPermission 可弹框 → 恢复
+// 用户点击"打开上次":此时有用户手势,switchToRoot 内 requestPermission 可弹框
 async function restoreLast() {
-  const handle = restorableHandle.value;
-  if (!handle)
+  const r = restorableHandle.value;
+  if (!r)
     return;
   restorableHandle.value = null;
-  if (await verifyPermission(handle)) {
-    await initProject(handle);
-  }
-  else {
-    toast.error('未获得文件夹访问权限');
-  }
+  await switchToRoot(r.id);
 }
 
 async function open() {
   await openFolderPicker();
-  restorableHandle.value = null; // 已打开新文件夹,清待恢复态
+  restorableHandle.value = null;
 }
 function onKeydown(e) {
   const tag = document.activeElement?.tagName;
@@ -150,10 +149,29 @@ function onKeydown(e) {
         </div>
         <BrowserUnsupportedWarning v-if="!browserSupported" />
       </div>
-      <!-- 恢复上次文件夹(权限需重新授权时显示) -->
+      <!-- 恢复上次(权限需重新授权) -->
       <div v-if="restorableHandle" class="restore-card" @click.stop="restoreLast">
         <i class="fas fa-folder-open" />
         <span>打开上次:{{ restorableHandle.name }}</span>
+      </div>
+      <!-- 历史文件夹列表 -->
+      <div v-if="rootStore.roots.length" class="root-history">
+        <div
+          v-for="r in rootStore.roots"
+          :key="r.id"
+          class="root-history-item"
+          @click="switchToRoot(r.id)"
+        >
+          <i class="fas fa-folder" />
+          <div class="r-info">
+            <div class="r-name">
+              {{ r.name }}
+            </div>
+            <div class="r-meta">
+              {{ r.fileCount || 0 }} 文件 · {{ formatRelativeTime(r.lastUsed) }}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -210,5 +228,38 @@ function onKeydown(e) {
 .restore-card:hover {
   background-color: var(--bg-tertiary);
   transform: translateY(-2px);
+}
+.root-history {
+  max-width: 360px;
+  margin: 12px auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.root-history-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  background: var(--bg-secondary);
+  transition: all var(--transition-fast) var(--ease-out);
+}
+.root-history-item:hover {
+  border-color: var(--color-primary);
+  transform: translateY(-1px);
+}
+.root-history-item .r-info {
+  flex: 1;
+  min-width: 0;
+}
+.r-name {
+  font-size: 14px;
+}
+.r-meta {
+  font-size: 11px;
+  color: var(--text-muted);
 }
 </style>

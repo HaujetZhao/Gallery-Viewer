@@ -1,15 +1,15 @@
 import { SmartFolder } from '../models/SmartFolder';
-// 文件系统服务。搬自源码 js/filesystem.js,剥 DOM/UI 耦合,service 内部用 useFsStore() 操作状态。
-// syncTreeStructure(源码 sidebar)Vue 后不需要(响应式自动同步 subFolders)。
-// 注意:与 recovery.js 循环依赖(handleFolderClick 调 handleFolderNotFound,recovery 调 startBackgroundScan),
-// 函数体内调用,ES module 安全。
+// 文件系统服务。内部用 useFsStore() 操作状态。多文件夹:switchToRoot 切换(秒显缓存+后台校验)。
 import { useFsStore } from '../stores/fs';
+import { useRootStore } from '../stores/root';
+import { useToastStore } from '../stores/uiToast';
 import { isFileSystemAccessSupported } from '../utils/browser';
-import { saveRootHandle } from './handleStore';
+import * as handleStore from './handleStore';
 import { handleFolderNotFound } from './recovery';
+import { loadScan, saveScan } from './scanCache';
 
-// 从 handle 初始化项目:设 rootHandle → loadProject(扫根)→ 设 rootFolder/currentFolder → 后台递归扫描。
-// openFolderPicker 和启动恢复共用。⚠️ startBackgroundScan 必须在 fs.rootFolder 赋值后、从代理起步。
+// 从 handle 初始化项目状态(设 rootHandle + loadProject 扫根 + 设 rootFolder/currentFolder)。
+// 不启动后台扫描——由调用方在 fs.rootFolder 赋值后从代理起步 + 扫完后存快照(scanAndPersist)。
 export async function initProject(handle) {
   const fs = useFsStore();
   fs.rootHandle = handle;
@@ -18,11 +18,19 @@ export async function initProject(handle) {
   const root = await loadProject(handle);
   fs.rootFolder = root;
   fs.currentFolder = root;
-  startBackgroundScan(fs.rootFolder);
   return root;
 }
 
-// 打开根目录入口(picker)。权限在 picker 阶段一次性拿(mode:readwrite)。句柄存 IDB 供下次启动恢复。
+// 后台递归扫描 + 扫完存快照/更新 fileCount。openFolderPicker/switchToRoot/reloadProject 复用。
+async function scanAndPersist(id, root) {
+  await startBackgroundScan(root);
+  if (id) {
+    await saveScan(id, root.toSnapshot());
+    await useRootStore().updateMeta(id, { fileCount: root.getAllFiles().length });
+  }
+}
+
+// 打开新文件夹(picker)。扫描 + 记录到 handleStore + 存快照 + 切换。
 export async function openFolderPicker() {
   if (!isFileSystemAccessSupported()) {
     alert('浏览器不支持文件系统访问 API,请使用 Chrome / Edge / Opera(86+)');
@@ -34,8 +42,13 @@ export async function openFolderPicker() {
       id: 'photo-viewer-start',
       startIn: 'pictures',
     });
-    await saveRootHandle(handle); // 记住句柄,下次启动恢复
-    return await initProject(handle);
+    const id = await handleStore.add(handle);
+    const root = await initProject(handle);
+    const rootStore = useRootStore();
+    rootStore.add(id, handle.name, 0, Date.now());
+    rootStore.setCurrent(id);
+    scanAndPersist(id, root); // 后台扫子目录 + 存快照(不阻塞)
+    return root;
   }
   catch (err) {
     if (err.name !== 'AbortError') {
@@ -44,6 +57,47 @@ export async function openFolderPicker() {
     }
     return null;
   }
+}
+
+// 切换到历史根。有缓存秒显(fromSnapshot)+后台校验;无缓存则重扫。
+export async function switchToRoot(id) {
+  const fs = useFsStore();
+  const rootStore = useRootStore();
+  const toast = useToastStore();
+  const handle = await handleStore.getHandle(id);
+  if (!handle) {
+    rootStore.remove(id);
+    toast.error('文件夹记录已失效');
+    return null;
+  }
+  if (!(await handleStore.verifyPermission(handle))) {
+    toast.error('未获得文件夹访问权限');
+    return null;
+  }
+  try {
+    const snap = await loadScan(id);
+    fs.foldersData.clear();
+    fs.foldersData.set('ALL_MEDIA', fs.allMediaFolder);
+    fs.rootHandle = handle;
+    if (snap) {
+      const root = SmartFolder.fromSnapshot(snap, null); // 秒显(零 IO)
+      fs.rootFolder = root;
+      fs.currentFolder = root;
+    }
+    else {
+      const root = await loadProject(handle);
+      fs.rootFolder = root;
+      fs.currentFolder = root;
+    }
+  }
+  catch (e) {
+    console.warn('快照恢复失败,回退重扫:', e);
+    await initProject(handle);
+  }
+  rootStore.setCurrent(id);
+  await rootStore.updateMeta(id, { lastUsed: Date.now() });
+  scanAndPersist(id, fs.rootFolder); // 后台校验 + 更新快照
+  return fs.rootFolder;
 }
 
 // 全局缓存:path → SmartFolder。命中复用对象(更新 handle 防失效),未命中解析父级后 create+scan+注册。
@@ -72,14 +126,13 @@ export async function getFolderData(dirHandle) {
   return folderData;
 }
 
-// 建根 SmartFolder(扫根目录)。后台递归扫描由调用方在设 fs.rootFolder 后、从代理起步触发。
+// 建根 SmartFolder(扫根目录)。后台递归扫描由调用方在设 fs.rootFolder 后触发。
 export async function loadProject(handle) {
   return await getFolderData(handle);
 }
 
 // 后台递归扫描子目录(串行,深度优先)。
-// ⚠️ 必须从「代理」folder 起步(调用方传 fs.rootFolder):scan 会改子 SmartFolder 的 files/subFolders,
-// 改代理才触发响应式让 Sidebar 实时更新;改原始对象则 UI 不刷新(子目录一直灰,直到点击)。
+// ⚠️ 必须从「代理」folder 起步(调用方传 fs.rootFolder):scan 改代理才触发响应式。
 export async function startBackgroundScan(parentFolder) {
   if (!parentFolder || !parentFolder.subFolders)
     return;
@@ -96,12 +149,16 @@ export async function startBackgroundScan(parentFolder) {
   }
 }
 
-// 清状态后重载整个项目(用当前 rootHandle)。
+// 重载当前根(绕过缓存,重新扫描)+ 更新快照。设置面板"重载项目"用。
 export async function reloadProject() {
   const fs = useFsStore();
+  const rootStore = useRootStore();
   if (!fs.rootHandle)
     return null;
-  return await initProject(fs.rootHandle);
+  const id = rootStore.currentRootId;
+  const root = await initProject(fs.rootHandle);
+  scanAndPersist(id, root);
+  return root;
 }
 
 // 重扫单文件夹。失败(NotFoundError)时从 foldersData 删 + treeNode 数据清理。
@@ -115,7 +172,6 @@ export async function refreshFolder(folder) {
       const fs = useFsStore();
       fs.foldersData.delete(folder.path);
       folder.treeNode?.destroy();
-      // 失效的若是当前文件夹,切到父级/全部媒体,避免 Gallery 停在幽灵文件夹
       if (fs.currentFolder === folder) {
         fs.currentFolder = folder.parent || fs.allMediaFolder;
       }
@@ -162,7 +218,6 @@ export async function handleFolderClick(folder) {
       await handleFolderNotFound(folder);
       return;
     }
-    // 只对小文件夹(<200 文件)即时刷新,大的等用户手动刷新
     if (folder.files.length < 200) {
       await refreshFolder(folder);
     }
