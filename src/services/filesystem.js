@@ -52,6 +52,15 @@ export function integrateScanResult(folder, result, fs) {
     fs.foldersData.delete(sub.path);
   for (const f of result.removedFiles)
     f.dispose(); // 旧文件 dispose → destroy 池条目(revoke blobUrl)
+  // R3:有增删 → 标树脏(persistIfDirty 据此决定是否持久化)
+  if (
+    result.newFiles.length
+    || result.removedFiles.length
+    || result.newSubFolders.length
+    || result.removedFolders.length
+  ) {
+    fs.rootDirty = true;
+  }
 }
 
 // 从 handle 初始化项目状态(设 rootHandle + loadProject 扫根 + 设 rootFolder/currentFolder)。

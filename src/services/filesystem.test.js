@@ -2,7 +2,8 @@ import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CONFIG } from '../config/index';
 import { makeCancelToken } from '../utils/concurrency';
-import { startBackgroundScan } from './filesystem';
+import { integrateScanResult, startBackgroundScan } from './filesystem';
+import { useFsStore } from '../stores/fs';
 
 // startBackgroundScan Phase 3 起调 integrateScanResult → useFsStore(),需要激活 Pinia。
 beforeEach(() => {
@@ -91,5 +92,35 @@ describe('startBackgroundScan', () => {
     await done;
 
     expect(enriched.length).toBe(cap); // 首 cap 个启动,剩 2 因 cancel 不派发
+  });
+});
+
+// integrateScanResult:增删检测置 fs.rootDirty(无增删不置)。
+describe('integrateScanResult dirty', () => {
+  it('有新增文件 → 置 dirty', () => {
+    const fs = useFsStore();
+    fs.rootDirty = false;
+    const folder = { files: [], subFolders: [] };
+    const result = { files: [], subFolders: [], newFiles: [{}], newSubFolders: [], removedFiles: [], removedFolders: [] };
+    integrateScanResult(folder, result, fs);
+    expect(fs.rootDirty).toBe(true);
+  });
+
+  it('有删除文件夹 → 置 dirty', () => {
+    const fs = useFsStore();
+    fs.rootDirty = false;
+    const folder = { files: [], subFolders: [] };
+    const result = { files: [], subFolders: [], newFiles: [], newSubFolders: [], removedFiles: [], removedFolders: [{}] };
+    integrateScanResult(folder, result, fs);
+    expect(fs.rootDirty).toBe(true);
+  });
+
+  it('无增删(trust 短路)→ 不置 dirty', () => {
+    const fs = useFsStore();
+    fs.rootDirty = false;
+    const folder = { files: [], subFolders: [] };
+    const result = { files: [], subFolders: [], newFiles: [], newSubFolders: [], removedFiles: [], removedFolders: [] };
+    integrateScanResult(folder, result, fs);
+    expect(fs.rootDirty).toBe(false);
   });
 });
