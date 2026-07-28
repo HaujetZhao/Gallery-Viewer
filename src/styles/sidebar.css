@@ -28,9 +28,9 @@
 .sidebar-resize-handle {
     position: absolute;
     top: 0;
-    right: 0;
+    right: -6px;
     bottom: 0;
-    width: 4px;
+    width: 12px;
     cursor: col-resize;
     z-index: 20;
 }
