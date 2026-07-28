@@ -128,47 +128,51 @@ function onKeydown(e) {
     </div>
 
     <!-- 启动页(无 currentFolder) -->
-    <div v-if="!fsStore.currentFolder" id="hint">
-      <div class="intro-content" @click="open">
-        <i class="fas fa-images" />
-        <h1>相册浏览器</h1>
-        <p>点击打开文件夹(纯本地处理)</p>
-        <div class="features">
-          <div class="feature">
-            <i class="fas fa-folder-tree" /><span>文件树</span>
-          </div>
-          <div class="feature">
-            <i class="fas fa-image" /><span>缩略图缓存</span>
-          </div>
-          <div class="feature">
-            <i class="fas fa-info-circle" /><span>EXIF信息</span>
-          </div>
-          <div class="feature">
-            <i class="fas fa-folder-open" /><span>文件整理</span>
-          </div>
-        </div>
-        <BrowserUnsupportedWarning v-if="!browserSupported" />
-      </div>
-      <!-- 恢复上次(权限需重新授权) -->
-      <div v-if="restorableHandle" class="restore-card" @click.stop="restoreLast">
-        <i class="fas fa-folder-open" />
-        <span>打开上次:{{ restorableHandle.name }}</span>
-      </div>
-      <!-- 历史文件夹列表 -->
-      <div v-if="rootStore.roots.length" class="root-history">
-        <div
-          v-for="r in rootStore.roots"
-          :key="r.id"
-          class="root-history-item"
-          @click="switchToRoot(r.id)"
-        >
-          <i class="fas fa-folder" />
-          <div class="r-info">
-            <div class="r-name">
-              {{ r.name }}
+    <div v-if="!fsStore.currentFolder" class="main-content-wrapper" :style="mainStyle">
+      <div class="container">
+        <div id="hint">
+          <div class="intro-content" @click="open">
+            <i class="fas fa-images" />
+            <h1>相册浏览器</h1>
+            <p>点击打开文件夹(纯本地处理)</p>
+            <div class="features">
+              <div class="feature">
+                <i class="fas fa-folder-tree" /><span>文件树</span>
+              </div>
+              <div class="feature">
+                <i class="fas fa-image" /><span>缩略图缓存</span>
+              </div>
+              <div class="feature">
+                <i class="fas fa-info-circle" /><span>EXIF信息</span>
+              </div>
+              <div class="feature">
+                <i class="fas fa-folder-open" /><span>文件整理</span>
+              </div>
             </div>
-            <div class="r-meta">
-              {{ r.fileCount || 0 }} 文件 · {{ formatRelativeTime(r.lastUsed) }}
+            <BrowserUnsupportedWarning v-if="!browserSupported" />
+          </div>
+          <!-- 恢复上次(权限需重新授权) -->
+          <div v-if="restorableHandle" class="restore-card" @click.stop="restoreLast">
+            <i class="fas fa-folder-open" />
+            <span>打开上次:{{ restorableHandle.name }}</span>
+          </div>
+          <!-- 历史文件夹列表 -->
+          <div v-if="rootStore.roots.length" class="root-history">
+            <div
+              v-for="r in rootStore.roots"
+              :key="r.id"
+              class="root-history-item"
+              @click="switchToRoot(r.id)"
+            >
+              <i class="fas fa-folder" />
+              <div class="r-info">
+                <div class="r-name">
+                  {{ r.name }}
+                </div>
+                <div class="r-meta">
+                  {{ r.fileCount || 0 }} 文件 · {{ formatRelativeTime(r.lastUsed) }}
+                </div>
+              </div>
             </div>
           </div>
         </div>
