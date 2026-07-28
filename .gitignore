@@ -23,3 +23,6 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+
+# Superpowers brainstorming mockups(本地可视化会话)
+.superpowers/
