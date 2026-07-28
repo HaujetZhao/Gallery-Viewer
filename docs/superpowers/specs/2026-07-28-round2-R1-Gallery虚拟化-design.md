@@ -47,11 +47,11 @@ round2 三条线之一(Part 3 / R1)。**「万图不卡」是渲染层问题,不
 
 **代价**:把 `columns`(列优先)改成 `rows`(行优先);`.gallery-grid` 从「flex row of 列」改成「track 内每行 flex row of 卡片」。必要的小重构,换虚拟化最简形态。
 
-### D2 整页滚动 + `getScrollElement = window`(用户已定)
+### D2 整页滚动 + `useWindowVirtualizer`(用户已定)
 
 现状即整页滚动:`body { min-height:100vh; overflow-x:hidden }` 无 `overflow-y`,sidebar `position:fixed`,Gallery 撑高 body → 整页滚,header 随页滚走、sidebar 固定。
 
-虚拟化 `getScrollElement: () => window`,TanStack 原生支持 window 滚动。**不碰布局,不改滚动习惯**。header 仍随页滚走(现状)。
+用 `useWindowVirtualizer`(**window 版**:observe window 的 resize/scroll 事件,而非 `ResizeObserver.observe(window)`——后者因 window 非 Element 会抛 `TypeError`)。`useVirtualizer`(element 版)的 `getScrollElement` 必须返回 Element,不能给 window。**不碰布局,不改滚动习惯**。header 仍随页滚走(现状)。
 
 ### D3 行高测真实列宽,弃 `estHeight` 公式(关键)
 
@@ -112,13 +112,12 @@ const rows = computed(() => {
 ### virtualizer 配置
 
 ```js
-import { useVirtualizer } from '@tanstack/vue-virtual'
+import { useWindowVirtualizer } from '@tanstack/vue-virtual'
 
 const gridRef = ref(null)
 const rowHeight = ref(300) // 初值,ResizeObserver 实测后覆盖
-const virtualizer = useVirtualizer({
+const virtualizer = useWindowVirtualizer({
   get count() { return rows.value.length },
-  getScrollElement: () => window,
   estimateSize: () => rowHeight.value,
   overscan: 4,
 })
@@ -211,4 +210,4 @@ onBeforeUnmount(() => ro?.disconnect())
 
 ## 一句话总结
 
-固定行高均匀网格 + 整页滚动 → `@tanstack/vue-virtual` 按行切片、`getScrollElement=window`、ResizeObserver 测真实列宽定行高、overscan 覆盖 observer rootMargin。万图下 DOM/observer/canvas 从 O(N) 降到 O(可视区)。现有 `useThumbnail`/`rerunKey` 不改,移除 `content-visibility` 穷人虚拟化,canvas LRU 池验收驱动后置。
+固定行高均匀网格 + 整页滚动 → `@tanstack/vue-virtual` 按行切片、`useWindowVirtualizer`(window 版)、ResizeObserver 测真实列宽定行高、overscan 覆盖 observer rootMargin。万图下 DOM/observer/canvas 从 O(N) 降到 O(可视区)。现有 `useThumbnail`/`rerunKey` 不改,移除 `content-visibility` 穷人虚拟化,canvas LRU 池验收驱动后置。

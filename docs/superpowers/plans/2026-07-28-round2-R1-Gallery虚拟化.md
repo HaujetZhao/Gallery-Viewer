@@ -4,7 +4,7 @@
 
 **Goal:** Gallery 从全量挂载改为按行虚拟化,万图场景下 DOM/observer/canvas 从 O(N) 降到 O(可视区)。
 
-**Architecture:** 固定行高均匀网格 + 整页滚动 → `@tanstack/vue-virtual` 按行切片,`getScrollElement=window`,`ResizeObserver` 测真实列宽定行高,`overscan:4` 覆盖 observer rootMargin(100px)。可测纯函数(`chunkRows`/`computeRowHeight`)抽到 `utils/` 做 TDD;组件层(虚拟化渲染)靠 lint + 现有测试绿 + 客观 DOM 核对 + 用户主观验收(项目无 `.vue` 组件测试惯例,jsdom 测不了真实虚拟化)。
+**Architecture:** 固定行高均匀网格 + 整页滚动 → `@tanstack/vue-virtual` 按行切片(window 版 `useWindowVirtualizer`),`ResizeObserver` 测真实列宽定行高,`overscan:4` 覆盖 observer rootMargin(100px)。可测纯函数(`chunkRows`/`computeRowHeight`)抽到 `utils/` 做 TDD;组件层(虚拟化渲染)靠 lint + 现有测试绿 + 客观 DOM 核对 + 用户主观验收(项目无 `.vue` 组件测试惯例,jsdom 测不了真实虚拟化)。
 
 **Tech Stack:** Vue 3 `<script setup>` / `@tanstack/vue-virtual` / Vitest + jsdom / 现有全局 CSS。
 
@@ -180,7 +180,7 @@ git commit -m "feat(utils): gallery-layout 纯函数 chunkRows/computeRowHeight(
 ```vue
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
-import { useVirtualizer } from '@tanstack/vue-virtual';
+import { useWindowVirtualizer } from '@tanstack/vue-virtual';
 import { useGallerySearch } from '../composables/useGallerySearch';
 import { redrawSignal, unobserveAll } from '../composables/useThumbnail';
 import { useFsStore } from '../stores/fs';
@@ -239,10 +239,9 @@ function currentGap() {
 const gridRef = ref(null);
 const rowHeight = ref(300); // 初值;ResizeObserver 实测后覆盖(弃旧 estHeight 公式)
 
-// 整页滚动:getScrollElement=window。固定行高,无需 measureElement。
-const virtualizer = useVirtualizer({
+// 整页滚动:用 useWindowVirtualizer(window 版,observe window 的 resize/scroll 而非 ResizeObserver.observe(window))。固定行高,无需 measureElement。
+const virtualizer = useWindowVirtualizer({
   get count() { return rows.value.length; },
-  getScrollElement: () => window,
   estimateSize: () => rowHeight.value,
   overscan: 4, // 4 行 ≈ 1200px,覆盖 useThumbnail observer 的 rootMargin(100px)
 });
@@ -449,7 +448,7 @@ document.querySelector('.gallery-track').style.height  // = 行数 × 行高,scr
 
 **Spec 覆盖:**
 - D1 按行 → Task 3(rows computed + 模板 gallery-row)。✓
-- D2 window scroll → Task 3(getScrollElement: () => window)。✓
+- D2 window scroll → Task 3(useWindowVirtualizer,window 版)。✓
 - D3 实测行高/弃 estHeight → Task 2(computeRowHeight)+ Task 3(ResizeObserver + watch rowHeight→measure)。✓
 - D4 observer 协同/overscan → Task 3(overscan:4,useThumbnail 不改)。✓
 - D5 rerunKey 保留 → Task 3(rerunKey 逻辑原样保留)。✓
