@@ -1,4 +1,4 @@
-// 应用配置中心。搬自源码 js/config.js 的 CONFIG + getConfig,无外部依赖。
+// 应用配置中心。搬自源码 js/config.js 的 CONFIG,无外部依赖。
 export const CONFIG = {
   DATABASE: {
     NAME: 'GalleryThumbnailDB',
@@ -34,17 +34,3 @@ export const CONFIG = {
   },
   CACHE: { OLD_THRESHOLD_DAYS: 20, AUTO_CLEANUP_ENABLED: false },
 };
-
-// 点分路径访问器,例:getConfig('UI.MODAL.MIN_SCALE')
-export function getConfig(path) {
-  const keys = path.split('.');
-  let value = CONFIG;
-  for (const key of keys) {
-    value = value[key];
-    if (value === undefined) {
-      console.warn(`配置项不存在: ${path}`);
-      return undefined;
-    }
-  }
-  return value;
-}
