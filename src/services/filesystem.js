@@ -111,6 +111,8 @@ export async function persistIfDirty(id) {
 // ③ trailing:每次 clearTimeout 重置 → 多次变更合并成一次写;
 // ④ dirty 清除:persistIfDirty 写完置 false(103);debounce 窗口内若又来变更会被再次置 true(integrateScanResult/history),下次 trailing 覆盖。
 let persistTimer = null;
+// 折中:1s 窗口内若用户立即关浏览器,在途 debounce 会丢(未 flush 落 IDB)。彻底解需 beforeunload flush,
+// 但 IDB async 写在 beforeunload 不可靠(浏览器不等 promise),故接受此窗口——连续改名/扫描的写放大收益 > 极端关闭场景的丢改动风险。
 const PERSIST_DEBOUNCE_MS = 1000;
 
 export function schedulePersist(id) {
@@ -191,6 +193,7 @@ export async function switchToRoot(id) {
   try {
     const snap = await loadScan(id);
     // 切到新根前:取消上一根在途的 debounced 写,防晚到写错根 IDB / 误清新根 dirty(竞态防线①)。
+    // 必须紧贴 resetFoldersData 之前:cancel 清旧 timer,reset 才安全清 store(顺序倒了,旧 timer fire 会撞新根)。
     cancelPendingPersist();
     resetFoldersData(fs);
     fs.rootHandle = handle;
@@ -299,7 +302,8 @@ export async function reloadProject() {
   if (!fs.rootHandle)
     return null;
   const id = rootStore.currentRootId;
-  // 重载绕过缓存重扫:取消在途 debounced 写,避免旧树快照覆盖新扫结果(竞态防线①)。
+  // 重载绕过缓存重扫:取消在途 debounced 写。reload 不换根 → id 仍 = currentRootId,防线②(id 校验)拦不住,
+  // 故 cancel 是此处唯一防线,防旧 dirty 的 saveScan 覆盖刚扫出的新 snapshot(竞态防线①)。
   cancelPendingPersist();
   const root = await initProject(fs.rootHandle);
   scanAndPersist(id); // 内部取代理 root
