@@ -1,13 +1,14 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CONFIG } from '../config/index';
-import { makeCancelToken } from '../utils/concurrency';
-vi.mock('./scanCache', () => ({ saveScan: vi.fn(async () => {}), loadScan: vi.fn(async () => null), clearScan: vi.fn(async () => {}) }));
-vi.mock('./handleStore', () => ({ add: vi.fn(async () => 'id'), getHandle: vi.fn(async () => null), verifyPermission: vi.fn(async () => true), loadAll: vi.fn(async () => []), update: vi.fn(async () => {}), remove: vi.fn(async () => {}) }));
-import { saveScan } from './scanCache';
-import { integrateScanResult, persistIfDirty, startBackgroundScan } from './filesystem';
 import { useFsStore } from '../stores/fs';
 import { useRootStore } from '../stores/root';
+import { makeCancelToken } from '../utils/concurrency';
+import { integrateScanResult, persistIfDirty, startBackgroundScan } from './filesystem';
+import { saveScan } from './scanCache';
+
+vi.mock('./scanCache', () => ({ saveScan: vi.fn(async () => {}), loadScan: vi.fn(async () => null), clearScan: vi.fn(async () => {}) }));
+vi.mock('./handleStore', () => ({ add: vi.fn(async () => 'id'), getHandle: vi.fn(async () => null), verifyPermission: vi.fn(async () => true), loadAll: vi.fn(async () => []), update: vi.fn(async () => {}), remove: vi.fn(async () => {}) }));
 
 // startBackgroundScan Phase 3 起调 integrateScanResult → useFsStore(),需要激活 Pinia。
 beforeEach(() => {

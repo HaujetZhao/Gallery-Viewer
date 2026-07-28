@@ -86,10 +86,8 @@ async function scanAndPersist(id) {
   await startBackgroundScan(root, token);
   if (token.cancelled)
     return; // 被新切换打断,不存旧快照(避免覆盖更新的树)
-  if (id) {
-    await saveScan(id, root.toSnapshot());
-    await useRootStore().updateMeta(id, { fileCount: root.getAllFiles().length });
-  }
+  if (id)
+    await persistIfDirty(id); // 首次/reload 全树扫后必 dirty(integrateScanResult 检测 newFiles)→ 持久化
 }
 
 // R3:仅树脏时持久化(W2/W3:未变则零 saveScan / 零 getAllFiles)。
@@ -103,6 +101,17 @@ export async function persistIfDirty(id) {
   await saveScan(id, root.toSnapshot());
   await useRootStore().updateMeta(id, { fileCount: root.getAllFiles().length });
   fs.rootDirty = false;
+}
+
+// R2:只扫 root 一层(顶层增删即时),不递归深层(深层点开才校验)。
+// trust:true → 顶层名字集合一致则零 IO(integrateScanResult 检测增删置 dirty)。
+async function rootEagerScan(root, token) {
+  if (!root?.handle)
+    return;
+  const fs = useFsStore();
+  const result = await scanFolder(root, { trust: true });
+  integrateScanResult(root, result, fs);
+  await root.enrich({ token });
 }
 
 // 打开新文件夹(picker)。扫描 + 记录到 handleStore + 存快照 + 切换。
@@ -149,6 +158,7 @@ export async function switchToRoot(id) {
     toast.error('未获得文件夹访问权限');
     return null;
   }
+  let restoredFromSnap = false;
   try {
     const snap = await loadScan(id);
     resetFoldersData(fs);
@@ -158,6 +168,7 @@ export async function switchToRoot(id) {
       registerFolderTree(root, fs); // 递归注册 folder 树(替代 fromSnapshot 内的 appState 注册副作用)
       fs.rootFolder = root;
       fs.currentFolder = root;
+      restoredFromSnap = true;
     }
     else {
       const root = await loadProject(handle);
@@ -171,7 +182,11 @@ export async function switchToRoot(id) {
   }
   rootStore.setCurrent(id);
   await rootStore.updateMeta(id, { lastUsed: Date.now() });
-  scanAndPersist(id); // 后台校验 + 更新快照(内部取代理 root)
+  // R2:有 snap → root 一层 eager(替代全树后台扫);R3:仅 dirty 才持久化。无 snap/恢复失败 → 全树扫建快照
+  if (restoredFromSnap)
+    rootEagerScan(fs.rootFolder).then(() => persistIfDirty(id));
+  else
+    scanAndPersist(id);
   return fs.rootFolder;
 }
 
