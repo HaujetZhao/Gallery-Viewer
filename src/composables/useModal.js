@@ -59,7 +59,7 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
     applyTransform();
   }
 
-  // 图片自适应屏幕:设 natural 像素 + scale 适应(minScale 保持 MIN_SCALE,允许缩到比适应更小)
+  // 图片自适应屏幕:设 natural 像素 + scale 适应;minScale=initial×MIN_SCALE(动态下限:大图也能缩到适应的 1/10,小图不致看不见)
   function initializeMediaDisplay() {
     const el = mediaElRef.value;
     if (!el || !el.classList.contains('modal-image'))
@@ -72,6 +72,7 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
     scale.value = initial;
     pointX.value = 0;
     pointY.value = 0;
+    minScale.value = initial * MIN_SCALE; // 动态下限:缩到适应的 1/10
     applyTransform();
   }
 

@@ -17,7 +17,7 @@ export const CONFIG = {
     SCAN_FOLDER_CONCURRENCY: 8, // 后台子目录遍历并发上限(原串行深度优先)
   },
   UI: {
-    MODAL: { MIN_SCALE: 0.1, MAX_SCALE: 10, ZOOM_STEP: 0.1, ZOOM_SENSITIVITY: 0.002 },
+    MODAL: { MIN_SCALE: 0.1, MAX_SCALE: 10, ZOOM_STEP: 0.1, ZOOM_SENSITIVITY: 0.002 }, // MIN_SCALE: 相对 fit-initial 的最小缩放比例(大图也能缩到适应的 1/10;调小→缩更小)
     SIDEBAR: { DEFAULT_WIDTH: 280, MIN_WIDTH: 200, MAX_WIDTH: 500 },
     TOAST: { DURATION: 3000, DURATION_LONG: 5000, MAX_VISIBLE: 3 },
   },
