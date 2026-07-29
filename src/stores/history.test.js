@@ -2,15 +2,15 @@ import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useHistoryStore } from './history';
 
-// history.js import schedulePersist from filesystem;mock 掉避免真 timer + 隔离落盘断言。
-vi.mock('../services/filesystem', () => ({ schedulePersist: vi.fn() }));
+// history.js import schedulePersist from persistence;mock 掉避免真 timer + 隔离落盘断言。
+vi.mock('../services/persistence', () => ({ schedulePersist: vi.fn() }));
 
 describe('history undoLastOperation', () => {
   beforeEach(() => setActivePinia(createPinia()));
 
   it('undo 失败 → op 留栈顶 + 不落盘(T02 Bug2:失败不丢栈)', async () => {
     const history = useHistoryStore();
-    const { schedulePersist } = await import('../services/filesystem');
+    const { schedulePersist } = await import('../services/persistence');
     schedulePersist.mockClear();
 
     const failingOp = {
@@ -30,7 +30,7 @@ describe('history undoLastOperation', () => {
 
   it('undo 成功 → pop + 落盘', async () => {
     const history = useHistoryStore();
-    const { schedulePersist } = await import('../services/filesystem');
+    const { schedulePersist } = await import('../services/persistence');
     schedulePersist.mockClear();
 
     const okOp = {

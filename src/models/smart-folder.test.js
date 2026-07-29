@@ -149,7 +149,7 @@ describe('scanFolder 纯函数(不改入参,零 getFile)+ enrich', () => {
   });
 
   it('enrich 补全: getFile + acquire + 写 _meta,size 正确(用 integrateScanResult 写回 folder)', async () => {
-    const { integrateScanResult } = await import('../services/filesystem');
+    const { integrateScanResult } = await import('../services/scanIntegration');
     const entries = [
       fileEntry('b.jpg', 200),
       fileEntry('a.png', 100),
@@ -249,7 +249,7 @@ describe('scanFolder 纯函数(不改入参,零 getFile)+ enrich', () => {
     expect(result.removedFiles.map(f => f.name)).toEqual(['gone.png']);
 
     // integrateScanResult 才 dispose(走 service 层副作用)
-    const { integrateScanResult } = await import('../services/filesystem');
+    const { integrateScanResult } = await import('../services/scanIntegration');
     const fakeFs = { foldersData: new Map() };
     integrateScanResult(folder, result, fakeFs);
     expect(revoke).toHaveBeenCalled(); // gone 被 dispose → destroy(revoke blobUrl)
@@ -259,7 +259,7 @@ describe('scanFolder 纯函数(不改入参,零 getFile)+ enrich', () => {
 
 describe('integrateScanResult helper(service 层整合副作用)', () => {
   it('写回代理 folder.files/subFolders + 注册 newSubFolders + 删 removedFolders + dispose removedFiles', async () => {
-    const { integrateScanResult } = await import('../services/filesystem');
+    const { integrateScanResult } = await import('../services/scanIntegration');
     const { acquire } = await import('../services/fileResource');
 
     // 造假 folder(代理形式,普通对象够用:本测试只验写回 + Map 操作)
