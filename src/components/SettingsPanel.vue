@@ -2,7 +2,7 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useStorageEstimate } from '../composables/useStorageEstimate';
 import { cleanOldCache, clearAllCache } from '../services/db';
-import { refreshFolder, reloadProject } from '../services/filesystem';
+import { refreshFolder, reloadProject } from '../services/folderActions';
 import * as handleStore from '../services/handleStore';
 import { clearScan } from '../services/scanCache';
 import { forceRegenerateCurrentThumbnails } from '../services/thumbnail';

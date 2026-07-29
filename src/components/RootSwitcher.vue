@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import { openFolderPicker, switchToRoot } from '../services/filesystem';
+import { openFolderPicker, switchToRoot } from '../services/folderActions';
 import * as handleStore from '../services/handleStore';
 import { clearScan } from '../services/scanCache';
 import { useFsStore } from '../stores/fs';

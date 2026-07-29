@@ -1,7 +1,7 @@
 <script setup>
 import { ref } from 'vue';
 import { useSidebar } from '../composables/useSidebar';
-import { switchToAllPhotos } from '../services/filesystem';
+import { switchToAllPhotos } from '../services/folderActions';
 import { useFsStore } from '../stores/fs';
 import RootSwitcher from './RootSwitcher.vue';
 import SidebarTreeItem from './SidebarTreeItem.vue';

@@ -3,7 +3,8 @@ import { findValidFolderAncestor, scanFolder } from '../models/SmartFolder';
 // 失效检测由调用方触发(validate 失败 / NotFoundError);本服务负责:找祖先→重扫→递归扫新增子目录。
 // syncTreeStructure(源码 sidebar)阶段5 接入;handleFileNotFound 推迟阶段6 gallery。
 import { useFsStore } from '../stores/fs';
-import { integrateScanResult, startBackgroundScan } from './filesystem';
+import { startBackgroundScan } from './folderActions';
+import { integrateScanResult } from './scanIntegration';
 
 // 文件夹失效恢复。返回恢复后的可用祖先 SmartFolder,或 null(根也失效)。
 // Phase 3 Step 1:scanFolder(纯函数) + integrateScanResult(写回 validAncestor 代理)。

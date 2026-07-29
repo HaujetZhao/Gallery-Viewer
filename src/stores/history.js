@@ -2,8 +2,8 @@
 // 文件级操作(删除/重命名/移动)进栈,Ctrl+Z 撤销;文件夹删除不进栈。
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
-import { schedulePersist } from '../services/filesystem';
 import { FileDeleteOperation, FileMoveOperation, FileRenameOperation } from '../services/operations';
+import { schedulePersist } from '../services/persistence';
 import { useFsStore } from './fs';
 import { useRootStore } from './root';
 

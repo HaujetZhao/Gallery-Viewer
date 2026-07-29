@@ -2,7 +2,7 @@
 import { ref } from 'vue';
 import { toggleFolderExpanded } from '../models/SmartFolder';
 import { handleDeleteFolder } from '../services/fileOps';
-import { handleFolderClick } from '../services/filesystem';
+import { handleFolderClick } from '../services/folderActions';
 import { useContextMenuStore } from '../stores/contextMenu';
 import { useFsStore } from '../stores/fs';
 import { useHistoryStore } from '../stores/history';

@@ -3,7 +3,7 @@ import { deleteFolder } from '../models/SmartFolder';
 import { useConfirmStore } from '../stores/confirm';
 import { useFsStore } from '../stores/fs';
 import { useToastStore } from '../stores/uiToast';
-import { loadFolder, refreshFolder, switchToAllPhotos } from './filesystem';
+import { loadFolder, refreshFolder, switchToAllPhotos } from './folderActions';
 
 export async function handleDeleteFolder(folder) {
   if (!folder.parent) {
