@@ -2,9 +2,10 @@ import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CONFIG } from '../config/index';
 import { useFsStore } from '../stores/fs';
+import { useHistoryStore } from '../stores/history';
 import { useRootStore } from '../stores/root';
 import { makeCancelToken } from '../utils/concurrency';
-import { cancelPendingPersist, flushPendingPersist, handleFolderClick, integrateScanResult, persistIfDirty, schedulePersist, startBackgroundScan } from './filesystem';
+import { cancelPendingPersist, flushPendingPersist, handleFolderClick, integrateScanResult, persistIfDirty, resetFoldersData, schedulePersist, startBackgroundScan } from './filesystem';
 import { saveScan } from './scanCache';
 
 vi.mock('./scanCache', () => ({ saveScan: vi.fn(async () => {}), loadScan: vi.fn(async () => null), clearScan: vi.fn(async () => {}) }));
@@ -306,5 +307,18 @@ describe('持久化调度(schedulePersist / cancelPendingPersist)与点击不阻
     schedulePersist(null);
     await vi.advanceTimersByTimeAsync(1000);
     expect(saveScan).not.toHaveBeenCalled();
+  });
+});
+
+describe('resetFoldersData 清撤销栈(T02 Bug1:切根防跨根撤销)', () => {
+  it('调 resetFoldersData → history 栈被清空', () => {
+    const fs = useFsStore();
+    const history = useHistoryStore();
+    history.stack.push({ undo: vi.fn(), getDescription: () => '旧根操作' });
+    expect(history.stack.length).toBe(1);
+
+    resetFoldersData(fs);
+
+    expect(history.stack.length).toBe(0); // 切根清栈
   });
 });
