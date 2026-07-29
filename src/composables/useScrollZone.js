@@ -1,6 +1,6 @@
 // 屏幕边缘感应滚动。鼠标进入顶/底 150px 区域,按距边缘距离线性变速度,rAF 循环 window.scrollBy。
 // 排除区域(sidebar/modal/settings/topbar)用 ref 数组传入。
-import { onBeforeUnmount, onMounted } from 'vue';
+import { onBeforeUnmount, onMounted, watch } from 'vue';
 import { useModalStore } from '../stores/modal';
 import { useUserSettingsStore } from '../stores/userSettings';
 
@@ -13,11 +13,13 @@ export function useScrollZone(excludeRefs = []) {
   let direction = 0;
   let intensity = 0;
 
-  function isInExcluded(x, y) {
+  function isInExcluded(x, y, target) {
     for (const r of excludeRefs) {
       const el = r?.value;
       if (!el)
         continue;
+      if (target && el.contains(target))
+        return true; // DOM 层级(鼠标在排除元素或其后代内)——不受 fixed 定位/rect 塌缩影响
       const rect = el.getBoundingClientRect();
       if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom)
         return true;
@@ -30,7 +32,7 @@ export function useScrollZone(excludeRefs = []) {
       return;
     if (useModalStore().isOpen)
       return; // modal 打开时暂停感应滚动(避免全屏遮罩下触发看不见的滚动)
-    if (isInExcluded(e.clientX, e.clientY)) {
+    if (isInExcluded(e.clientX, e.clientY, e.target)) {
       stop();
       return;
     }
@@ -78,6 +80,12 @@ export function useScrollZone(excludeRefs = []) {
       rafId = null;
     }
   }
+
+  // modal 打开立即停止在途的边缘滚动(T17:旧实现只 return 不 stop,raf 循环继续)
+  watch(() => useModalStore().isOpen, (open) => {
+    if (open)
+      stop();
+  });
 
   onMounted(() => {
     document.addEventListener('mousemove', onMouseMove);

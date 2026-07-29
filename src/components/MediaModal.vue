@@ -10,7 +10,7 @@ const modalEl = ref(null);
 const contentEl = ref(null);
 const mediaEl = ref(null);
 
-const { loading, svgText, mediaKind, isHoveringVideo, onImgLoad } = useModal(
+const { loading, svgText, mediaKind, isHoveringVideo, onImgLoad, fitted } = useModal(
   modalEl,
   contentEl,
   mediaEl,
@@ -45,6 +45,7 @@ watch(
           ref="mediaEl"
           class="modal-media modal-image"
           :src="imgSrc"
+          :style="{ opacity: fitted ? 1 : 0 }"
           draggable="false"
           alt="Full view"
           @load="onImgLoad"

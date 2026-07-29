@@ -30,6 +30,7 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
   const isHoveringVideo = ref(false);
   const loading = ref(false);
   const svgText = ref('');
+  const fitted = ref(false); // T17:fit 完成前隐藏 img,避免巨大原图闪一下
 
   const mediaKind = computed(() => (modal.currentFile ? getMediaKind(modal.currentFile.type) : null));
 
@@ -58,7 +59,7 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
     applyTransform();
   }
 
-  // 图片自适应屏幕:设 natural 像素 + scale 适应 + minScale=初始
+  // 图片自适应屏幕:设 natural 像素 + scale 适应(minScale 保持 MIN_SCALE,允许缩到比适应更小)
   function initializeMediaDisplay() {
     const el = mediaElRef.value;
     if (!el || !el.classList.contains('modal-image'))
@@ -71,13 +72,13 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
     scale.value = initial;
     pointX.value = 0;
     pointY.value = 0;
-    minScale.value = initial;
     applyTransform();
   }
 
   function onImgLoad() {
     loading.value = false;
     initializeMediaDisplay();
+    fitted.value = true; // fit 完成,可显示(避免 fit 前的巨大原图闪现)
   }
 
   // ===== 滚轮缩放(以鼠标为中心 + 平移补偿) =====
@@ -341,6 +342,7 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
       if (!f)
         return;
       loading.value = mediaKind.value !== 'audio';
+      fitted.value = false; // 切换/打开新图:先隐藏,等 onImgLoad fit 完再显
       svgText.value = '';
       isHoveringVideo.value = false;
       if (mediaKind.value === 'svg')
@@ -359,6 +361,7 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
           resetTransform();
           attachGestures();
         });
+        fitted.value = false; // 首次打开也先隐藏,等 load+fit
       }
       else {
         window.removeEventListener('keydown', onKeydown);
@@ -380,6 +383,7 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
     isHoveringVideo,
     loading,
     svgText,
+    fitted,
     mediaKind,
     applyTransform,
     resetTransform,
