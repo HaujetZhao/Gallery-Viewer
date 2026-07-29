@@ -26,8 +26,11 @@ export const useHistoryStore = defineStore('history', () => {
   async function undoLastOperation() {
     if (!stack.value.length)
       throw new Error('没有可撤销的操作');
-    const op = stack.value.pop();
-    await op.undo();
+    // 先 peek 不 pop:undo 失败则 op 留栈顶可重试(T02 Bug2)。
+    // 旧实现先 pop 再 await,undo 抛错 → op 永久出栈 + .trash 镜像成孤儿 + 仍落盘半撤销状态。
+    const op = stack.value[stack.value.length - 1];
+    await op.undo(); // 失败则抛出,下方不执行(op 留栈、不落盘)
+    stack.value.pop(); // 成功才 pop
     const fs = useFsStore();
     fs.rootDirty = true; // undo 也改了树
     schedulePersist(useRootStore().currentRootId); // undo 同样 debounced 持久化
