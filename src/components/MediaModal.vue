@@ -38,7 +38,7 @@ watch(
 
 <template>
   <Teleport to="body">
-    <div v-if="modal.isOpen" ref="modalEl" class="modal">
+    <div v-if="modal.isOpen" ref="modalEl" class="modal" role="dialog" aria-modal="true">
       <div ref="contentEl" class="modal-content">
         <img
           v-if="mediaKind === 'image'"

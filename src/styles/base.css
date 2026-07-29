@@ -27,3 +27,8 @@ noscript div {
     text-align: center;
     z-index: 9999;
 }
+
+:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+}

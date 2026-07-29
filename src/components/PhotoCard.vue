@@ -12,7 +12,7 @@ const props = defineProps({
   file: { type: Object, required: true },
   targetSize: { type: Number, default: 400 },
 });
-defineEmits(['click']);
+const emit = defineEmits(['click']);
 
 const strategy = computed(() => getThumbnailStrategy(props.file.type));
 const badge = computed(() => strategy.value.getCardBadge());
@@ -101,13 +101,23 @@ function onDragstart(e) {
   }
   dt.effectAllowed = 'all';
 }
+
+// click + 键盘(Enter/Space)共用
+function openPreview() {
+  emit('click');
+}
 </script>
 
 <template>
   <div
     class="photo-card"
+    tabindex="0"
+    role="button"
+    :aria-label="`查看 ${file.name}`"
     draggable="true"
-    @click="$emit('click')"
+    @click="openPreview"
+    @keydown.enter="openPreview"
+    @keydown.space.prevent="openPreview"
     @contextmenu.prevent="onContextmenu"
     @dragstart="onDragstart"
   >

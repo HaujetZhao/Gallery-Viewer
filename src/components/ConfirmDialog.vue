@@ -1,19 +1,18 @@
 <script setup>
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { nextTick, ref, watch } from 'vue';
+import { useOverlay } from '../composables/useOverlay';
 import { useConfirmStore } from '../stores/confirm';
 
 const confirm = useConfirmStore();
 const boxEl = ref(null);
 
-function onKeydown(e) {
-  if (!confirm.visible)
-    return;
-  if (e.key === 'Escape')
-    confirm.cancel();
-}
-
-onMounted(() => document.addEventListener('keydown', onKeydown));
-onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown));
+// ESC 关闭 + 焦点陷阱/归还(T13)
+useOverlay({
+  isVisible: () => confirm.visible,
+  overlayEl: boxEl,
+  onClose: () => confirm.cancel(),
+  trapFocus: true,
+});
 
 // 进场缩放(显示后 nextTick 加 .show)
 watch(
@@ -33,7 +32,7 @@ watch(
 <template>
   <Teleport to="body">
     <div v-if="confirm.visible" class="confirm-dialog-overlay" @click.self="confirm.cancel">
-      <div ref="boxEl" class="confirm-dialog">
+      <div ref="boxEl" class="confirm-dialog" role="dialog" aria-modal="true" tabindex="-1">
         <div class="confirm-dialog-header">
           <i class="fas fa-exclamation-triangle" />
           <h3 class="confirm-dialog-title">

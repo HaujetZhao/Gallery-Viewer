@@ -1,5 +1,6 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, ref } from 'vue';
+import { useOverlay } from '../composables/useOverlay';
 import { openFolderPicker, switchToRoot } from '../services/folderActions';
 import * as handleStore from '../services/handleStore';
 import { clearScan } from '../services/scanCache';
@@ -41,21 +42,12 @@ async function onRemove(id) {
   }
 }
 
-function onDocClick() {
-  if (open.value)
-    close();
-}
-function onKeydown(e) {
-  if (e.key === 'Escape' && open.value)
-    close();
-}
-onMounted(() => {
-  document.addEventListener('click', onDocClick);
-  document.addEventListener('keydown', onKeydown);
-});
-onBeforeUnmount(() => {
-  document.removeEventListener('click', onDocClick);
-  document.removeEventListener('keydown', onKeydown);
+const dropdownEl = ref(null);
+useOverlay({
+  isVisible: () => open.value,
+  overlayEl: dropdownEl,
+  onClose: close,
+  outsideClick: true,
 });
 </script>
 
@@ -66,7 +58,7 @@ onBeforeUnmount(() => {
       <span class="root-name">{{ currentName }}</span>
       <i class="fas fa-caret-down root-caret" :class="{ open }" />
     </button>
-    <div v-if="open" class="root-dropdown" @click.stop>
+    <div v-if="open" ref="dropdownEl" class="root-dropdown" @click.stop>
       <div
         v-for="r in rootStore.roots"
         :key="r.id"

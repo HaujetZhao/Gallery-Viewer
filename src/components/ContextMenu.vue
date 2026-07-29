@@ -1,5 +1,6 @@
 <script setup>
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { nextTick, ref, watch } from 'vue';
+import { useOverlay } from '../composables/useOverlay';
 import { useContextMenuStore } from '../stores/contextMenu';
 
 const menu = useContextMenuStore();
@@ -30,27 +31,12 @@ watch(
 );
 
 // 点外部/ESC/滚动 关闭
-function onDocClick() {
-  if (menu.visible)
-    menu.hide();
-}
-function onKeydown(e) {
-  if (e.key === 'Escape' && menu.visible)
-    menu.hide();
-}
-function onScroll() {
-  if (menu.visible)
-    menu.hide();
-}
-onMounted(() => {
-  document.addEventListener('click', onDocClick);
-  document.addEventListener('keydown', onKeydown);
-  window.addEventListener('scroll', onScroll, true);
-});
-onBeforeUnmount(() => {
-  document.removeEventListener('click', onDocClick);
-  document.removeEventListener('keydown', onKeydown);
-  window.removeEventListener('scroll', onScroll, true);
+useOverlay({
+  isVisible: () => menu.visible,
+  overlayEl: menuEl,
+  onClose: () => menu.hide(),
+  outsideClick: true,
+  closeOnScroll: true,
 });
 </script>
 

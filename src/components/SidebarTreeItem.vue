@@ -83,6 +83,8 @@ function findFileByPath(path) {
         'drag-over': dragOver,
       },
     ]"
+    role="treeitem"
+    :aria-expanded="folder.expanded"
     @click="onClick"
     @contextmenu="onContextmenu"
     @dragover="onDragover"

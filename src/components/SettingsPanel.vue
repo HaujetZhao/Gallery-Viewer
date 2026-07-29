@@ -1,5 +1,6 @@
 <script setup>
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { useOverlay } from '../composables/useOverlay';
 import { useStorageEstimate } from '../composables/useStorageEstimate';
 import { cleanOldCache, clearAllCache } from '../services/db';
 import { refreshFolder, reloadProject } from '../services/folderActions';
@@ -73,13 +74,13 @@ function onDragEnd() {
   document.removeEventListener('mouseup', onDragEnd);
 }
 
-function onKeydown(e) {
-  if (e.key === 'Escape' && props.modelValue)
-    emit('update:modelValue', false);
-}
-onMounted(() => document.addEventListener('keydown', onKeydown));
+// ESC 关闭(拖拽面板不点外关);拖拽兜底卸载
+useOverlay({
+  isVisible: () => props.modelValue,
+  overlayEl: panelEl,
+  onClose: () => emit('update:modelValue', false),
+});
 onBeforeUnmount(() => {
-  document.removeEventListener('keydown', onKeydown);
   document.removeEventListener('mousemove', onDragMove);
   document.removeEventListener('mouseup', onDragEnd);
 });
@@ -173,6 +174,9 @@ async function onRemoveCurrentRoot() {
       v-if="modelValue"
       ref="panelEl"
       class="settings-modal show"
+      role="dialog"
+      aria-modal="true"
+      tabindex="-1"
       :style="{ left: `${left}px`, top: `${top}px` }"
       @mousedown="onDragStart"
     >
