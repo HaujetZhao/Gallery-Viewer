@@ -9,6 +9,53 @@ export async function calculateMD5(file) {
   return SparkMD5.ArrayBuffer.hash(buffer);
 }
 
+// 文件头魔数识别,返回 [width, height, type] 或 null(不支持格式)。位运算逐字符照搬源码,勿改。
+// T18:接入 metadata image strategy 读 dimensions(零解码,替代 new Image 整图解码)。
+export async function getImageInfoFromHeader(file) {
+  if (file.size < 30)
+    return null;
+  let view = new DataView(await file.slice(0, 30).arrayBuffer());
+  const sign = view.getUint32(0);
+
+  if (sign === 0x89504E47)
+    return [view.getUint32(16), view.getUint32(20), 'png'];
+  if (sign === 0x47494638)
+    return [view.getUint16(6, true), view.getUint16(8, true), 'gif'];
+  if ((sign >>> 16) === 0x424D)
+    return [Math.abs(view.getInt32(18, true)), Math.abs(view.getInt32(22, true)), 'bmp'];
+  if ((sign >>> 8) === 0xFFD8FF) {
+    const jpegData = await file.slice(0, 128 * 1024).arrayBuffer();
+    view = new DataView(jpegData);
+    let offset = 2;
+    while (offset < view.byteLength) {
+      const marker = view.getUint16(offset);
+      offset += 2;
+      if (marker === 0xFFC0 || marker === 0xFFC2)
+        return [view.getUint16(offset + 3), view.getUint16(offset + 1), 'jpg'];
+      offset += view.getUint16(offset);
+    }
+  }
+  else if (sign === 0x52494646) {
+    view = new DataView(await file.slice(0, 40).arrayBuffer());
+    const vp8 = view.getUint32(12);
+    if (vp8 === 0x56503820)
+      return [view.getUint16(26, true), view.getUint16(28, true), 'webp'];
+    if (vp8 === 0x56503858) {
+      return [
+        (view.getUint32(24, true) & 0x00FFFFFF) + 1,
+        ((view.getUint32(27, true) >> 8) & 0x00FFFFFF) + 1,
+        'webp',
+      ];
+    }
+    if (vp8 === 0x5650384C) {
+      const b1 = view.getUint16(21, true);
+      const b2 = view.getUint16(22, true);
+      return [(b1 & 0x3FFF) + 1, ((b2 >> 6) & 0x3FFF) + 1, 'webp'];
+    }
+  }
+  return null;
+}
+
 export function convertToPngBlob(blobUrl) {
   return new Promise((resolve, reject) => {
     const img = new Image();

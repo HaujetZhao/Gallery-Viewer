@@ -2,6 +2,7 @@
 // image:dimensions + EXIF;video:loadedmetadata;audio:时长 + MP3 ID3;svg:dimensions。
 import { FileTypes } from '../config/file-types';
 import { ensureBlobUrl } from '../models/SmartFile';
+import { getImageInfoFromHeader } from '../utils/file';
 import { extractExif } from './exif';
 import { peek } from './fileResource';
 import { extractID3Tags } from './id3-parser';
@@ -22,17 +23,23 @@ export const MetadataStrategies = {
     types: [...FileTypes.image.standard, ...FileTypes.image.gif],
     async getMetadata(file) {
       const metadata = {};
-      // Phase 2:listFolder 零 getFile → 新文件 blobUrl 可能 null(属性面板路径晚调,通常 enrich 完成,但边界保险懒建)
       await ensureBlobUrl(file);
-      metadata.dimensions = await new Promise((resolve) => {
-        const img = new Image();
-        img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
-        img.onerror = () => resolve({ width: 0, height: 0 });
-        img.src = file.blobUrl;
-      });
+      // fileObj 复用:peek 命中省一次 getFile,未命中回退 handle.getFile
+      const fileObj = peek(file)?.file ?? await file.handle.getFile();
+      // T18:dimensions 优先零解码魔数(getImageInfoFromHeader),不支持格式 fallback new Image 解码
+      const header = await getImageInfoFromHeader(fileObj);
+      if (header) {
+        metadata.dimensions = { width: header[0], height: header[1] };
+      }
+      else {
+        metadata.dimensions = await new Promise((resolve) => {
+          const img = new Image();
+          img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+          img.onerror = () => resolve({ width: 0, height: 0 });
+          img.src = file.blobUrl;
+        });
+      }
       try {
-        // 复用资源池(ensureBlobUrl 已 acquire,peek 命中省一次 getFile;未命中回退 handle.getFile)
-        const fileObj = peek(file)?.file ?? await file.handle.getFile();
         metadata.exif = await extractExif(fileObj);
       }
       catch (e) {
