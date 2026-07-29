@@ -10,7 +10,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 10000;
+    z-index: var(--z-confirm);
     opacity: 1;
     transition: opacity 0.3s ease;
 }
@@ -239,8 +239,8 @@
     background: #7f8c8d;
 }
 
-/* 暗色主题适配 */
-@media (prefers-color-scheme: dark) {
+/* 暗色主题适配(theme=dark 触发) */
+[data-theme="dark"] {
     .confirm-dialog {
         background: #2c3e50;
     }

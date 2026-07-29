@@ -6,7 +6,7 @@
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
     padding: 8px 0;
     min-width: 180px;
-    z-index: 10000;
+    z-index: var(--z-popover);
     font-size: 14px;
     display: block;
     /* 确保菜单可见 */
@@ -56,8 +56,8 @@
     margin: 4px 0;
 }
 
-/* 暗色主题适配 */
-@media (prefers-color-scheme: dark) {
+/* 暗色主题适配(theme=dark 触发,不再受系统暗色影响) */
+[data-theme="dark"] {
     .context-menu {
         background: #2c3e50;
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);

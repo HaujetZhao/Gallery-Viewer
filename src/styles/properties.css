@@ -204,8 +204,8 @@
     font-family: monospace;
 }
 
-/* 深色模式适配 */
-@media (prefers-color-scheme: dark) {
+/* 深色模式适配(theme=dark 触发) */
+[data-theme="dark"] {
     .properties-content {
         background: #2c3e50;
         color: #ecf0f1;

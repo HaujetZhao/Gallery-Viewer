@@ -435,7 +435,7 @@ body.sidebar-pinned .settings-btn {
     position: fixed;
     top: 20px;
     right: 20px;
-    z-index: 1000;
+    z-index: var(--z-toast);
 }
 
 .toast {
