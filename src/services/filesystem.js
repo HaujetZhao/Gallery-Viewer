@@ -3,6 +3,7 @@ import { disposeFile } from '../models/SmartFile';
 import { countAllFiles, createFolder, disposeFolder, enrichFolder, folderFromSnapshot, folderToSnapshot, scanFolder, validateFolder } from '../models/SmartFolder';
 // 文件系统服务。内部用 useFsStore() 操作状态。多文件夹:switchToRoot 切换(秒显缓存+后台校验)。
 import { useFsStore } from '../stores/fs';
+import { useHistoryStore } from '../stores/history';
 import { useRootStore } from '../stores/root';
 import { useToastStore } from '../stores/uiToast';
 import { isFileSystemAccessSupported } from '../utils/browser';
@@ -20,9 +21,12 @@ function newBackgroundToken() {
   return bgToken;
 }
 
-// 释放旧 foldersData 各 folder 的池条目(blobUrl/File)+ 清 Map + 重置 ALL_MEDIA。
-// 切根/重载用——Phase 1 池化后,clear 不 dispose 会让旧文件 url/File 驻留池泄漏(切文件夹内存增长)。
-function resetFoldersData(fs) {
+// 切根/重载的运行时重置:清撤销栈 + 释放旧树池条目 + 清 Map + 重置 ALL_MEDIA。
+// 清撤销栈:撤销栈是 store 级单例,切根不清则旧根操作可被 Ctrl+Z 跨根回放——
+// FileDeleteOperation.undo 会拿新根 rootHandle 去新根找 .trash 越界动错磁盘(T02 Bug1)。
+// 收口在此:switchToRoot / openFolderPicker(经 initProject)/ reloadProject(经 initProject)切根必经此处。
+export function resetFoldersData(fs) {
+  useHistoryStore().clear();
   for (const folder of fs.foldersData.values())
     disposeFolder(folder); // → disposeFile → destroy 池条目(幂等:ALL_MEDIA 聚合引用与真实 folder 共享 file,重复 destroy 无害)
   fs.foldersData.clear();
