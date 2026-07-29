@@ -5,6 +5,7 @@ import { useThumbnail } from '../composables/useThumbnail';
 import { getThumbnailStrategy } from '../services/thumbnail-strategies';
 import { useContextMenuStore } from '../stores/contextMenu';
 import { formatDate, formatFileSize } from '../utils/format';
+import RenameInput from './RenameInput.vue';
 
 const props = defineProps({
   file: { type: Object, required: true },
