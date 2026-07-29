@@ -108,6 +108,22 @@ export function countAllFiles(folder) {
   return n;
 }
 
+// 按 path 在 folder 树里查 folder(T05:取代 foldersData.get(path) 的查询用途,为 T06 删 Map 铺路)。
+// 纯函数:不改入参,递归 subFolders 匹配 folder.path。返回 folder 或 null。
+// ⚠️ ALL_MEDIA 是虚拟文件夹(不在 rootFolder 树),不经此函数查询(switchToAllPhotos 直接用 allMediaFolder)。
+export function findFolderByPath(root, path) {
+  if (!root || !path)
+    return null;
+  if (root.path === path)
+    return root;
+  for (const sub of root.subFolders) {
+    const found = findFolderByPath(sub, path);
+    if (found)
+      return found;
+  }
+  return null;
+}
+
 // 序列化为可持久化快照(整棵树 plain,handle 可克隆进 IDB)。不含 parent(重建时接回)。
 export function folderToSnapshot(folder) {
   return {

@@ -1,5 +1,5 @@
 import { CONFIG } from '../config/index';
-import { createFolder, enrichFolder, folderFromSnapshot, scanFolder, validateFolder } from '../models/SmartFolder';
+import { createFolder, enrichFolder, findFolderByPath, folderFromSnapshot, scanFolder, validateFolder } from '../models/SmartFolder';
 import { useFsStore } from '../stores/fs';
 import { useRootStore } from '../stores/root';
 import { useToastStore } from '../stores/uiToast';
@@ -148,7 +148,8 @@ export async function getFolderData(dirHandle) {
   const parts = await fs.rootHandle.resolve(dirHandle);
   const path = [fs.rootHandle.name, ...parts].join('/');
 
-  const folderData = fs.foldersData.get(path);
+  // T05:查询改走 findFolderByPath(从 rootFolder 树找),脱离 foldersData Map(为 T06 删 Map 铺路)。
+  const folderData = findFolderByPath(fs.rootFolder, path);
   if (folderData) {
     folderData.handle = dirHandle; // 更新 handle(防旧句柄失效)
     return folderData;
@@ -159,7 +160,7 @@ export async function getFolderData(dirHandle) {
   let parent = null;
   if (pathParts.length > 1) {
     const parentPath = pathParts.slice(0, -1).join('/');
-    parent = fs.foldersData.get(parentPath) || null;
+    parent = findFolderByPath(fs.rootFolder, parentPath);
   }
 
   // create 内部 scanFolder(纯函数,不改 folder 入参、不碰 foldersData)。
