@@ -234,30 +234,43 @@ rm -rf dist && npm run build && npm run build:pwa
 ## 变更技术报告 — T03
 
 ### 改了什么
-- [ ] 新建 persistence.js(N 函数)
-- [ ] 新建 scanIntegration.js(N 函数)
-- [ ] 新建 folderActions.js(N 函数)
-- [ ] 删 filesystem.js
-- [ ] 迁移 8 生产文件 + history.js import
-- [ ] 测试拆三文件
+- 新建 persistence.js(67 行:persistIfDirty / schedulePersist / cancelPendingPersist / flushPendingPersist + persistTimer / PERSIST_DEBOUNCE_MS)
+- 新建 scanIntegration.js(62 行:resetFoldersData / registerFolderTree / integrateScanResult / registerAndIntegrate;registerFolderTree 与 registerAndIntegrate 原内部 → 改 export)
+- 新建 folderActions.js(304 行:bgToken / newBackgroundToken + initProject / scanAndPersist / rootEagerScan / openFolderPicker / switchToRoot / getFolderData / loadProject / startBackgroundScan / reloadProject / refreshFolder / loadFolder / switchToAllPhotos / handleFolderClick 共 14 函数)
+- 删 filesystem.js(-421 行)
+- 迁移 8 生产文件 + history.js 的 import(fileOps / history / SidebarTreeItem / Sidebar / SettingsPanel / RootSwitcher / recovery / App;recovery 与 App 各拆两行)
+- 测试拆三文件 + 补 smart-folder.test.js / history.test.js 的动态 import 漏迁
 
 ### 涉及文件 + 行数
-(列三新文件行数 + 删 filesystem.js -N 行 + 迁移的 import 文件)
+- 新增:persistence.js(+67) / scanIntegration.js(+62) / folderActions.js(+304)
+- 删除:filesystem.js(-421)
+- import 迁移(各 ±2~3 行):App.vue / Sidebar.vue / SidebarTreeItem.vue / SettingsPanel.vue / RootSwitcher.vue / services/fileOps.js / services/recovery.js / stores/history.js
+- 动态 import 补漏:models/smart-folder.test.js(integrateScanResult → scanIntegration,3 处) / stores/history.test.js(schedulePersist → persistence,mock + 2 处动态 + 注释)
 
 ### 测试
-- persistence.test.js: N PASS
-- scanIntegration.test.js: N PASS
-- folderActions.test.js: N PASS
+- persistence.test.js: 9 PASS(persistIfDirty 3 + 持久化调度 6)
+- scanIntegration.test.js: 4 PASS(integrateScanResult dirty 3 + resetFoldersData 清栈 1)
+- folderActions.test.js: 4 PASS(startBackgroundScan 3 + handleFolderClick 1)
 - 总计 89 PASS(与拆前一致)
 
 ### 验收基线
-- lint ✅/❌  test ✅/❌(89)  build ✅/❌  build:pwa ✅/❌
+- lint ✅  test ✅(89)  build ✅  build:pwa ✅(双 build 须分别清 dist,连续跑会冲突)
+
+### 循环 import(T03 核心目标)
+- 拆散原 filesystem↔history 循环。新依赖链:scanIntegration → history → persistence,单向无回边。
+- persistence.js 只 import models/SmartFolder + stores/fs + stores/root + services/scanCache,不反向 import history / scanIntegration / folderActions。
 
 ### 主观冒烟(产品负责人)
-- 打开/浏览/切根/撤销/改名移动:✅/❌
+- 打开 / 浏览 / 切根 / 撤销 / 改名移动:待产品负责人上手验收(客观断言全绿,纯物理拆分行为应不变)。
 
-### 遗留 / 风险 / 偏离
-(无则写「无」。特别注意:有无循环 import 残留、有无 import 漏迁)
+### 偏离 / 修正(均非逻辑改动)
+1. 计划骨架 scanIntegration.js import 误含 useFsStore / createFolder / scanFolder —— 4 个函数实际均通过参数 `fs` 收 store、不调 useFsStore(),也不用 createFolder / scanFolder → 按实际精简,只留 disposeFile / disposeFolder / useHistoryStore。
+2. 计划骨架 persistence.test.js 漏 vi.mock('./handleStore') —— persistIfDirty → useRootStore().updateMeta → handleStore.update 触发 idb-keyval 读 indexedDB(jsdom 无) → 补 mock。
+3. Task 2 静态 grep(`from ['"]...filesystem['"]`)漏抓动态 `import('...')`,导致 smart-folder.test.js / history.test.js collect 阶段加载失败(0 test) → 补迁。
+4. 双 build 验证须分别 `rm -rf dist`(两套共用 dist,先跑单 HTML 留产物会让 build:pwa 的 PWA 插件扫描冲突,exit 127;清后正常)。
+
+### 遗留 / 风险
+- 无功能性遗留。主观 UI 冒烟待产品负责人。
 ```
 
 ---
