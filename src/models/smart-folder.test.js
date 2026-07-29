@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { acquire } from '../services/fileResource';
 import { SmartFile } from './SmartFile';
-import { enrichFolder, folderFromSnapshot, folderToSnapshot, scanFolder, SmartFolder } from './SmartFolder';
+import { enrichFolder, findFolderByPath, folderFromSnapshot, folderToSnapshot, scanFolder, SmartFolder } from './SmartFolder';
 
 beforeEach(() => {
   URL.createObjectURL = vi.fn(() => 'blob:fake');
@@ -290,5 +290,26 @@ describe('integrateScanResult helper(service 层整合副作用)', () => {
     expect(fakeFs.foldersData.get('root/newSub')).toBe(newSub); // 注册新子目录
     expect(fakeFs.foldersData.has('root/old')).toBe(false); // 删旧子目录
     expect(revoke).toHaveBeenCalled(); // removedFile 被 disposeFile → destroy(revoke blobUrl)
+  });
+});
+
+// T05:findFolderByPath 取代 foldersData.get(path) 的查询用途(从 rootFolder 树找,为 T06 删 Map 铺路)。
+describe('findFolderByPath', () => {
+  it('命中: 返回 path 对应的 folder', () => {
+    const leaf = { path: 'root/sub/leaf', subFolders: [] };
+    const sub = { path: 'root/sub', subFolders: [leaf] };
+    const root = { path: 'root', subFolders: [sub] };
+    expect(findFolderByPath(root, 'root/sub/leaf')).toBe(leaf);
+    expect(findFolderByPath(root, 'root')).toBe(root);
+  });
+
+  it('未命中: 返回 null', () => {
+    const root = { path: 'root', subFolders: [] };
+    expect(findFolderByPath(root, 'root/none')).toBeNull();
+  });
+
+  it('空入参: 返回 null', () => {
+    expect(findFolderByPath(null, 'x')).toBeNull();
+    expect(findFolderByPath({ path: 'r', subFolders: [] }, '')).toBeNull();
   });
 });
