@@ -1,0 +1,52 @@
+/* Tailwind v4 设计令牌映射(T09):把 variables.css 的令牌映射成 @theme,生成 utility class。
+   令牌双轨并存:variables.css :root(旧全局 CSS 用)+ @theme(Tailwind utility 用)。值一致。
+   T14 迁移组件时用这些 utility(如 bg-surface / rounded-lg / shadow-md);T10 在此加 dark 覆盖。 */
+
+/* dark mode 绑 [data-theme](theme store 设 body[data-theme])。T10 在 dark 下覆盖令牌值。 */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme {
+  /* 品牌 + 状态色(同名 variables.css)→ bg-primary / text-success 等 */
+  --color-primary: #3498db;
+  --color-primary-dark: #2980b9;
+  --color-primary-light: #5dade2;
+  --color-success: #27ae60;
+  --color-warning: #f39c12;
+  --color-danger: #e74c3c;
+  --color-info: #16a085;
+
+  /* 语义色(背景/文本)→ bg-surface / text-on-surface 等(映射 variables.css 的背景、文本令牌) */
+  --color-surface: #ffffff;              /* = --bg-primary */
+  --color-surface-secondary: #f5f7fa;    /* = --bg-secondary */
+  --color-surface-tertiary: #ecf0f1;     /* = --bg-tertiary */
+  --color-on-surface: #333333;           /* = --text-primary */
+  --color-on-surface-secondary: #666666; /* = --text-secondary */
+  --color-on-surface-muted: #999999;     /* = --text-muted */
+
+  /* 灰阶 → bg-gray-50..900 */
+  --color-gray-50: #f8f9fa;
+  --color-gray-100: #e9ecef;
+  --color-gray-200: #dee2e6;
+  --color-gray-300: #ced4da;
+  --color-gray-400: #adb5bd;
+  --color-gray-500: #6c757d;
+  --color-gray-600: #495057;
+  --color-gray-700: #343a40;
+  --color-gray-800: #212529;
+  --color-gray-900: #1a1d20;
+
+  /* 圆角 → rounded-sm/base/lg/xl/full */
+  --radius-sm: 4px;
+  --radius-base: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-full: 9999px;
+
+  /* 阴影 → shadow-xs..xl */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.1);
+  --shadow-base: 0 4px 8px rgba(0, 0, 0, 0.12);
+  --shadow-md: 0 6px 12px rgba(0, 0, 0, 0.15);
+  --shadow-lg: 0 10px 20px rgba(0, 0, 0, 0.2);
+  --shadow-xl: 0 20px 40px rgba(0, 0, 0, 0.25);
+}
