@@ -1,8 +1,9 @@
-// SmartFile:媒体文件。纯数据(handle/parent/_meta/md5)+ 派生 getter(name/size/lastModified/type/path/blobUrl)。
-// P3:行为方法函数化(消灭 God Object)。模板读 file.name/size/blobUrl 等 getter——
-// Vue 响应式追踪属性访问,故 getter 保留不函数化。_meta 是快照槽(零 IO 重建);md5 懒加载槽。
+// SmartFile:媒体文件。纯数据(handle/parent/_meta/md5)+ 派生 getter(name/size/lastModified/type/path/blobUrl)+ 对象行为(rename/move)。
+// T08:对象行为(rename/move)从模块函数回 class(消灭半半设计 + moveFile 绕门面 splice 的循环依赖尴尬——
+// file.move 调 this.parent.removeFile + target.addFile,不再内联 splice,也消除旧 moveFile 反向 import SmartFolder 的循环依赖)。
+// 模板读 getter——Vue 响应式追踪属性访问,勿函数化。_meta 是快照槽(零 IO 重建);md5 懒加载槽。
+// 纯算法(fileToSnapshot/fileFromSnapshot/ensureBlobUrl/disposeFile)仍留模块级。
 import { acquire, destroy, peek } from '../services/fileResource';
-import { windowsCompareStrings } from '../utils/format';
 
 export class SmartFile {
   constructor({ handle, parent = null }) {
@@ -50,9 +51,53 @@ export class SmartFile {
   get blobUrl() {
     return peek(this)?.url ?? null;
   }
+
+  async rename(newName) {
+    if (!this.handle || !this.parent)
+      throw new Error('无法重命名：缺少必要的句柄或父级引用');
+    // 先 destroy 释放 url,避免 handle.move 报 "A FileSystemHandle cannot be moved while it is locked"
+    // (缩略图 canvas/img 持有 blobUrl 时,Chrome 视文件为锁定)。move 后再 acquire 重建。
+    destroy(this);
+    try {
+      await this.handle.move(newName);
+      const entry = await acquire(this);
+      this._meta = { size: entry.file.size, lastModified: entry.file.lastModified };
+      this.md5 = null;
+      return true;
+    }
+    catch (err) {
+      const entry = await acquire(this).catch((e) => {
+        console.warn('重命名失败后重建资源失败,blobUrl 将为 null:', e);
+        return null;
+      });
+      if (entry)
+        this._meta = { size: entry.file.size, lastModified: entry.file.lastModified };
+      console.error('重命名失败:', err);
+      throw err;
+    }
+  }
+
+  // 移动文件到目标文件夹。树维护走 folder 方法(this.parent.removeFile + target.addFile)——
+  // 不再内联 splice(T08 消灭"移动绕门面、删除走门面"的双风格)。
+  async move(target) {
+    if (!this.parent || !this.parent.handle)
+      throw new Error('无法移动：缺少父级引用');
+    if (!target || !target.handle)
+      throw new Error('移动：目标文件夹无效');
+    try {
+      await this.handle.move(target.handle);
+      this.parent.removeFile(this); // 源移除(走 folder 方法)
+      target.addFile(this); // 目标按序插入(addFile 内部 push + sort + 设 parent)
+      return true;
+    }
+    catch (err) {
+      console.error('移动失败:', err);
+      throw err;
+    }
+  }
 }
 
-// ===== 行为函数(模块级)=====
+// ===== 模块级纯算法(序列化/快照/懒建/释放)=====
 
 // 懒建 blobUrl(池里无 → getFile + 建 url)。enrich 正常路径已 acquire,listFolder 新建/fromSnapshot 重建需懒。
 // peek 短路:enrich 已 acquire 则直接复用。acquire 处统一写 _meta(单源)。
@@ -83,56 +128,6 @@ export function fileFromSnapshot(snap, parent) {
   f._meta = { size: snap.size, lastModified: snap.lastModified };
   f.md5 = snap.md5 ?? null;
   return f;
-}
-
-export async function renameFile(file, newName) {
-  if (!file.handle || !file.parent)
-    throw new Error('无法重命名：缺少必要的句柄或父级引用');
-  // 先 destroy 释放 url,避免 handle.move 报 "A FileSystemHandle cannot be moved while it is locked"
-  // (缩略图 canvas/img 持有 blobUrl 时,Chrome 视文件为锁定)。move 后再 acquire 重建。
-  destroy(file);
-  try {
-    await file.handle.move(newName);
-    const entry = await acquire(file);
-    file._meta = { size: entry.file.size, lastModified: entry.file.lastModified };
-    file.md5 = null;
-    return true;
-  }
-  catch (err) {
-    const entry = await acquire(file).catch((e) => {
-      console.warn('重命名失败后重建资源失败,blobUrl 将为 null:', e);
-      return null;
-    });
-    if (entry)
-      file._meta = { size: entry.file.size, lastModified: entry.file.lastModified };
-    console.error('重命名失败:', err);
-    throw err;
-  }
-}
-
-// 移动文件到目标文件夹。树维护(源移除 + 目标按序插入)内联,避免反向 import SmartFolder(循环依赖)。
-export async function moveFile(file, targetFolder) {
-  if (!file.parent || !file.parent.handle)
-    throw new Error('无法移动：缺少父级引用');
-  if (!targetFolder || !targetFolder.handle)
-    throw new Error('无法移动：目标文件夹无效');
-  try {
-    const sourceFolder = file.parent;
-    await file.handle.move(targetFolder.handle);
-    const idx = sourceFolder.files.indexOf(file);
-    if (idx > -1)
-      sourceFolder.files.splice(idx, 1);
-    file.parent = targetFolder;
-    if (!targetFolder.files.includes(file)) {
-      targetFolder.files.push(file);
-      targetFolder.files.sort((a, b) => windowsCompareStrings(a.name, b.name));
-    }
-    return true;
-  }
-  catch (err) {
-    console.error('移动失败:', err);
-    throw err;
-  }
 }
 
 // 释放池条目(无视 owners)。文件从树移除 / 文件夹销毁用。

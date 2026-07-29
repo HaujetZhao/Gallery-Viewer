@@ -1,5 +1,4 @@
 // 文件夹删除业务。两步确认 + 物理 removeEntry recursive(不可逆,不进撤销栈)。
-import { deleteFolder } from '../models/SmartFolder';
 import { useConfirmStore } from '../stores/confirm';
 import { useFsStore } from '../stores/fs';
 import { useToastStore } from '../stores/uiToast';
@@ -26,10 +25,10 @@ export async function handleDeleteFolder(folder) {
     return;
 
   try {
-    // deleteFolder:removeEntry recursive + 从 parent.subFolders 移除(folder 及其整棵子树随之脱离 rootFolder 树)。
-    // 无需清缓存 —— deleteFolder 已 splice parent.subFolders,子树脱离 rootFolder 树即被 GC;
+    // folder.delete:removeEntry recursive + 从 parent.subFolders 移除(folder 及其整棵子树随之脱离 rootFolder 树)。
+    // 无需清缓存 —— delete 已 splice parent.subFolders,子树脱离 rootFolder 树即被 GC;
     // ALL_MEDIA 若在用,末尾 switchToAllPhotos 重聚合自然不含已删子树。
-    await deleteFolder(folder);
+    await folder.delete();
     if (folder.parent)
       await refreshFolder(folder.parent);
     if (fs.currentFolder === folder)

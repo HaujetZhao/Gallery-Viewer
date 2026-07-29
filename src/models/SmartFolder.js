@@ -61,43 +61,45 @@ export class SmartFolder {
     }
     return parts.join('/');
   }
-}
 
-// ===== 行为函数(模块级)=====
+  // T08:对象行为回 class(消灭半半设计)。纯算法(scan/enrich/snapshot/find/collect/count/dispose/validate)仍留模块级。
 
-export function toggleFolderExpanded(folder) {
-  folder.expanded = !folder.expanded;
-}
+  toggleExpanded() {
+    this.expanded = !this.expanded;
+  }
 
-export async function deleteFolder(folder) {
-  if (!folder.parent || !folder.parent.handle)
-    throw new Error('无法删除根目录或缺少父级引用');
-  try {
-    await folder.parent.handle.removeEntry(folder.name, { recursive: true });
-    const index = folder.parent.subFolders.indexOf(folder);
+  async delete() {
+    if (!this.parent || !this.parent.handle)
+      throw new Error('无法删除根目录或缺少父级引用');
+    try {
+      await this.parent.handle.removeEntry(this.name, { recursive: true });
+      const index = this.parent.subFolders.indexOf(this);
+      if (index > -1)
+        this.parent.subFolders.splice(index, 1);
+      return true;
+    }
+    catch (err) {
+      console.error('删除文件夹失败:', err);
+      throw err;
+    }
+  }
+
+  addFile(file) {
+    if (!this.files.includes(file)) {
+      this.files.push(file);
+      file.parent = this;
+      this.files.sort((a, b) => windowsCompareStrings(a.name, b.name));
+    }
+  }
+
+  removeFile(file) {
+    const index = this.files.indexOf(file);
     if (index > -1)
-      folder.parent.subFolders.splice(index, 1);
-    return true;
-  }
-  catch (err) {
-    console.error('删除文件夹失败:', err);
-    throw err;
+      this.files.splice(index, 1);
   }
 }
 
-export function addFileAndSort(folder, file) {
-  if (!folder.files.includes(file)) {
-    folder.files.push(file);
-    file.parent = folder;
-    folder.files.sort((a, b) => windowsCompareStrings(a.name, b.name));
-  }
-}
-
-export function removeFileFromFolder(folder, file) {
-  const index = folder.files.indexOf(file);
-  if (index > -1)
-    folder.files.splice(index, 1);
-}
+// ===== 模块级纯算法(scan/enrich/snapshot/find/collect/count/dispose/validate);对象行为(toggleExpanded/delete/addFile/removeFile)回 class =====
 
 // 递归计数整树文件(不分配数组)。persistIfDirty 算 fileCount 用——
 // 原 getAllFiles().length 为取一个数字分配万级数组(O(N) 内存)。

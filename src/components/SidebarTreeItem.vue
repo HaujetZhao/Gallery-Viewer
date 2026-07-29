@@ -1,6 +1,6 @@
 <script setup>
 import { ref } from 'vue';
-import { collectAllFiles, toggleFolderExpanded } from '../models/SmartFolder';
+import { collectAllFiles } from '../models/SmartFolder';
 import { handleDeleteFolder } from '../services/fileOps';
 import { handleFolderClick } from '../services/folderActions';
 import { useContextMenuStore } from '../stores/contextMenu';
@@ -26,7 +26,7 @@ async function onClick() {
 }
 function toggle(e) {
   e.stopPropagation();
-  toggleFolderExpanded(props.folder);
+  props.folder.toggleExpanded();
 }
 
 function onContextmenu(e) {
