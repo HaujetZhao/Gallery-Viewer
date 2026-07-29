@@ -49,7 +49,7 @@ watch(
 const rows = computed(() => chunkRows(displayFiles.value, colCount.value));
 
 // 行高 = 列宽(thumbnail aspect-ratio 1/1)+ 行间 gap。
-// 桌面 gap 15 / 移动 gap 5,与 gallery.css 的 .gallery-row gap 一致。
+// 桌面 gap 15 / 移动 gap 5,与下方 scoped .gallery-row gap 一致。
 const DESKTOP_GAP = 15;
 const MOBILE_GAP = 5;
 function currentGap() {
@@ -150,3 +150,52 @@ onBeforeUnmount(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* 画廊容器 */
+.gallery-container {
+    min-height: 400px;
+    position: relative;
+    flex: 1;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-secondary);
+    /* 使用CSS变量 */
+}
+
+.empty-icon {
+    font-size: 4rem;
+    margin-bottom: 20px;
+    color: var(--color-gray-400);
+    /* 使用CSS变量 */
+}
+
+.gallery-grid {
+    position: relative;
+    width: 100%;
+}
+
+/* 虚拟化:track 由 virtualizer.getTotalSize() 撑高,行绝对定位 translateY */
+.gallery-track {
+    position: relative;
+    width: 100%;
+}
+
+.gallery-row {
+    position: absolute;
+    left: 0;
+    right: 0;
+    display: grid;
+    grid-template-columns: repeat(var(--col-count, 4), 1fr);
+    gap: 15px;
+}
+
+@media (max-width: 768px) {
+    .gallery-row {
+        gap: 5px;
+    }
+}
+</style>
