@@ -3,8 +3,7 @@
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 import { FileDeleteOperation, FileMoveOperation, FileRenameOperation } from '../services/operations';
-import { schedulePersist } from '../services/persistence';
-import { useFsStore } from './fs';
+import { afterTreeMutation } from '../services/persistence';
 import { useRootStore } from './root';
 
 const MAX_SIZE = 50;
@@ -17,11 +16,8 @@ export const useHistoryStore = defineStore('history', () => {
     stack.value.push(op);
     if (stack.value.length > MAX_SIZE)
       stack.value.shift();
-    const fs = useFsStore();
-    fs.rootDirty = true; // R3:rename/delete/move 后标树脏,下次 persistIfDirty 持久化
-    // R3-3:debounced 持久化(1s 合并连续改名/删除/移动)。之前只置 dirty 无 persist 路径,
-    //       rename 后关浏览器重开会丢改动 —— 现由 schedulePersist 兜底落 IDB。
-    schedulePersist(useRootStore().currentRootId);
+    // 树变更 → 置脏 + debounced 持久化(T07 收口:store 不直接碰 rootDirty/schedulePersist,改调持久化层语义入口)。
+    afterTreeMutation(useRootStore().currentRootId);
   }
   async function undoLastOperation() {
     if (!stack.value.length)
@@ -31,9 +27,7 @@ export const useHistoryStore = defineStore('history', () => {
     const op = stack.value[stack.value.length - 1];
     await op.undo(); // 失败则抛出,下方不执行(op 留栈、不落盘)
     stack.value.pop(); // 成功才 pop
-    const fs = useFsStore();
-    fs.rootDirty = true; // undo 也改了树
-    schedulePersist(useRootStore().currentRootId); // undo 同样 debounced 持久化
+    afterTreeMutation(useRootStore().currentRootId); // undo 也改了树 → 置脏 + debounced 持久化
     return op;
   }
   function clear() {

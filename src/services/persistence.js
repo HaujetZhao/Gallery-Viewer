@@ -46,6 +46,13 @@ export function schedulePersist(id) {
   }, PERSIST_DEBOUNCE_MS);
 }
 
+// 语义入口:树变更后调用(置脏 + debounced 持久化)。history 等改树处调它,不直接碰 rootDirty/schedulePersist。
+export function afterTreeMutation(id) {
+  const fs = useFsStore();
+  fs.rootDirty = true;
+  schedulePersist(id);
+}
+
 // 切根 / 重载时取消在途的 debounced 写,避免旧根写晚到(竞态防线①)。
 // 用于 reloadProject(重扫从盘重建树,丢弃的 in-memory 改动本就已即时落盘 handle.move/removeEntry,rescan 会重新拾取)。
 export function cancelPendingPersist() {
