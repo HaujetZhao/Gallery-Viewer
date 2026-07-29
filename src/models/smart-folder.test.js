@@ -84,11 +84,11 @@ describe('smartFolder rehydrate', () => {
     expect(root2.expanded).toBe(false);
   });
 
-  // Phase 3 Step 2:fromSnapshot 纯函数化后,不再注册 foldersData(副作用移到 switchToRoot 的 registerFolderTree)。
-  // 这里用一个外部 Map 验证:fromSnapshot 不会偷偷往任何外部 Map 写(纯函数证据)。
-  it('fromSnapshot 不注册(纯函数):外部 foldersData 不含 folder(注册归 switchToRoot)', () => {
+  // Phase 3 Step 2:fromSnapshot 纯函数化,不写任何外部状态(T06 前 folder 注册归 switchToRoot;T06 后 folder 挂树即代理,无需注册)。
+  // 这里用一个外部 Map 验证:fromSnapshot 不会偷偷往它写(纯函数证据)。
+  it('fromSnapshot 不写外部状态(纯函数)', () => {
     const snap = folderToSnapshot(buildTree());
-    const externalFoldersData = new Map();
+    const externalMap = new Map();
     const root2 = folderFromSnapshot(snap, null);
 
     // folder 树结构正确
@@ -98,10 +98,10 @@ describe('smartFolder rehydrate', () => {
     expect(root2.subFolders[0].path).toBe('root/sub');
     expect(root2.subFolders[0].parent).toBe(root2);
 
-    // fromSnapshot 不碰外部 Map(注册是调用方责任)
-    expect(externalFoldersData.has('root')).toBe(false);
-    expect(externalFoldersData.has('root/sub')).toBe(false);
-    expect(externalFoldersData.size).toBe(0);
+    // fromSnapshot 不碰外部 Map
+    expect(externalMap.has('root')).toBe(false);
+    expect(externalMap.has('root/sub')).toBe(false);
+    expect(externalMap.size).toBe(0);
   });
 });
 
@@ -157,7 +157,7 @@ describe('scanFolder 纯函数(不改入参,零 getFile)+ enrich', () => {
     const folder = new SmartFolder({ handle: makeDirHandle(entries), parent: null });
     const result = await scanFolder(folder);
     // 模拟 service 层写回(folder 在真实 store 里是代理,这里直接写也行)
-    const fakeFs = { foldersData: new Map() };
+    const fakeFs = {};
     integrateScanResult(folder, result, fakeFs);
 
     expect(entries[0].getFile).not.toHaveBeenCalled(); // scan 阶段零 IO
@@ -250,7 +250,7 @@ describe('scanFolder 纯函数(不改入参,零 getFile)+ enrich', () => {
 
     // integrateScanResult 才 dispose(走 service 层副作用)
     const { integrateScanResult } = await import('../services/scanIntegration');
-    const fakeFs = { foldersData: new Map() };
+    const fakeFs = {};
     integrateScanResult(folder, result, fakeFs);
     expect(revoke).toHaveBeenCalled(); // gone 被 dispose → destroy(revoke blobUrl)
     expect(folder.files.map(f => f.name)).toEqual(['a.jpg']); // 写回代理 folder
@@ -258,11 +258,11 @@ describe('scanFolder 纯函数(不改入参,零 getFile)+ enrich', () => {
 });
 
 describe('integrateScanResult helper(service 层整合副作用)', () => {
-  it('写回代理 folder.files/subFolders + 注册 newSubFolders + 删 removedFolders + dispose removedFiles', async () => {
+  it('写回 folder.files/subFolders + dispose removedFiles(T06:新 sub 挂树代理化,removedFolders 自然脱离树)', async () => {
     const { integrateScanResult } = await import('../services/scanIntegration');
     const { acquire } = await import('../services/fileResource');
 
-    // 造假 folder(代理形式,普通对象够用:本测试只验写回 + Map 操作)
+    // 造假 folder(普通对象够用:本测试只验写回 + dispose)
     const folder = {};
 
     // 造假 result:newSubFolders / removedFolders。removedFile 真实 acquire 过(P3 disposeFile → destroy → revoke 才有可观测副作用)
@@ -274,26 +274,24 @@ describe('integrateScanResult helper(service 层整合副作用)', () => {
     const revoke = vi.spyOn(URL, 'revokeObjectURL');
     const result = {
       files: [keptFile],
-      subFolders: [newSub],
+      subFolders: [newSub], // 新 sub 挂到 subFolders(被代理化);removedSub 不在其中 → 脱离树
       newFiles: [],
       newSubFolders: [newSub],
       removedFiles: [removedFile],
       removedFolders: [removedSub],
     };
 
-    const fakeFs = { foldersData: new Map([['root/old', removedSub]]) };
-
-    integrateScanResult(folder, result, fakeFs);
+    integrateScanResult(folder, result, {});
 
     expect(folder.files).toBe(result.files); // 写回(代理 folder 属性变更触发响应式)
     expect(folder.subFolders).toBe(result.subFolders);
-    expect(fakeFs.foldersData.get('root/newSub')).toBe(newSub); // 注册新子目录
-    expect(fakeFs.foldersData.has('root/old')).toBe(false); // 删旧子目录
+    expect(folder.subFolders).toContain(newSub); // 新子目录挂到树(folder.subFolders)
+    expect(folder.subFolders).not.toContain(removedSub); // 旧子目录不在新 subFolders(脱离树)
     expect(revoke).toHaveBeenCalled(); // removedFile 被 disposeFile → destroy(revoke blobUrl)
   });
 });
 
-// T05:findFolderByPath 取代 foldersData.get(path) 的查询用途(从 rootFolder 树找,为 T06 删 Map 铺路)。
+// findFolderByPath:按 path 在 rootFolder 树里查 folder(T05 引入,T06 删 Map 后的查询路径)。
 describe('findFolderByPath', () => {
   it('命中: 返回 path 对应的 folder', () => {
     const leaf = { path: 'root/sub/leaf', subFolders: [] };

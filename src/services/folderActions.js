@@ -1,5 +1,5 @@
 import { CONFIG } from '../config/index';
-import { createFolder, enrichFolder, findFolderByPath, folderFromSnapshot, scanFolder, validateFolder } from '../models/SmartFolder';
+import { collectAllFiles, createFolder, enrichFolder, folderFromSnapshot, scanFolder, validateFolder } from '../models/SmartFolder';
 import { useFsStore } from '../stores/fs';
 import { useRootStore } from '../stores/root';
 import { useToastStore } from '../stores/uiToast';
@@ -9,7 +9,7 @@ import * as handleStore from './handleStore';
 import { cancelPendingPersist, flushPendingPersist, persistIfDirty, schedulePersist } from './persistence';
 import { handleFolderNotFound } from './recovery';
 import { loadScan } from './scanCache';
-import { integrateScanResult, registerAndIntegrate, registerFolderTree, resetFoldersData } from './scanIntegration';
+import { integrateScanResult, resetFoldersData } from './scanIntegration';
 
 // 文件夹 CRUD / 编排 / 入口流程:init / picker / switch / load / reload / click。
 
@@ -35,8 +35,8 @@ export async function initProject(handle) {
 }
 
 // 后台递归扫描(并发 + 信任 + 可取消)+ 扫完存快照/更新 fileCount。openFolderPicker/switchToRoot/reloadProject 复用。
-// ⚠️ 必须从 store 取「代理」root(Vue3 reactive:改原始对象不触发 UI)。调用方传来的 root 可能是 initProject 返回的原始对象,
-//    故此处一律 useFsStore().rootFolder 取代理,避免响应式陷阱(子目录停留在 isEmpty 半透明态不更新)。
+// ⚠️ 必须从 store 取 rootFolder(Vue3 reactive:改原始对象不触发 UI)。调用方传来的 root 可能是 initProject 返回的原始对象,
+//    故此处一律 useFsStore().rootFolder 取 store 持有的代理,避免响应式陷阱(子目录停留在 isEmpty 半透明态不更新)。
 async function scanAndPersist(id) {
   const root = useFsStore().rootFolder; // 代理
   if (!root)
@@ -77,7 +77,7 @@ export async function openFolderPicker() {
     const rootStore = useRootStore();
     rootStore.add(id, handle.name, 0, Date.now());
     rootStore.setCurrent(id);
-    scanAndPersist(id); // 后台扫子目录 + 存快照(不阻塞,内部取代理 root)
+    scanAndPersist(id); // 后台扫子目录 + 存快照(不阻塞,内部从 store 取 root)
     return root;
   }
   catch (err) {
@@ -114,9 +114,8 @@ export async function switchToRoot(id) {
     resetFoldersData(fs);
     fs.rootHandle = handle;
     if (snap) {
-      const root = folderFromSnapshot(snap, null); // 秒显(零 IO,纯函数不注册 foldersData)
-      registerFolderTree(root, fs); // 递归注册 folder 树(替代 fromSnapshot 内的 appState 注册副作用)
-      fs.rootFolder = root;
+      const root = folderFromSnapshot(snap, null); // 秒显(零 IO,纯函数建原始树)
+      fs.rootFolder = root; // root 挂到 ref → 整棵树深代理(folderFromSnapshot 建的原始树,挂树即代理化)
       fs.currentFolder = root;
       restoredFromSnap = true;
     }
@@ -140,33 +139,13 @@ export async function switchToRoot(id) {
   return fs.rootFolder;
 }
 
-// 全局缓存:path → SmartFolder。命中复用对象(更新 handle 防失效),未命中解析父级后 create+scan+注册。
-// ⚠️ 响应式根治(be2ffe3):未命中 → 先 foldersData.set 把 folder 放进 reactive Map(代理化)→ get 取代理
-//    → scanFolder(代理) → integrateScanResult(写回代理)。写回原始对象不触发 UI 更新(子目录停半透明)。
+// 建根 SmartFolder(扫根一层)。只被 loadProject ← initProject/switchToRoot 以根 handle 调用。
+// T06(单 ref 持树):createFolder 返回原始 folder,integrate 写回后由调用方 fs.rootFolder = root 挂树代理化。
 export async function getFolderData(dirHandle) {
   const fs = useFsStore();
-  const parts = await fs.rootHandle.resolve(dirHandle);
-  const path = [fs.rootHandle.name, ...parts].join('/');
-
-  // T05:查询改走 findFolderByPath(从 rootFolder 树找),脱离 foldersData Map(为 T06 删 Map 铺路)。
-  const folderData = findFolderByPath(fs.rootFolder, path);
-  if (folderData) {
-    folderData.handle = dirHandle; // 更新 handle(防旧句柄失效)
-    return folderData;
-  }
-
-  // 推导父级
-  const pathParts = path.split('/');
-  let parent = null;
-  if (pathParts.length > 1) {
-    const parentPath = pathParts.slice(0, -1).join('/');
-    parent = findFolderByPath(fs.rootFolder, parentPath);
-  }
-
-  // create 内部 scanFolder(纯函数,不改 folder 入参、不碰 foldersData)。
-  // 原始 folder 不能直接写回——registerAndIntegrate 内部 set 进 reactive Map 取代理再 integrate(收口代理陷阱)。
-  const createResult = await createFolder({ handle: dirHandle, parent });
-  return registerAndIntegrate(createResult.folder, createResult, fs);
+  const createResult = await createFolder({ handle: dirHandle, parent: null });
+  integrateScanResult(createResult.folder, createResult, fs); // 写回 files/subFolders(此时 folder 未挂树,UI 未显示,无响应式要求)
+  return createResult.folder;
 }
 
 // 建根 SmartFolder(扫根目录)。后台递归扫描由调用方在设 fs.rootFolder 后触发。
@@ -196,7 +175,7 @@ export async function startBackgroundScan(parentFolder, token = bgToken) {
         return;
       try {
         const result = await scanFolder(subFolderData, { trust: true }); // 纯列名(零 getFile)
-        integrateScanResult(subFolderData, result, fs); // 写回代理 + 注册/清理
+        integrateScanResult(subFolderData, result, fs); // 写回代理 + dispose removedFiles
         await startBackgroundScan(subFolderData, token); // 递归:enrich sub + 遍历
       }
       catch (e) {
@@ -221,26 +200,30 @@ export async function reloadProject() {
   // 本就已即时落盘(handle.move/removeEntry),rescan 会重新拾取;flush 反而多一次冗余写。
   cancelPendingPersist();
   const root = await initProject(fs.rootHandle);
-  scanAndPersist(id); // 内部取代理 root
+  scanAndPersist(id); // 内部从 store 取 root
   return root;
 }
 
 // 重扫单文件夹(scanFolder + integrateScanResult + enrich)。小文件夹点击:秒显 + enrich 补全 size/mtime。
-// 失败(NotFoundError)时从 foldersData 删。
-// ⚠️ folder 必须是代理(从 store 取);integrateScanResult 写回代理才触发响应式。
+// 失败(NotFoundError)时从父节点 subFolders 移除。
+// ⚠️ folder 必须是代理(rootFolder 树里的引用);integrateScanResult 写回代理才触发响应式。
 export async function refreshFolder(folder) {
   const fs = useFsStore();
   try {
     const result = await scanFolder(folder); // 纯函数(不信任:reload 抓增删改名)
-    integrateScanResult(folder, result, fs); // 写回代理 + 注册/清理
+    integrateScanResult(folder, result, fs); // 写回代理 + dispose removedFiles
     await enrichFolder(folder);
   }
   catch (err) {
     if (err.name === 'NotFoundError') {
-      fs.foldersData.delete(folder.path);
-      if (fs.currentFolder === folder) {
-        fs.currentFolder = folder.parent || fs.allMediaFolder;
+      // T06:从父节点的 subFolders 移除;folder 脱离树即被 GC。
+      if (folder.parent) {
+        const idx = folder.parent.subFolders.indexOf(folder);
+        if (idx > -1)
+          folder.parent.subFolders.splice(idx, 1);
       }
+      if (fs.currentFolder === folder)
+        fs.currentFolder = folder.parent || fs.allMediaFolder;
     }
     throw err;
   }
@@ -256,16 +239,10 @@ export async function loadFolder(folder) {
   fs.currentFolder = folder;
 }
 
-// 聚合所有 foldersData 的文件到 ALL_MEDIA,切到聚合视图。
+// 聚合 rootFolder 整树文件到 ALL_MEDIA,切到聚合视图(collectAllFiles 遍历整树)。
 export async function switchToAllPhotos() {
   const fs = useFsStore();
-  const allFiles = [];
-  for (const [path, data] of fs.foldersData.entries()) {
-    if (path !== 'ALL_MEDIA' && data?.files?.length) {
-      allFiles.push(...data.files);
-    }
-  }
-  fs.allMediaFolder.files = allFiles;
+  fs.allMediaFolder.files = fs.rootFolder ? collectAllFiles(fs.rootFolder) : [];
   fs.currentFolder = fs.allMediaFolder;
 }
 

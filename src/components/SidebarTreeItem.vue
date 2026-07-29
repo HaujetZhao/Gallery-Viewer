@@ -1,6 +1,6 @@
 <script setup>
 import { ref } from 'vue';
-import { toggleFolderExpanded } from '../models/SmartFolder';
+import { collectAllFiles, toggleFolderExpanded } from '../models/SmartFolder';
 import { handleDeleteFolder } from '../services/fileOps';
 import { handleFolderClick } from '../services/folderActions';
 import { useContextMenuStore } from '../stores/contextMenu';
@@ -66,12 +66,10 @@ async function onDrop(e) {
   }
 }
 function findFileByPath(path) {
-  for (const [, folder] of fsStore.foldersData) {
-    const f = folder.files.find(x => x.path === path);
-    if (f)
-      return f;
-  }
-  return null;
+  if (!fsStore.rootFolder)
+    return null;
+  // 遍历 rootFolder 树找 file(collectAllFiles 递归整树)。
+  return collectAllFiles(fsStore.rootFolder).find(x => x.path === path) || null;
 }
 </script>
 

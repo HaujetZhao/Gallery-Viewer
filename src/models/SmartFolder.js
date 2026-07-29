@@ -108,7 +108,16 @@ export function countAllFiles(folder) {
   return n;
 }
 
-// 按 path 在 folder 树里查 folder(T05:取代 foldersData.get(path) 的查询用途,为 T06 删 Map 铺路)。
+// 递归收集整树所有 file(ALL_MEDIA 聚合 / 拖放按 path 查 file 用)。
+export function collectAllFiles(folder, into = []) {
+  for (const f of folder.files)
+    into.push(f);
+  for (const sub of folder.subFolders)
+    collectAllFiles(sub, into);
+  return into;
+}
+
+// 按 path 在 folder 树里查 folder(查询用)。
 // 纯函数:不改入参,递归 subFolders 匹配 folder.path。返回 folder 或 null。
 // ⚠️ ALL_MEDIA 是虚拟文件夹(不在 rootFolder 树),不经此函数查询(switchToAllPhotos 直接用 allMediaFolder)。
 export function findFolderByPath(root, path) {
@@ -135,7 +144,7 @@ export function folderToSnapshot(folder) {
   };
 }
 
-// 从快照重建整棵树(sync,零 IO,纯函数)。parent 按传参接回。不注册 foldersData(注册归 service 层)。
+// 从快照重建整棵树(sync,零 IO,纯函数)。parent 按传参接回。不写外部状态(挂树代理化归调用方)。
 export function folderFromSnapshot(snap, parent) {
   const folder = new SmartFolder({ handle: snap.handle, parent });
   folder.expanded = snap.expanded;
@@ -213,7 +222,7 @@ export async function findValidFolderAncestor(folder) {
   return null;
 }
 
-// 工厂:建 SmartFolder + scanFolder(纯函数,不改 folder 入参、不碰 foldersData)。
+// 工厂:建 SmartFolder + scanFolder(纯函数,不改 folder 入参、不碰 store)。
 export async function createFolder({ handle, parent = null }) {
   const folder = new SmartFolder({ handle, parent });
   const result = await scanFolder(folder);
@@ -225,7 +234,7 @@ export function createVirtualFolder({ virtualName, virtualConfig = {} }) {
 }
 
 // 纯列表 scan:values() 单次遍历做差集 + 名字集合信任短路,零 getFile。
-// 纯函数——不改 folder 入参、不碰 foldersData、不调 dispose。返回 {files, subFolders, newFiles, newSubFolders, removedFiles, removedFolders}。
+// 纯函数——不改 folder 入参、不碰 store、不调 dispose。返回 {files, subFolders, newFiles, newSubFolders, removedFiles, removedFolders}。
 // trust 模式(后台重扫):名字集合一致 → 零 IO,result.files 沿用 folder.files 缓存引用。
 export async function scanFolder(folder, { trust = false } = {}) {
   if (!folder.handle)
@@ -284,7 +293,7 @@ export async function scanFolder(folder, { trust = false } = {}) {
     }
   }
 
-  // ⑤ 目录差集(无 IO):既有信任保留;新建 SmartFolder(纯函数,不注册 foldersData)
+  // ⑤ 目录差集(无 IO):既有信任保留;新建 SmartFolder(纯函数,不写外部状态)
   for (const entry of currentDirEntries) {
     const existing = existingFoldersMap.get(entry.name);
     if (existing) {

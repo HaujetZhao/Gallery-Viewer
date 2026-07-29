@@ -26,15 +26,10 @@ export async function handleDeleteFolder(folder) {
     return;
 
   try {
-    const path = folder.path;
-    await deleteFolder(folder); // removeEntry recursive + 从 parent.subFolders 移除
-    fs.foldersData.delete(path);
-    // 递归清后代缓存(否则 ALL_MEDIA 聚合仍含已删子树的文件)
-    const prefix = `${path}/`;
-    for (const key of [...fs.foldersData.keys()]) {
-      if (key.startsWith(prefix))
-        fs.foldersData.delete(key);
-    }
+    // deleteFolder:removeEntry recursive + 从 parent.subFolders 移除(folder 及其整棵子树随之脱离 rootFolder 树)。
+    // 无需清缓存 —— deleteFolder 已 splice parent.subFolders,子树脱离 rootFolder 树即被 GC;
+    // ALL_MEDIA 若在用,末尾 switchToAllPhotos 重聚合自然不含已删子树。
+    await deleteFolder(folder);
     if (folder.parent)
       await refreshFolder(folder.parent);
     if (fs.currentFolder === folder)
