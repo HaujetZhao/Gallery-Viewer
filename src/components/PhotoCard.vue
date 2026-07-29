@@ -1,11 +1,9 @@
 <script setup>
-import { computed, nextTick, ref } from 'vue';
+import { computed, ref } from 'vue';
+import { useFileActions } from '../composables/useFileActions';
 import { useThumbnail } from '../composables/useThumbnail';
 import { getThumbnailStrategy } from '../services/thumbnail-strategies';
 import { useContextMenuStore } from '../stores/contextMenu';
-import { useHistoryStore } from '../stores/history';
-import { usePropertiesStore } from '../stores/properties';
-import { useToastStore } from '../stores/uiToast';
 import { formatDate, formatFileSize } from '../utils/format';
 
 const props = defineProps({
@@ -22,70 +20,18 @@ const mediaEl = ref(null);
 const { loaded, loading } = useThumbnail(mediaEl, props.file, props.targetSize);
 
 const contextMenu = useContextMenuStore();
-const history = useHistoryStore();
-const toast = useToastStore();
-const properties = usePropertiesStore();
 
-// 内联重命名
+// 内联重命名:逻辑封装在 RenameInput(选区/focus/防重入/校验/history/toast),父只管显隐
 const editing = ref(false);
-const draftName = ref('');
-const nameInputEl = ref(null);
-
 function startRename() {
-  draftName.value = props.file.name;
   editing.value = true;
-  nextTick(() => {
-    const dotIdx = props.file.name.lastIndexOf('.');
-    if (dotIdx > 0)
-      nameInputEl.value?.setSelectionRange(0, dotIdx);
-    else nameInputEl.value?.select();
-    nameInputEl.value?.focus();
-  });
 }
-let committing = false; // 防重入(@keyup.enter 提交后 input 卸载又触发 @blur)
-async function commitRename() {
-  if (committing)
-    return;
-  committing = true;
-  try {
-    const newName = draftName.value.trim();
-    editing.value = false;
-    if (!newName || newName === props.file.name)
-      return;
-    if (/[<>:"/\\|?*]/.test(newName)) {
-      toast.error('文件名包含非法字符');
-      return;
-    }
-    await history.renameFile(props.file, newName);
-    toast.success('重命名成功(Ctrl+Z 撤销)');
-  }
-  catch (e) {
-    toast.error(`重命名失败: ${e.message}`);
-  }
-  finally {
-    committing = false;
-  }
-}
-function cancelRename() {
-  editing.value = false;
-}
+
+// 统一文件右键菜单(属性/重命名/删除);重命名回调触发本组件显示 RenameInput
+const { fileMenu } = useFileActions(startRename);
 
 function onContextmenu(e) {
-  contextMenu.show(e.clientX, e.clientY, [
-    { label: '属性', icon: 'fas fa-info-circle', action: () => properties.open(props.file) },
-    { label: '重命名', icon: 'fas fa-edit', action: startRename },
-    { divider: true },
-    { label: '删除', icon: 'fas fa-trash-alt', danger: true, action: onDelete },
-  ]);
-}
-async function onDelete() {
-  try {
-    await history.deleteFile(props.file);
-    toast.success('已移动到 .trash 回收站(Ctrl+Z 撤销)');
-  }
-  catch (e) {
-    toast.error(`删除失败: ${e.message}`);
-  }
+  contextMenu.show(e.clientX, e.clientY, fileMenu(props.file));
 }
 
 function onDragstart(e) {
@@ -146,16 +92,7 @@ function openPreview() {
     </div>
 
     <div class="card-info-filename">
-      <input
-        v-if="editing"
-        ref="nameInputEl"
-        v-model="draftName"
-        class="renaming-input"
-        @keyup.enter="commitRename"
-        @keyup.esc="cancelRename"
-        @blur="commitRename"
-        @click.stop
-      >
+      <RenameInput v-if="editing" :file="props.file" @done="editing = false" />
       <div v-else class="file-name">
         {{ file.name }}
       </div>
