@@ -70,11 +70,13 @@ function onDragEnd() {
   document.removeEventListener('mouseup', onDragEnd);
 }
 
-// ESC 关闭(拖拽面板不点外关);拖拽兜底卸载
+// ESC 关闭 + 点外关闭;拖拽兜底卸载
+// outsideClick 只响应真 click(mousedown+mouseup 同处),按住 header 拖到面板外是 drag → 无 click 事件 → 不误触发关闭。
 useOverlay({
   isVisible: () => props.modelValue,
   overlayEl: panelEl,
   onClose: () => emit('update:modelValue', false),
+  outsideClick: true, // 点外关(click≠drag,拖拽不误触发)
 });
 onBeforeUnmount(() => {
   document.removeEventListener('mousemove', onDragMove);
