@@ -195,6 +195,34 @@ export async function enrichFolder(folder, { token } = {}) {
   }
 }
 
+// 读全部 file 元数据(getFile),size/mtime 变 → 更新 _meta + 清 md5(缩略图下次懒加载重算)。
+// refreshFolder 用(既有文件内容变检测);enrich 只补 _meta 未写,本函数读全部 + 比对。
+export async function detectMetaChanges(folder, { token } = {}) {
+  if (!folder.files || folder.files.length === 0)
+    return;
+  await runConcurrent(
+    folder.files,
+    async (f) => {
+      if (token?.cancelled)
+        return;
+      try {
+        const file = await f.handle.getFile();
+        if (!f._meta) {
+          f._meta = { size: file.size, lastModified: file.lastModified };
+        }
+        else if (f._meta.size !== file.size || f._meta.lastModified !== file.lastModified) {
+          f._meta = { size: file.size, lastModified: file.lastModified };
+          f.md5 = null; // 元数据变 → 清 md5(缩略图懒加载重算)
+        }
+      }
+      catch (e) {
+        console.warn(`detectMetaChanges ${f.name} 失败:`, e);
+      }
+    },
+    { concurrency: CONFIG.PERFORMANCE.SCAN_CONCURRENCY, token },
+  );
+}
+
 export async function validateFolder(folder) {
   if (!folder.handle)
     return false;

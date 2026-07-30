@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { acquire } from '../services/fileResource';
 import { SmartFile } from './SmartFile';
-import { enrichFolder, findFolderByPath, folderFromSnapshot, folderToSnapshot, scanFolder, SmartFolder } from './SmartFolder';
+import { detectMetaChanges, enrichFolder, findFolderByPath, folderFromSnapshot, folderToSnapshot, scanFolder, SmartFolder } from './SmartFolder';
 
 beforeEach(() => {
   URL.createObjectURL = vi.fn(() => 'blob:fake');
@@ -358,5 +358,53 @@ describe('smartFolder 行为(addFile/removeFile/toggleExpanded)', () => {
     expect(folder.expanded).toBe(true);
     folder.toggleExpanded();
     expect(folder.expanded).toBe(false);
+  });
+});
+
+// detectMetaChanges:读全部 getFile,size/mtime 变 → 更新 _meta + 清 md5(refreshFolder 既有内容变检测)。
+describe('smartFolder detectMetaChanges', () => {
+  function makeFile(getFileImpl) {
+    return new SmartFile({
+      handle: { name: 'a.jpg', getFile: vi.fn(getFileImpl) },
+      parent: null,
+    });
+  }
+
+  it('size/mtime 变 → 清 md5 + 更新 _meta', async () => {
+    const folder = new SmartFolder({ handle: { name: 'f' }, parent: null });
+    const file = makeFile(async () => ({ name: 'a.jpg', size: 200, lastModified: 99 }));
+    file._meta = { size: 100, lastModified: 1 };
+    file.md5 = 'oldmd5';
+    folder.files = [file];
+
+    await detectMetaChanges(folder);
+
+    expect(file.md5).toBeNull(); // 变 → 清
+    expect(file._meta).toEqual({ size: 200, lastModified: 99 }); // 更新
+  });
+
+  it('size/mtime 不变 → md5 保留', async () => {
+    const folder = new SmartFolder({ handle: { name: 'f' }, parent: null });
+    const file = makeFile(async () => ({ name: 'a.jpg', size: 100, lastModified: 1 }));
+    file._meta = { size: 100, lastModified: 1 };
+    file.md5 = 'keepmd5';
+    folder.files = [file];
+
+    await detectMetaChanges(folder);
+
+    expect(file.md5).toBe('keepmd5'); // 不变 → 保留
+  });
+
+  it('_meta 缺失 → 补,不清 md5', async () => {
+    const folder = new SmartFolder({ handle: { name: 'f' }, parent: null });
+    const file = makeFile(async () => ({ name: 'a.jpg', size: 100, lastModified: 1 }));
+    file._meta = null;
+    file.md5 = 'keepmd5';
+    folder.files = [file];
+
+    await detectMetaChanges(folder);
+
+    expect(file._meta).toEqual({ size: 100, lastModified: 1 });
+    expect(file.md5).toBe('keepmd5'); // 新补 _meta 不清 md5(首次 enrich 场景)
   });
 });
