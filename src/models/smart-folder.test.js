@@ -311,3 +311,52 @@ describe('findFolderByPath', () => {
     expect(findFolderByPath({ path: 'r', subFolders: [] }, '')).toBeNull();
   });
 });
+
+// T15:SmartFolder 对象行为(addFile/removeFile/toggleExpanded)锚定。
+describe('smartFolder 行为(addFile/removeFile/toggleExpanded)', () => {
+  it('addFile:push + 设 parent + Windows 风格 sort', () => {
+    const folder = new SmartFolder({ handle: { name: 'f' }, parent: null });
+    folder.files = [];
+    const f1 = { name: 'b.jpg', parent: null };
+    const f2 = { name: 'a.jpg', parent: null };
+    folder.addFile(f1);
+    folder.addFile(f2);
+    expect(folder.files).toEqual([f2, f1]); // sorted(a < b)
+    expect(f1.parent).toBe(folder);
+    expect(f2.parent).toBe(folder);
+  });
+
+  it('addFile:重复不加入', () => {
+    const folder = new SmartFolder({ handle: { name: 'f' }, parent: null });
+    folder.files = [];
+    const f = { name: 'a.jpg', parent: null };
+    folder.addFile(f);
+    folder.addFile(f);
+    expect(folder.files.length).toBe(1);
+  });
+
+  it('removeFile:splice 移除', () => {
+    const folder = new SmartFolder({ handle: { name: 'f' }, parent: null });
+    const f = { name: 'a.jpg' };
+    folder.files = [f];
+    folder.removeFile(f);
+    expect(folder.files).not.toContain(f);
+  });
+
+  it('removeFile:不存在则无副作用', () => {
+    const folder = new SmartFolder({ handle: { name: 'f' }, parent: null });
+    const f = { name: 'a.jpg' };
+    folder.files = [];
+    expect(() => folder.removeFile(f)).not.toThrow();
+    expect(folder.files.length).toBe(0);
+  });
+
+  it('toggleExpanded:翻转', () => {
+    const folder = new SmartFolder({ handle: { name: 'f' }, parent: null });
+    folder.expanded = false;
+    folder.toggleExpanded();
+    expect(folder.expanded).toBe(true);
+    folder.toggleExpanded();
+    expect(folder.expanded).toBe(false);
+  });
+});

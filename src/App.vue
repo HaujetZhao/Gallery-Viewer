@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onErrorCaptured, onMounted, ref, watch } from 'vue';
 import BrowserUnsupportedWarning from './components/BrowserUnsupportedWarning.vue';
 import ConfirmDialog from './components/ConfirmDialog.vue';
 import ContextMenu from './components/ContextMenu.vue';
@@ -33,6 +33,14 @@ const history = useHistoryStore();
 const { searchTerm, filteredCount, totalCount } = useGallerySearch();
 
 const sidebarPinned = computed(() => !!settings.settings.sidebarPinned);
+
+// 全局错误边界:兜底所有子组件未处理错误——toast 提示 + return false 阻止错误上抛(不白屏)。
+// ponytail:App.vue 是根,onErrorCaptured 一处兜底,替代散落各组件的 try/catch。
+onErrorCaptured((err) => {
+  console.error('组件错误(已兜底):', err);
+  toast.error(`发生错误:${err?.message || err}`);
+  return false;
+});
 const sidebarWidth = computed(() => settings.settings.sidebarWidth || 280);
 const mainStyle = computed(() => ({
   marginLeft: sidebarPinned.value ? `${sidebarWidth.value}px` : '0px',

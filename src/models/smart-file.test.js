@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { acquire, destroy } from '../services/fileResource';
 import { ensureBlobUrl, fileFromSnapshot, fileToSnapshot, SmartFile } from './SmartFile';
+import { SmartFolder } from './SmartFolder';
 
 // jsdom 的 URL.createObjectURL 对 mock 普通对象会抛,stub 之。
 beforeEach(() => {
@@ -65,5 +66,34 @@ describe('smartFile rehydrate', () => {
     expect(f2.lastModified).toBe(f.lastModified);
     expect(f2.md5).toBe(f.md5);
     destroy(f);
+  });
+});
+
+// T15:SmartFile.move 锚定 T08 关键改动——调 parent.removeFile + target.addFile,不内联 splice。
+// 若回退成内联 splice(绕门面),断言失败(树维护不再走 folder 方法)。
+describe('smartFile.move(T08:走 folder 方法,不内联 splice)', () => {
+  it('move:源 removeFile + 目标 addFile + parent 更新(走 folder 方法,非内联 splice)', async () => {
+    const source = new SmartFolder({ handle: { name: 'src', move: vi.fn(async () => {}) }, parent: null });
+    const target = new SmartFolder({ handle: { name: 'tgt', move: vi.fn(async () => {}) }, parent: null });
+    const file = new SmartFile({ handle: { name: 'a.jpg', move: vi.fn(async () => {}) }, parent: source });
+    source.files = [file];
+
+    const result = await file.move(target);
+
+    expect(result).toBe(true);
+    expect(source.files).not.toContain(file); // 源移除(走 folder.removeFile)
+    expect(target.files).toContain(file); // 目标加入(走 folder.addFile)
+    expect(file.parent).toBe(target); // parent 更新
+  });
+
+  it('move:缺父级 → 抛错', async () => {
+    const file = new SmartFile({ handle: { name: 'a' }, parent: null });
+    await expect(file.move({ handle: { name: 'tgt' } })).rejects.toThrow('缺少父级引用');
+  });
+
+  it('move:目标 handle 无效 → 抛错', async () => {
+    const source = new SmartFolder({ handle: { name: 'src' }, parent: null });
+    const file = new SmartFile({ handle: { name: 'a', move: vi.fn(async () => {}) }, parent: source });
+    await expect(file.move({ handle: null })).rejects.toThrow('目标文件夹无效');
   });
 });
