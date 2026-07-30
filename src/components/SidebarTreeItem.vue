@@ -102,3 +102,72 @@ function findFileByPath(path) {
     <SidebarTreeItem v-for="child in folder.subFolders" :key="child.path" :folder="child" />
   </ul>
 </template>
+
+<style scoped>
+/* 树节点(原 src/styles/sidebar.css 的 tree-node 归属,T14c 纯搬家,视觉零变化) */
+/* 子级列表 */
+.tree-sub-list {
+    padding-left: 18px !important;
+    border-left: 1px solid rgba(255, 255, 255, 0.1);
+    margin-left: 5px;
+    display: none;
+}
+
+.tree-sub-list.expanded {
+    display: block;
+}
+
+/* 根节点样式 */
+.tree-node.root-node {
+    font-weight: bold;
+    color: #ecf0f1;
+    margin-bottom: 5px;
+}
+
+.tree-node {
+    padding: 6px 10px;
+    cursor: pointer;
+    border-radius: 4px;
+    font-size: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #bdc3c7;
+    transition: background 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.tree-node:hover,
+.tree-node.context-menu-active {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: white;
+}
+
+.tree-node.active {
+    background-color: var(--accent-color);
+    color: white;
+}
+
+.tree-node.drag-over {
+    background-color: rgba(52, 152, 219, 0.4);
+    border: 1px dashed #fff;
+}
+
+/* 空文件夹样式 */
+.tree-node.empty-folder {
+    opacity: 0.6;
+    color: #7f8c8d;
+}
+
+.tree-node.empty-folder i {
+    color: #95a5a6;
+}
+
+.tree-node-count {
+    font-size: 0.8em;
+    opacity: 0.6;
+    margin-left: 4px;
+}
+</style>

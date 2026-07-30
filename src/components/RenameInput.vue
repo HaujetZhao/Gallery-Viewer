@@ -67,3 +67,24 @@ function cancel() {
     @click.stop
   >
 </template>
+
+<style scoped>
+/* 内联重命名输入框(原 src/styles/sidebar.css L178-194,T14c 纯搬家,视觉零变化;
+   T12 全局→T14c scoped:RenameInput 被 PhotoCard/PropertiesPanel 嵌入,scoped 随实例应用) */
+.renaming-input {
+    width: 100%;
+    font-size: 14px;
+    padding: 4px 6px;
+    border: 1px solid var(--color-primary);
+    border-radius: 4px;
+    outline: none;
+    box-shadow: 0 0 5px rgba(52, 152, 219, 0.5);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    resize: none;
+    overflow: hidden;
+    min-height: 24px;
+    line-height: 1.4;
+    font-family: inherit;
+}
+</style>
