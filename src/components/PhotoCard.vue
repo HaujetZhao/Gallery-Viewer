@@ -81,7 +81,12 @@ function openPreview() {
         class="thumbnail-img"
         :data-loading="loading ? 'true' : 'false'"
       >
-      <object v-else ref="mediaEl" class="thumbnail-svg" type="image/svg+xml" />
+      <div
+        v-else
+        ref="mediaEl"
+        class="thumbnail-svg"
+        :data-loading="loading ? 'true' : 'false'"
+      />
 
       <div v-if="!loaded" class="loading-indicator">
         <i class="fas fa-spinner" :class="{ 'fa-spin': loading }" />
@@ -231,10 +236,6 @@ function openPreview() {
     background: rgba(156, 39, 176, 0.9);
 }
 
-.badge-svg {
-    background: rgba(255, 152, 0, 0.9);
-}
-
 .badge-video {
     background: rgba(244, 67, 54, 0.9);
 }
@@ -243,14 +244,26 @@ function openPreview() {
     background: rgba(103, 58, 183, 0.9);
 }
 
-/* SVG 缩略图 */
+/* SVG 缩略图:inline 注入(thumbnail-strategies fetch+innerHTML,与 modal 同机制);
+   SVG 元素无 data-v,用 :deep 穿透控制尺寸(contain,完整显示 SVG 内容),
+   绕开 <img>(拒绝含脚本 SVG)与 <object>(像素尺寸渲染异常)的坑 */
 .thumbnail-svg {
     width: 100%;
     height: 100%;
-    display: block;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
     background-color: var(--color-gray-50);
-    /* 使用CSS变量 */
     pointer-events: none;
+}
+
+.thumbnail-svg :deep(svg) {
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    display: block;
 }
 
 /* 卡片信息 */

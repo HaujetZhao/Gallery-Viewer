@@ -77,23 +77,22 @@ export const ThumbnailStrategies = {
     getCardBadge: () => null,
   },
 
-  // SVG 策略
+  // SVG 策略:inline 渲染(fetch 文本 → innerHTML),与 modal 的 SVG 显示完全同机制(v-html 也是 innerHTML)。
+  // 为何不用 <img>/<object>:<img> 加载含脚本/外部引用的 SVG 会被安全策略拒绝(onerror,如 EZtools 快键键.svg);
+  // <object> 加载像素 width/height 的 SVG 嵌套浏览上下文渲染异常(图形错位,"页面缩小版")。inline 绕开两者——
+  // SVG 文本直接进 DOM(innerHTML 注入的 <script> 不执行,安全),配 .thumbnail-svg :deep(svg) 控制尺寸(contain)。
   svg: {
     types: FileTypes.image.svg,
 
     createThumbnailElement: () => {
-      const object = document.createElement('object');
-      object.className = 'thumbnail-svg';
-      object.type = 'image/svg+xml';
-      return object;
+      const div = document.createElement('div');
+      div.className = 'thumbnail-svg';
+      return div;
     },
 
     generateThumbnail: async (element, fileData) => {
-      element.data = fileData.blobUrl;
-      return new Promise((resolve, reject) => {
-        element.onload = () => resolve(null);
-        element.onerror = () => reject(new Error('SVG 加载失败'));
-      });
+      const r = await fetch(fileData.blobUrl);
+      element.innerHTML = await r.text();
     },
 
     getCardBadge: () => null,
