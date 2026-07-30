@@ -9,6 +9,7 @@ import { useUserSettingsStore } from '../stores/userSettings';
 import { calculateMD5 } from '../utils/file';
 import { deleteThumbnail, getThumbnailFromDB, saveThumbnailToDB, touchThumbnailInDB } from './db';
 import { peek } from './fileResource';
+import { refreshFolder } from './folderActions';
 import { getThumbnailStrategy } from './thumbnail-strategies';
 
 // 把缓存 blob 画到 canvas(缓存恢复,不做缩放,blob 本就是 targetSize 方图)。
@@ -75,13 +76,24 @@ export async function generateThumbnail(file, canvas, targetSize = 400) {
   return { cached: false, strategyName: strategy.name };
 }
 
-// 强制重绘当前视图缩略图:删当前 folder 各文件(已算 md5)的缓存 → triggerRedraw 重挂卡片重生成。
+// 强制重绘当前视图缩略图:先 refreshFolder(读全部元数据 + 清变 md5)→ 删当前 folder 各文件缓存 → triggerRedraw 重挂卡片重生成。
 // 搬自源码 js/filesystem.js forceRegenerateCurrentThumbnails。GIF/SVG 无 md5 自动跳过(它们本就不缓存)。
+// ALL_MEDIA / 无 handle 跳过刷新(只删缓存),普通 folder 先刷新(内容变的图 md5 被清 → 删缓存重生 → 缩略图更新)。
 export async function forceRegenerateCurrentThumbnails() {
   const fs = useFsStore();
   const settings = useUserSettingsStore();
   const toast = useToastStore();
-  const files = fs.currentFolder?.files || [];
+  const folder = fs.currentFolder;
+  // 先刷新(读全部元数据 + 清变 md5);ALL_MEDIA 无 handle 跳过
+  if (folder && folder !== fs.allMediaFolder && folder.handle) {
+    try {
+      await refreshFolder(folder);
+    }
+    catch (e) {
+      console.warn('重绘前刷新失败:', e);
+    }
+  }
+  const files = folder?.files || []; // refresh 后取(增删改已反映)
   if (!files.length) {
     toast.info('当前没有文件');
     return;
@@ -89,10 +101,9 @@ export async function forceRegenerateCurrentThumbnails() {
   const targetSize = settings.settings.thumbnailSize;
   let deleteCount = 0;
   for (const file of files) {
-    if (file.md5) {
+    if (file.md5)
       deleteThumbnail(`${file.md5}_${targetSize}`);
-      deleteCount++;
-    }
+    deleteCount++;
   }
   toast.success(`已清除 ${deleteCount} 个缩略图缓存,正在重新生成...`);
   triggerRedraw();
