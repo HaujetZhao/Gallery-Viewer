@@ -305,6 +305,9 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
     catch (e) {
       console.warn('SVG 加载失败:', e);
     }
+    finally {
+      loading.value = false; // svg 走 v-html 无 onImgLoad,fetch 完即视为加载完(否则转圈常驻)
+    }
   }
 
   // ===== 事件挂载:必须在 modal 显示后(modalEl 已渲染)挂,不能在 onMounted 挂 =====
