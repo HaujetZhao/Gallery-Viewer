@@ -302,21 +302,21 @@ body.sidebar-pinned .settings-btn {
 }
 
 .btn-block.warning {
-    background-color: #f39c12;
+    background-color: var(--color-warning);
     color: white;
 }
 
 .btn-block.warning:hover {
-    background-color: #e67e22;
+    background-color: var(--color-warning-dark);
 }
 
 .btn-block.danger {
-    background-color: #e74c3c;
+    background-color: var(--color-danger);
     color: white;
 }
 
 .btn-block.danger:hover {
-    background-color: #c0392b;
+    background-color: var(--color-danger-dark);
 }
 
 .separator {

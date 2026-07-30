@@ -252,10 +252,10 @@ async function onClearAll() {
         </div>
 
         <div class="setting-item button-group">
-          <button class="btn-block" @click="onRefreshCurrent">
+          <button class="btn-block warning" @click="onRefreshCurrent">
             刷新目录
           </button>
-          <button class="btn-block" @click="onRedrawCurrent">
+          <button class="btn-block warning" @click="onRedrawCurrent">
             重绘当前
           </button>
           <button class="btn-block danger" @click="onCleanOld">

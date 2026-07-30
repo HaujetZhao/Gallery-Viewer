@@ -25,8 +25,12 @@
     /* 成功 - 绿色 */
     --color-warning: #f39c12;
     /* 警告 - 橙色 */
+    --color-warning-dark: #e67e22;
+    /* 警告深色 - 用于悬停状态 */
     --color-danger: #e74c3c;
     /* 危险 - 红色 */
+    --color-danger-dark: #c0392b;
+    /* 危险深色 - 用于悬停状态 */
     --color-info: #16a085;
     /* 信息 - 青色 */
 
