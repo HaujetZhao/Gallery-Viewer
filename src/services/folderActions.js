@@ -1,5 +1,5 @@
 import { CONFIG } from '../config/index';
-import { collectAllFiles, createFolder, enrichFolder, folderFromSnapshot, scanFolder, validateFolder } from '../models/SmartFolder';
+import { collectAllFiles, createFolder, detectMetaChanges, enrichFolder, folderFromSnapshot, scanFolder, validateFolder } from '../models/SmartFolder';
 import { useFsStore } from '../stores/fs';
 import { useRootStore } from '../stores/root';
 import { useToastStore } from '../stores/uiToast';
@@ -60,19 +60,24 @@ async function rootEagerScan(root, token) {
   await enrichFolder(root, { token });
 }
 
-// 打开新文件夹(picker)。扫描 + 记录到 handleStore + 存快照 + 切换。
+// 打开新文件夹(picker)。已保存(handleStore 命中)→ 复用 switchToRoot 秒显+toast,不重建;否则新建扫+记录+切换。
 export async function openFolderPicker() {
   if (!isFileSystemAccessSupported()) {
     alert('浏览器不支持文件系统访问 API,请使用 Chrome / Edge / Opera(86+)');
     return null;
   }
+  const toast = useToastStore();
   try {
     const handle = await window.showDirectoryPicker({
       mode: 'readwrite',
       id: 'photo-viewer-start',
       startIn: 'pictures',
     });
-    const id = await handleStore.add(handle);
+    const { id, existed } = await handleStore.add(handle);
+    if (existed) {
+      toast.info(`该文件夹已保存,已切换到「${handle.name}」`);
+      return await switchToRoot(id); // 复用快照秒显,不 initProject 重建
+    }
     const root = await initProject(handle);
     const rootStore = useRootStore();
     rootStore.add(id, handle.name, 0, Date.now());
@@ -213,6 +218,7 @@ export async function refreshFolder(folder) {
     const result = await scanFolder(folder); // 纯函数(不信任:reload 抓增删改名)
     integrateScanResult(folder, result, fs); // 写回代理 + dispose removedFiles
     await enrichFolder(folder);
+    await detectMetaChanges(folder); // 读全部元数据,size/mtime 变→清 md5
   }
   catch (err) {
     if (err.name === 'NotFoundError') {
