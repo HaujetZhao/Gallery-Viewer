@@ -38,20 +38,20 @@ export async function loadAll() {
   return await loadRaw();
 }
 
-// 加 handle(isSameEntry 去重 + 更新 lastUsed),返回 id。
+// 加 handle(isSameEntry 去重 + 更新 lastUsed),返回 { id, existed }(命中 existed=true,供调用方区分新/旧)。
 export async function add(handle) {
   const list = await loadRaw();
   for (const item of list) {
     if (await item.handle.isSameEntry(handle)) {
       item.lastUsed = Date.now();
       await persist();
-      return item.id;
+      return { id: item.id, existed: true };
     }
   }
   const id = crypto.randomUUID();
   list.push({ id, handle, name: handle.name, fileCount: 0, lastUsed: Date.now() });
   await persist();
-  return id;
+  return { id, existed: false };
 }
 
 export async function remove(id) {

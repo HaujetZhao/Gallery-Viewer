@@ -23,20 +23,22 @@ describe('handleStore 多根', () => {
     expect(await loadAll()).toEqual([]);
   });
 
-  it('add 新 handle 追加 + 返回 id', async () => {
-    const id = await add(makeHandle('a'));
+  it('add 新 handle 追加 + 返回 {id, existed:false}', async () => {
+    const { id, existed } = await add(makeHandle('a'));
     const all = await loadAll();
     expect(all).toHaveLength(1);
     expect(all[0].id).toBe(id);
     expect(all[0].name).toBe('a');
     expect(all[0].fileCount).toBe(0);
+    expect(existed).toBe(false);
   });
 
-  it('add 同 handle(isSameEntry true)去重', async () => {
+  it('add 同 handle(isSameEntry true)去重 + existed:true', async () => {
     const h = makeHandle('a', true);
-    const id1 = await add(h);
-    const id2 = await add(h);
-    expect(id2).toBe(id1);
+    const r1 = await add(h);
+    const r2 = await add(h);
+    expect(r2.id).toBe(r1.id);
+    expect(r2.existed).toBe(true);
     expect(await loadAll()).toHaveLength(1);
   });
 
@@ -47,13 +49,13 @@ describe('handleStore 多根', () => {
   });
 
   it('remove', async () => {
-    const id = await add(makeHandle('a'));
+    const { id } = await add(makeHandle('a'));
     await remove(id);
     expect(await loadAll()).toHaveLength(0);
   });
 
   it('update 元数据(持久化)', async () => {
-    const id = await add(makeHandle('a'));
+    const { id } = await add(makeHandle('a'));
     _resetCache(); // 强制从 IDB 重读,验证持久化
     await update(id, { fileCount: 42 });
     _resetCache();
@@ -63,7 +65,7 @@ describe('handleStore 多根', () => {
 
   it('getHandle', async () => {
     const h = makeHandle('a');
-    const id = await add(h);
+    const { id } = await add(h);
     expect(await getHandle(id)).toBe(h);
   });
 
