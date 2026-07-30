@@ -284,4 +284,268 @@ function onVisibilityChange() {
   font-size: 11px;
   color: var(--text-muted);
 }
+
+/* ===== 启动页(原 components.css) ===== */
+#hint {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 20px 0;
+}
+
+.intro-content {
+    max-width: 600px;
+    padding: 40px;
+    background-color: var(--bg-primary);
+    border-radius: 15px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+    cursor: pointer;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.intro-content:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.15);
+}
+
+.intro-content i {
+    font-size: 80px;
+    color: var(--text-primary);
+    margin-bottom: 20px;
+}
+
+.intro-content h1 {
+    font-size: 36px;
+    margin-bottom: 15px;
+    color: var(--text-primary);
+}
+
+.intro-content p {
+    font-size: 18px;
+    color: var(--text-secondary);
+    margin-bottom: 10px;
+}
+
+.features {
+    display: flex;
+    justify-content: center;
+    gap: 30px;
+    margin-top: 30px;
+}
+
+.feature {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+.feature i {
+    font-size: 28px !important;
+    margin-bottom: 0 !important;
+    color: #2C3E50;
+}
+
+.feature span {
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+
+@media (max-width: 768px) {
+    .intro-content {
+        max-width: 90%;
+        padding: 30px 20px;
+    }
+
+    .intro-content i {
+        font-size: 60px;
+    }
+
+    .intro-content h1 {
+        font-size: 28px;
+    }
+
+    .intro-content p {
+        font-size: 16px;
+    }
+
+    .features {
+        gap: 20px;
+        flex-wrap: wrap;
+    }
+
+    .feature {
+        min-width: 100px;
+    }
+}
+
+@media (max-width: 480px) {
+    .intro-content {
+        padding: 20px 15px;
+    }
+
+    .intro-content i {
+        font-size: 50px;
+    }
+
+    .intro-content h1 {
+        font-size: 24px;
+    }
+
+    .intro-content p {
+        font-size: 14px;
+    }
+
+    .features {
+        gap: 15px;
+    }
+
+    .feature i {
+        font-size: 24px !important;
+    }
+
+    .feature span {
+        font-size: 12px;
+    }
+}
+
+/* ===== 悬浮设置按钮(原 components.css) ===== */
+/* body 级 class,scoped 不给 body 加 data-v;body.sidebar-pinned .settings-btn[data-v] 仍匹配 */
+.settings-btn {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    width: 50px;
+    height: 50px;
+    background-color: #2C3E50;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 100;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border: none;
+}
+
+body.sidebar-pinned .settings-btn {
+    left: calc(var(--sidebar-width) + 20px);
+}
+
+.settings-btn:hover {
+    transform: rotate(30deg);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+}
+
+.settings-btn i {
+    font-size: 24px;
+    color: white;
+}
+
+/* ===== 筛选悬浮区域(原 components.css) ===== */
+.filter-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 100;
+}
+
+.filter-container input[type="text"] {
+    padding: 12px 20px;
+    border: 1px solid var(--color-gray-300);
+    border-radius: 25px;
+    font-size: 14px;
+    width: 250px;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    transition: all 0.3s ease;
+    padding-right: 80px;
+}
+
+.filter-container input[type="text"]:focus {
+    outline: none;
+    border-color: #2C3E50;
+    box-shadow: 0 6px 16px rgba(67, 97, 238, 0.15);
+    width: 300px;
+}
+
+.filter-count {
+    position: absolute;
+    right: 15px;
+    top: 50%;
+    transform: translateY(-50%);
+    background-color: #2C3E50;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    pointer-events: none;
+    z-index: 1;
+}
+
+/* ===== 布局(原 layout.css) ===== */
+.header {
+    text-align: center;
+    margin-bottom: 30px;
+    padding: 20px 0;
+    border-bottom: 1px solid var(--color-gray-200);
+}
+
+.header h1 {
+    color: var(--text-primary);
+    font-size: 2.5rem;
+    margin: 0;
+}
+
+.footer {
+    margin-top: 30px;
+    text-align: center;
+    padding: 15px;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    border-top: 1px solid var(--color-gray-200);
+}
+
+.footer p {
+    margin: 8px 0;
+}
+
+/* ponytail: .footer-links 删除 —— 全工程无 DOM 使用(grep 零命中),原 layout.css 死代码 */
+
+.main-content-wrapper {
+    flex: 1;
+    width: 100%;
+    margin-left: 0;
+    transition: margin-left 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+body.sidebar-pinned .main-content-wrapper {
+    margin-left: var(--sidebar-width, 280px);
+    width: calc(100% - var(--sidebar-width, 280px));
+}
+
+.container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 20px;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+}
+
+@media (max-width: 768px) {
+    body.sidebar-pinned .main-content-wrapper {
+        margin-left: 0;
+    }
+}
 </style>

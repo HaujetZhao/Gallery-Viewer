@@ -269,3 +269,301 @@ async function onClearAll() {
     </div>
   </Teleport>
 </template>
+
+<style scoped>
+/* 设置弹窗 */
+.settings-modal {
+    position: fixed;
+    top: 80px;
+    left: 80px;
+    width: 350px;
+    background-color: var(--bg-primary);
+    border-radius: 10px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+    z-index: 200;
+    display: none;
+    overflow: hidden;
+}
+
+.settings-modal.show {
+    display: block;
+}
+
+.settings-header {
+    background-color: var(--sidebar-bg);
+    padding: 15px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    cursor: move;
+}
+
+.settings-header h3 {
+    font-size: 18px;
+    color: white;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+}
+
+.drag-handle {
+    color: rgba(255, 255, 255, 0.7);
+    cursor: grab;
+    padding: 5px;
+}
+
+.settings-body {
+    padding: 20px;
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+.setting-item {
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 15px;
+}
+
+.setting-item:last-child {
+    margin-bottom: 0;
+}
+
+.info-item {
+    background-color: var(--bg-secondary);
+    padding: 10px;
+    border-radius: 6px;
+    border: 1px solid var(--color-gray-200);
+}
+
+.info-value {
+    font-family: monospace;
+    color: #2C3E50;
+    font-weight: bold;
+}
+
+.button-group {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.btn-block {
+    flex: 1;
+    padding: 6px 4px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    transition: all 0.2s ease;
+    min-width: 50px;
+    white-space: nowrap;
+}
+
+.btn-block.warning {
+    background-color: var(--color-warning);
+    color: white;
+}
+
+.btn-block.warning:hover {
+    background-color: var(--color-warning-dark);
+}
+
+.btn-block.danger {
+    background-color: var(--color-danger);
+    color: white;
+}
+
+.btn-block.danger:hover {
+    background-color: var(--color-danger-dark);
+}
+
+.separator {
+    height: 1px;
+    background-color: var(--color-gray-200);
+    margin: 15px 0;
+}
+
+.setting-item label {
+    font-size: 14px;
+    color: var(--text-primary);
+    font-weight: 600;
+    min-width: 80px;
+}
+
+.setting-item select {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid var(--color-gray-300);
+    border-radius: 6px;
+    font-size: 14px;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.setting-item input[type="range"] {
+    flex: 2;
+    height: 6px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: #e0e5ec;
+    border-radius: 3px;
+    outline: none;
+}
+
+.setting-item input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #2C3E50;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.setting-item span {
+    min-width: 50px;
+    text-align: right;
+    color: var(--text-primary);
+    font-weight: bold;
+    font-size: 12px;
+}
+
+.setting-item label[inactive] {
+    color: #95a5a6;
+    opacity: 0.7;
+}
+
+.btn-small {
+    background-color: #2C3E50;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.btn-small:hover {
+    background-color: rgb(77, 104, 225);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(67, 97, 238, 0.2);
+}
+
+/* ========================================
+   主题选择器样式
+   ======================================== */
+.settings-section {
+    margin-top: var(--spacing-5);
+    padding-top: var(--spacing-5);
+    border-top: 1px solid var(--color-gray-200);
+}
+
+.settings-section h3 {
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-primary);
+    margin-bottom: var(--spacing-4);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+}
+
+.settings-section h3 i {
+    color: var(--color-primary);
+}
+
+.theme-selector {
+    display: flex;
+    gap: var(--spacing-4);
+    flex-wrap: wrap;
+}
+
+.theme-option {
+    cursor: pointer;
+    text-align: center;
+    padding: var(--spacing-3);
+    border-radius: var(--radius-base);
+    transition: all var(--transition-fast);
+    border: 2px solid transparent;
+    min-width: 80px;
+    position: relative;
+}
+
+.theme-option:hover {
+    background: var(--color-gray-50);
+    transform: translateY(-2px);
+}
+
+.theme-option.active {
+    border-color: var(--color-primary);
+    background: var(--color-primary-light);
+    background: rgba(52, 152, 219, 0.1);
+}
+
+.theme-option.active::after {
+    content: '✓';
+    position: absolute;
+    top: var(--spacing-1);
+    right: var(--spacing-1);
+    width: 18px;
+    height: 18px;
+    background: var(--color-primary);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.theme-preview {
+    width: 60px;
+    height: 40px;
+    border-radius: var(--radius-sm);
+    margin: 0 auto var(--spacing-2);
+    border: 2px solid var(--color-gray-300);
+    box-shadow: var(--shadow-sm);
+    transition: all var(--transition-fast);
+}
+
+.theme-option:hover .theme-preview {
+    box-shadow: var(--shadow-md);
+    transform: scale(1.05);
+}
+
+/* 主题预览颜色 */
+.theme-preview.ocean {
+    background: linear-gradient(135deg, #3498db 0%, #2c3e50 100%);
+}
+
+.theme-preview.dark {
+    background: linear-gradient(135deg, #4a9eff 0%, #1a1d23 100%);
+}
+
+.theme-preview.forest {
+    background: linear-gradient(135deg, #27ae60 0%, #1e5128 100%);
+}
+
+.theme-name {
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    display: block;
+    font-weight: var(--font-weight-medium);
+}
+
+.theme-option.active .theme-name {
+    color: var(--color-primary);
+    font-weight: var(--font-weight-semibold);
+}
+</style>
