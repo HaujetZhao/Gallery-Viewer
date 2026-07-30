@@ -219,7 +219,7 @@ function onVisibilityChange() {
     </div>
 
     <!-- 全局浮层 -->
-    <button ref="settingsBtnEl" class="settings-btn" title="设置" @click="settingsOpen = !settingsOpen">
+    <button ref="settingsBtnEl" class="settings-btn" title="设置" @click.stop="settingsOpen = !settingsOpen">
       <i class="fas fa-cog" />
     </button>
 
