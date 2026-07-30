@@ -294,19 +294,22 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
     }
   }
 
-  // ===== SVG:fetch blobUrl → text =====
+  // ===== SVG:读 File 文本 → innerHTML(与缩略图 svg 策略同机制)=====
   async function loadSvg() {
     if (mediaKind.value !== 'svg' || !modal.currentFile)
       return;
     try {
-      const r = await fetch(modal.currentFile.blobUrl);
-      svgText.value = await r.text();
+      // peek 池里 File ?? handle.getFile() 兜底,不依赖 blobUrl。
+      // 切根 fromSnapshot 重建后池空、blobUrl=null,fetch(null) 静默失败 → SVG 大图空白;
+      // 用户点开时若 enrich 尚未 acquire,就会复现。File.text() 直接读,绕开 blobUrl。
+      const f = peek(modal.currentFile)?.file ?? await modal.currentFile.handle.getFile();
+      svgText.value = await f.text();
     }
     catch (e) {
       console.warn('SVG 加载失败:', e);
     }
     finally {
-      loading.value = false; // svg 走 v-html 无 onImgLoad,fetch 完即视为加载完(否则转圈常驻)
+      loading.value = false; // svg 走 v-html 无 onImgLoad,读完即视为加载完(否则转圈常驻)
     }
   }
 

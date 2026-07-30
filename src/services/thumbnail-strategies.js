@@ -5,6 +5,7 @@
 // 关键等价性:createImageBitmap 默认 imageOrientation:'none'(不正 EXIF),而 <img> 元素默认 from-image。
 // 必须传 { imageOrientation: 'from-image' },否则带 EXIF 方向的手机照片缩略图会侧躺/倒置。
 import { FileTypes } from '../config/file-types';
+import { ensureBlobUrl } from '../models/SmartFile';
 import { peek } from './fileResource';
 
 export const ThumbnailStrategies = {
@@ -70,7 +71,10 @@ export const ThumbnailStrategies = {
     },
 
     generateThumbnail: async (element, fileData) => {
-      element.src = fileData.blobUrl;
+      // GIF 靠 <img src=blobUrl> 显示动画(不能像 image 解码进 canvas,否则只剩首帧)。
+      // 必须先 ensureBlobUrl:切根走 fileFromSnapshot 秒重建后池空、blobUrl=null,
+      // 直接 fileData.blobUrl 会把 src 设成 "null" → 空白(无报错,间歇自愈)。返回值即 url,直接用。
+      element.src = await ensureBlobUrl(fileData);
       return null; // GIF 不需要缓存
     },
 
@@ -91,8 +95,11 @@ export const ThumbnailStrategies = {
     },
 
     generateThumbnail: async (element, fileData) => {
-      const r = await fetch(fileData.blobUrl);
-      element.innerHTML = await r.text();
+      // 与 image 策略一致:peek 池里 File ?? handle.getFile() 兜底,不依赖 blobUrl。
+      // 切根走 fileFromSnapshot 秒重建后池空、blobUrl=null,fetch(null) 会静默注入空/非 SVG
+      // 内容 → 空白缩略图(浏览器无报错)。用 File.text() 直接读,无需 blobUrl,也不污染池。
+      const file = peek(fileData)?.file ?? await fileData.handle.getFile();
+      element.innerHTML = await file.text();
     },
 
     getCardBadge: () => null,
