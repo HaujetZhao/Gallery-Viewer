@@ -4,11 +4,8 @@ import { useOverlay } from '../composables/useOverlay';
 import { useStorageEstimate } from '../composables/useStorageEstimate';
 import { cleanOldCache, clearAllCache } from '../services/db';
 import { refreshFolder, reloadProject } from '../services/folderActions';
-import * as handleStore from '../services/handleStore';
-import { clearScan } from '../services/scanCache';
 import { forceRegenerateCurrentThumbnails } from '../services/thumbnail';
 import { useFsStore } from '../stores/fs';
-import { useRootStore } from '../stores/root';
 import { useThemeStore } from '../stores/theme';
 import { useToastStore } from '../stores/uiToast';
 import { useUserSettingsStore } from '../stores/userSettings';
@@ -19,7 +16,6 @@ const emit = defineEmits(['update:modelValue']);
 const settings = useUserSettingsStore();
 const themeStore = useThemeStore();
 const fsStore = useFsStore();
-const rootStore = useRootStore();
 const toast = useToastStore();
 const { text: storageText, refresh: refreshStorage } = useStorageEstimate();
 
@@ -152,20 +148,6 @@ async function onClearAll() {
   toast.success('已清空所有缓存');
   await refreshStorage();
 }
-// 移除当前文件夹记录:从历史 + 扫描缓存清,回启动页(只清记录,不删文件)
-async function onRemoveCurrentRoot() {
-  const id = rootStore.currentRootId;
-  if (!id) {
-    toast.info('当前未打开文件夹');
-    return;
-  }
-  await handleStore.remove(id);
-  await clearScan(id);
-  rootStore.remove(id);
-  fsStore.rootFolder = null;
-  fsStore.currentFolder = null;
-  toast.success('已移除当前文件夹记录');
-}
 </script>
 
 <template>
@@ -281,9 +263,6 @@ async function onRemoveCurrentRoot() {
           </button>
           <button class="btn-block danger" @click="onClearAll">
             清空全部
-          </button>
-          <button class="btn-block danger" @click="onRemoveCurrentRoot">
-            移除当前文件夹
           </button>
         </div>
       </div>
