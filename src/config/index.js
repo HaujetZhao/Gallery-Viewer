@@ -31,6 +31,7 @@ export const CONFIG = {
     sidebarPinned: false,
     sidebarWidth: 280,
     theme: 'ocean',
+    cardStyle: 'hover', // 卡片信息显示样式:hover(悬停滑入)/always(常驻显示)。可扩展更多。
   },
   CACHE: { OLD_THRESHOLD_DAYS: 20, AUTO_CLEANUP_ENABLED: false },
 };

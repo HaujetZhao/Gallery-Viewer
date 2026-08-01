@@ -19,22 +19,78 @@ const sortField = computed(() => settings.settings.sortField);
 const sortAsc = computed(() => settings.settings.sortDirection === 'asc');
 const colCount = computed(() => settings.settings.columnCount);
 
-// 过滤 + 排序(用 debouncedTerm,避免每键全量重排)
-const displayFiles = computed(() => {
-  const files = fsStore.currentFolder?.files || [];
-  const term = debouncedTerm.value.toLowerCase();
-  let list = files.filter(f => f.path.toLowerCase().includes(term));
+// R8:会话内稳定排序。冻结序号 frozenOrder(Map<file, number>),displayFiles 按冻结序号排,
+// 不再读 live name/size/mtime → rename/delete/move/enrich 不再"飞走"。
+// 仅在 ①currentFolder 变(切走切回/点侧栏)②改排序方式 ③enrich 完成(size/date 沉淀) 时重冻。
+const frozenOrder = ref(new Map());
+let orderCounter = 0;
+const settled = ref(false); // 当前 folder 的 size/date 是否已按 enrich 结果重冻
+
+// 按当前排序键算有序列表(冻结时用;size/mtime 缺失兜底排末尾)
+function sortByKey(files) {
   const dir = sortAsc.value ? 1 : -1;
-  list = [...list].sort((a, b) => {
+  return [...files].sort((a, b) => {
     if (sortField.value === 'name')
       return windowsCompareStrings(a.name, b.name) * dir;
-    // enrich 前 size/lastModified undefined → 兜底排末尾(enrich 写 _meta 后响应式重排)
     if (sortField.value === 'size')
       return ((a.size ?? Infinity) - (b.size ?? Infinity)) * dir;
     return ((a.lastModified ?? Infinity) - (b.lastModified ?? Infinity)) * dir;
   });
-  return list;
+}
+
+// 重冻:按当前排序键给当前 folder 全部文件盖递增序号。
+function freeze() {
+  const files = fsStore.currentFolder?.files || [];
+  const m = new Map();
+  sortByKey(files).forEach((f, i) => m.set(f, i));
+  frozenOrder.value = m;
+  orderCounter = files.length;
+}
+
+// 当前 folder 是否全部 enrich 完成(size 就绪)。size/date 排序需待 enrich 后重冻一次。
+const allEnriched = computed(() => {
+  const files = fsStore.currentFolder?.files || [];
+  return files.length > 0 && files.every(f => f.size != null);
 });
+
+// 过滤 + 按 frozenOrder 稳定排序(用 debouncedTerm;过滤只隐藏、不改相对序)。
+const displayFiles = computed(() => {
+  const files = fsStore.currentFolder?.files || [];
+  const term = debouncedTerm.value.toLowerCase();
+  const order = frozenOrder.value;
+  return files
+    .filter(f => f.path.toLowerCase().includes(term))
+    .sort((a, b) => (order.get(a) ?? Infinity) - (order.get(b) ?? Infinity));
+});
+
+// 回写计数(搜索框 fixed 右上读)。computed 不应有副作用,用 watch 同步。
+watch(
+  [displayFiles, () => fsStore.currentFolder?.files],
+  ([list, files]) => {
+    filteredCount.value = list.length;
+    totalCount.value = (files || []).length;
+  },
+  { immediate: true },
+);
+
+// 会话内新进入文件(move-in / 后台扫描新增)→ 追加末尾序号,不触发整体重冻。
+watch(
+  () => fsStore.currentFolder?.files,
+  (files) => {
+    if (!files)
+      return;
+    const m = frozenOrder.value;
+    let changed = false;
+    for (const f of files) {
+      if (!m.has(f)) {
+        m.set(f, orderCounter++);
+        changed = true;
+      }
+    }
+    if (changed)
+      frozenOrder.value = new Map(m);
+  },
+);
 // 回写计数(搜索框 fixed 右上读)。computed 不应有副作用,用 watch 同步。
 watch(
   [displayFiles, () => fsStore.currentFolder?.files],
@@ -113,11 +169,31 @@ watch(
     unobserveAll();
     searchTerm.value = '';
     debouncedTerm.value = ''; // 立即清,不等 debounce
+    // R8:切走切回 / 点侧栏 → 重冻顺序(reset settled,等 enrich 完再沉一次 size/date)。
+    settled.value = false;
+    freeze();
     // 整页滚动:切换文件夹必须回顶。useWindowVirtualizer 按当前 scrollY 渲染可视行,
     // 不归零会停在旧文件夹的滚动位置 → 渲染新文件夹中间行(错位 + 转圈)。
     window.scrollTo(0, 0);
   },
 );
+
+// R8:改排序方式 → 立即重冻(reset settled,等 enrich 完再沉一次)。
+watch([sortField, sortAsc], () => {
+  settled.value = false;
+  freeze();
+});
+
+// R8:size/date 排序:enrich 完成后(_meta 补齐)重冻一次,之后冻结直到下一触发点。
+watch(allEnriched, (ok) => {
+  if (ok && !settled.value) {
+    freeze();
+    settled.value = true;
+  }
+});
+
+// R8:组件挂载时若已有 currentFolder,先冻一次(主界面带 folder 挂载场景)。
+freeze();
 onBeforeUnmount(() => {
   unobserveAll();
   ro?.disconnect();

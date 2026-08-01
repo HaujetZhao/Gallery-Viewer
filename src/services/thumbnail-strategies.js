@@ -234,6 +234,9 @@ export const ThumbnailStrategies = {
     },
 
     generateThumbnail: async (element, fileData, targetSize) => {
+      // 顺带抽 duration 存 _meta(镜像 video R11),供卡片右上 badge 显示音频时长。
+      if (fileData._meta && fileData._meta.duration == null && fileData.blobUrl)
+        await extractAudioDuration(fileData);
       try {
         const coverBlob = await extractAudioCover(fileData);
         if (coverBlob) {
@@ -305,6 +308,36 @@ export const ThumbnailStrategies = {
     }),
   },
 };
+
+// 抽取音频时长(创建 <audio preload=metadata> 读 duration),写回 fileData._meta.duration。
+// 4s 超时兜底(损坏文件/jsdom 不触发 loadedmetadata 也不卡住);镜像 video 抽帧时的时长提取。
+function extractAudioDuration(fileData) {
+  return new Promise((resolve) => {
+    const audio = document.createElement('audio');
+    audio.preload = 'metadata';
+    let done = false;
+    let timer = null;
+    function finish() {
+      if (done)
+        return;
+      done = true;
+      clearTimeout(timer);
+      audio.removeEventListener('loadedmetadata', onMeta);
+      audio.removeEventListener('error', finish);
+      audio.src = '';
+      resolve();
+    }
+    function onMeta() {
+      if (fileData._meta && fileData._meta.duration == null && Number.isFinite(audio.duration))
+        fileData._meta = { ...fileData._meta, duration: audio.duration };
+      finish();
+    }
+    audio.addEventListener('loadedmetadata', onMeta);
+    audio.addEventListener('error', finish);
+    timer = setTimeout(finish, 4000);
+    audio.src = fileData.blobUrl;
+  });
+}
 
 // 从音频文件(MP3 ID3v2 APIC 帧)提取封面图片。
 export async function extractAudioCover(fileData) {

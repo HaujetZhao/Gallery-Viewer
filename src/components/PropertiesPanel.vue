@@ -1,12 +1,14 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, nextTick, ref } from 'vue';
 import { buildGpsLinks, FormatDMS } from '../services/gps';
 import { formatDuration } from '../services/metadata';
+import { useNotesStore } from '../stores/notes';
 import { usePropertiesStore } from '../stores/properties';
 import { formatDate, formatFileSize } from '../utils/format';
 import RenameInput from './RenameInput.vue';
 
 const props2 = usePropertiesStore();
+const notes = useNotesStore();
 
 const EXIF_MAP = {
   Make: '制造商',
@@ -61,6 +63,30 @@ const gps = computed(() => buildGpsLinks(exif.value));
 const editing = ref(false);
 function startRename() {
   editing.value = true;
+}
+
+// R14:md5 备注内联编辑(textarea,失焦 / Ctrl+Enter 提交,Esc 取消)。md5 缺失只读 + 提示。
+const noteMd5 = computed(() => props2.file?.md5);
+const noteText = computed(() => (noteMd5.value ? notes.getNote(noteMd5.value) : ''));
+const noteEditing = ref(false);
+const noteDraft = ref('');
+const noteArea = ref(null);
+function startNoteEdit() {
+  if (!noteMd5.value)
+    return; // md5 未就绪 → 只读
+  noteDraft.value = noteText.value;
+  noteEditing.value = true;
+  nextTick(() => noteArea.value?.focus());
+}
+function submitNote() {
+  if (!noteEditing.value)
+    return;
+  noteEditing.value = false;
+  if (noteMd5.value)
+    notes.setNote(noteMd5.value, noteDraft.value);
+}
+function cancelNote() {
+  noteEditing.value = false;
 }
 
 function fmtExifVal(key, val, tags) {
@@ -160,6 +186,34 @@ const exifGroups = computed(() => {
                   </tr>
                   <tr><td>大小</td><td>{{ formatFileSize(props2.file.size) }}</td></tr>
                   <tr><td>修改时间</td><td>{{ formatDate(props2.file.lastModified) }}</td></tr>
+                  <!-- R14:md5 备注(内联编辑 textarea;md5 缺失只读 + 提示) -->
+                  <tr class="props-note-row">
+                    <td>备注</td>
+                    <td>
+                      <textarea
+                        v-if="noteEditing"
+                        ref="noteArea"
+                        v-model="noteDraft"
+                        class="props-note-input"
+                        rows="3"
+                        @blur="submitNote"
+                        @keydown.ctrl.enter.prevent="submitNote"
+                        @keydown.meta.enter.prevent="submitNote"
+                        @keydown.esc.prevent="cancelNote"
+                      />
+                      <span
+                        v-else-if="noteMd5"
+                        class="props-note-text"
+                        :class="{ 'is-empty': !noteText }"
+                        :title="noteText ? '点击编辑备注' : '点击添加备注'"
+                        @click="startNoteEdit"
+                      >
+                        <template v-if="noteText">{{ noteText }}</template>
+                        <i v-else class="fas fa-plus" /> <span class="props-note-ph">{{ noteText ? '' : '添加备注' }}</span>
+                      </span>
+                      <span v-else class="props-note-hint">需先加载文件(md5 就绪后可编辑)</span>
+                    </td>
+                  </tr>
                 </tbody>
               </table>
             </div>
@@ -216,6 +270,22 @@ const exifGroups = computed(() => {
 
 <style scoped>
 /* 属性面板(原 src/styles/properties.css,T14b 纯搬家,视觉零变化) */
+/* 遮罩层(原依赖全局 .modal,实际无全局规则 → 缺失 fixed/遮罩会排在 gallery 后)。
+   补 scoped .modal:满屏 fixed + 半透明遮罩 + flex 居中卡片(同 ConfirmDialog 套路)。 */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: var(--z-modal);
+}
+
 .properties-content {
     background: white;
     width: 90%;
@@ -486,5 +556,51 @@ const exifGroups = computed(() => {
 }
 .props-filename:hover .props-rename-icon {
   opacity: 1;
+}
+
+/* R14:备注内联编辑 */
+.props-note-row td {
+  vertical-align: top;
+}
+.props-note-input {
+  width: 100%;
+  min-height: 60px;
+  padding: 6px 8px;
+  border: 1px solid #3498db;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+  color: #333;
+  background: #fff;
+}
+.props-note-text {
+  cursor: pointer;
+  display: inline-block;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
+  padding: 2px 0;
+}
+.props-note-text.is-empty {
+  color: #aaa;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.props-note-ph {
+  font-size: 13px;
+}
+.props-note-hint {
+  color: #aaa;
+  font-size: 12px;
+}
+[data-theme="dark"] .props-note-input {
+  background: #2c3e50;
+  color: #ecf0f1;
+  border-color: #3498db;
+}
+[data-theme="dark"] .props-note-text.is-empty {
+  color: #7f8c8d;
 }
 </style>

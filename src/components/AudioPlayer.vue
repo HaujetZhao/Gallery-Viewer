@@ -1,10 +1,14 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, inject, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue';
 import { extractID3Tags } from '../services/id3-parser';
 import { extractAudioCover } from '../services/thumbnail-strategies';
 
 const props = defineProps({ file: { type: Object, required: true } });
 const emit = defineEmits(['prev', 'next']);
+
+// 注入 useModal 的媒体元素注册口:音频激活时把 <audio> 注册进 mediaElRef,
+// 供 ←/→ seek、空格 暂停统一处理(组件自注册,时序比父级读子 ref 稳)。
+const mediaApi = inject('modalMedia');
 
 const audioEl = ref(null);
 const progressBarEl = ref(null);
@@ -160,6 +164,17 @@ onMounted(() => {
   document.addEventListener('mouseup', onDragEnd);
   loadInfo();
   audioEl.value.play().catch(() => {}); // autoplay(浏览器策略可能拦,静默)
+  mediaApi?.setMediaEl(audioEl.value); // 注册 <audio> 给 useModal(seek/空格)
+});
+
+// R12 KeepAlive 协同:切走暂停、切回续播(对齐视频 onActivated/onDeactivated 行为;
+// 否则 modal 用 v-show+KeepAlive 后,切走/关掉音频会在后台继续响)。
+onActivated(() => {
+  mediaApi?.setMediaEl(audioEl.value); // 切回时重新注册(确保 mediaElRef 指向当前音频,而非上一个视频)
+  audioEl.value?.play().catch(() => {});
+});
+onDeactivated(() => {
+  audioEl.value?.pause();
 });
 
 onBeforeUnmount(() => {

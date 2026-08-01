@@ -359,6 +359,42 @@ describe('smartFolder 行为(addFile/removeFile/toggleExpanded)', () => {
     folder.toggleExpanded();
     expect(folder.expanded).toBe(false);
   });
+
+  // R10:三态展开循环(收起 → 单层 → 递归 → 收起)。
+  it('cycleExpand:收起→单层→递归→收起 三态循环', () => {
+    // root -> child(展开) -> grandchild(展开)
+    const root = new SmartFolder({ handle: { name: 'root' }, parent: null });
+    const child = new SmartFolder({ handle: { name: 'child' }, parent: root });
+    const grand = new SmartFolder({ handle: { name: 'grand' }, parent: child });
+    root.subFolders = [child];
+    child.subFolders = [grand];
+    root.expanded = false; // 初始:收起
+
+    // 收起 → 单层:自己展开,后代全收
+    root.cycleExpand();
+    expect(root.expanded).toBe(true);
+    expect(child.expanded).toBe(false);
+    expect(grand.expanded).toBe(false);
+
+    // 单层 → 递归:后代全展开
+    root.cycleExpand();
+    expect(root.expanded).toBe(true);
+    expect(child.expanded).toBe(true);
+    expect(grand.expanded).toBe(true);
+
+    // 递归 → 收起
+    root.cycleExpand();
+    expect(root.expanded).toBe(false);
+  });
+
+  it('cycleExpand:叶子文件夹无后代,只在 收起↔展开 间循环', () => {
+    const leaf = new SmartFolder({ handle: { name: 'leaf' }, parent: null });
+    leaf.expanded = false;
+    leaf.cycleExpand();
+    expect(leaf.expanded).toBe(true); // 无后代 → 直接到"递归态"
+    leaf.cycleExpand();
+    expect(leaf.expanded).toBe(false); // 递归 → 收起
+  });
 });
 
 // detectMetaChanges:读全部 getFile,size/mtime 变 → 更新 _meta + 清 md5(refreshFolder 既有内容变检测)。

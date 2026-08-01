@@ -1,6 +1,9 @@
 // Modal 交互 composable。搬自源码 js/modal.js 的手势/键盘/复制 + events.js 的翻页/视频键盘。
-// scale/translate 用 style 独立属性(源码如此,浏览器更优路径)。LRU 缓存推迟阶段10。
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+// scale/translate 用 style 独立属性(源码如此,浏览器更优路径)。
+// R12:DOM 缓存(KeepAlive)后,媒体渲染/加载状态(svgText/loading/fitted/imgSrc)下移到 MediaView;
+// useModal 只保留手势(挂 modalEl)+ 变换(scale/pointX)+ 键盘(翻页/视频/复制),并通过 mediaApi
+// 让 MediaView 在激活时注册当前媒体元素 + 触发图片 fit。
+import { nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { FileTypes } from '../config/file-types';
 import { CONFIG } from '../config/index';
 import { peek } from '../services/fileResource';
@@ -27,12 +30,6 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
   const pointX = ref(0);
   const pointY = ref(0);
   const minScale = ref(MIN_SCALE);
-  const isHoveringVideo = ref(false);
-  const loading = ref(false);
-  const svgText = ref('');
-  const fitted = ref(false); // T17:fit 完成前隐藏 img,避免巨大原图闪一下
-
-  const mediaKind = computed(() => (modal.currentFile ? getMediaKind(modal.currentFile.type) : null));
 
   // 拖拽临时状态(非响应式)
   let panning = false;
@@ -76,10 +73,9 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
     applyTransform();
   }
 
-  function onImgLoad() {
-    loading.value = false;
-    initializeMediaDisplay();
-    fitted.value = true; // fit 完成,可显示(避免 fit 前的巨大原图闪现)
+  // R12:MediaView 激活时调,注册当前媒体元素 + 重置变换(图片若已 loaded 顺带 fit)。
+  function setMediaEl(el) {
+    mediaElRef.value = el;
   }
 
   // ===== 滚轮缩放(以鼠标为中心 + 平移补偿) =====
@@ -230,21 +226,56 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
     if (tag === 'INPUT' || tag === 'TEXTAREA')
       return;
 
-    // 视频悬停:方向键快进退 + 空格暂停
-    if (isHoveringVideo.value) {
-      const video = mediaElRef.value;
-      if (video && video.tagName === 'VIDEO') {
-        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-          e.preventDefault();
+    // R7:↑/↓/PageUp/PageDown 无条件翻图(所有媒体)。PageUp/Down、方向键会触发页面滚动,preventDefault 拦之。
+    if (e.key === 'ArrowUp' || e.key === 'PageUp') {
+      e.preventDefault();
+      modal.prev();
+      return;
+    }
+    if (e.key === 'ArrowDown' || e.key === 'PageDown') {
+      e.preventDefault();
+      modal.next();
+      return;
+    }
+
+    // 视频音频:←/→ 调进度、空格 暂停/播放(不再切卡片)。mediaElRef 对视频/音频都注册了对应元素。
+    const kind = modal.currentFile ? getMediaKind(modal.currentFile.type) : null;
+    if (kind === 'video' || kind === 'audio') {
+      const el = mediaElRef.value;
+      // 视频:回车切换全屏播放。
+      if (kind === 'video' && e.key === 'Enter') {
+        e.preventDefault();
+        if (el) {
+          if (document.fullscreenElement)
+            document.exitFullscreen?.().catch?.(() => {});
+          else
+            el.requestFullscreen?.().catch?.(() => {});
+        }
+        return;
+      }
+      // 视频/音频:Home 跳开头、End 跳结尾。
+      if (e.key === 'Home' || e.key === 'End') {
+        e.preventDefault();
+        if (el)
+          el.currentTime = e.key === 'Home' ? 0 : (el.duration || 0);
+        return;
+      }
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        if (el) {
           const t = e.key === 'ArrowRight' ? 5 : -5;
-          video.currentTime = Math.max(0, Math.min(video.currentTime + t, video.duration));
-          return;
+          el.currentTime = Math.max(0, Math.min(el.currentTime + t, el.duration || Infinity));
         }
-        if (e.key === ' ' || e.key === 'Spacebar') {
-          e.preventDefault();
-          video.paused ? video.play() : video.pause();
+        return;
+      }
+      if ((e.key === ' ' || e.key === 'Spacebar')) {
+        // 焦点在按钮(如播放键)上时让原生点击生效,避免双触发。
+        if (tag === 'BUTTON')
           return;
-        }
+        e.preventDefault();
+        if (el)
+          el.paused ? el.play() : el.pause();
+        return;
       }
     }
 
@@ -253,7 +284,7 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
         modal.close();
         break;
       case 'ArrowRight':
-        modal.next();
+        modal.next(); // 仅图片(svg/image)到达此分支
         break;
       case 'ArrowLeft':
         modal.prev();
@@ -294,25 +325,6 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
     }
   }
 
-  // ===== SVG:读 File 文本 → innerHTML(与缩略图 svg 策略同机制)=====
-  async function loadSvg() {
-    if (mediaKind.value !== 'svg' || !modal.currentFile)
-      return;
-    try {
-      // peek 池里 File ?? handle.getFile() 兜底,不依赖 blobUrl。
-      // 切根 fromSnapshot 重建后池空、blobUrl=null,fetch(null) 静默失败 → SVG 大图空白;
-      // 用户点开时若 enrich 尚未 acquire,就会复现。File.text() 直接读,绕开 blobUrl。
-      const f = peek(modal.currentFile)?.file ?? await modal.currentFile.handle.getFile();
-      svgText.value = await f.text();
-    }
-    catch (e) {
-      console.warn('SVG 加载失败:', e);
-    }
-    finally {
-      loading.value = false; // svg 走 v-html 无 onImgLoad,读完即视为加载完(否则转圈常驻)
-    }
-  }
-
   // ===== 事件挂载:必须在 modal 显示后(modalEl 已渲染)挂,不能在 onMounted 挂 =====
   // (初始 isOpen=false,modal v-if 不渲染,modalEl.value 为 null)
   function attachGestures() {
@@ -341,34 +353,13 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
     window.removeEventListener('mouseup', onMouseUp);
   }
 
-  // 切换文件:重置变换 + 按需加载 svg。
-  // resetTransform 延迟到 nextTick(新元素已渲染),避免在旧元素上执行导致旧图闪到 scale=1。
-  watch(
-    () => modal.currentFile,
-    (f) => {
-      if (!f)
-        return;
-      loading.value = mediaKind.value !== 'audio';
-      fitted.value = false; // 切换/打开新图:先隐藏,等 onImgLoad fit 完再显
-      svgText.value = '';
-      isHoveringVideo.value = false;
-      if (mediaKind.value === 'svg')
-        loadSvg();
-      nextTick(() => resetTransform());
-    },
-  );
-
   // isOpen 变化:open 时 nextTick 挂事件(modalEl 此时已渲染),close 时卸。
   watch(
     () => modal.isOpen,
     (open) => {
       if (open) {
         window.addEventListener('keydown', onKeydown);
-        nextTick(() => {
-          resetTransform();
-          attachGestures();
-        });
-        fitted.value = false; // 首次打开也先隐藏,等 load+fit
+        nextTick(() => attachGestures());
       }
       else {
         window.removeEventListener('keydown', onKeydown);
@@ -387,15 +378,10 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
     pointX,
     pointY,
     minScale,
-    isHoveringVideo,
-    loading,
-    svgText,
-    fitted,
-    mediaKind,
     applyTransform,
     resetTransform,
     initializeMediaDisplay,
-    onImgLoad,
+    setMediaEl,
     copyCurrent,
   };
 }

@@ -1,5 +1,5 @@
 <script setup>
-import { nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useOverlay } from '../composables/useOverlay';
 import { useStorageEstimate } from '../composables/useStorageEstimate';
 import { cleanOldCache, clearAllCache } from '../services/db';
@@ -86,23 +86,45 @@ onBeforeUnmount(() => {
 // 控件(本地 ref + change 提交 userSettings)
 const sortField = ref(settings.settings.sortField);
 const sortAsc = ref(settings.settings.sortDirection === 'asc');
+// 排序分段选项:第一段字段、第二段升降序。
+const sortFieldOptions = [
+  { value: 'name', label: '名称' },
+  { value: 'size', label: '大小' },
+  { value: 'date', label: '时间' },
+];
+const sortDirOptions = [
+  { value: 'desc', icon: 'fas fa-arrow-up-wide-short', title: '降序' },
+  { value: 'asc', icon: 'fas fa-arrow-down-short-wide', title: '升序' },
+];
+const sortDir = computed(() => (sortAsc.value ? 'asc' : 'desc'));
+function setSortField(v) {
+  sortField.value = v;
+  settings.set('sortField', v);
+}
+function setSortDir(v) {
+  sortAsc.value = v === 'asc';
+  settings.set('sortDirection', v);
+}
 const colCount = ref(settings.settings.columnCount);
 const thumbnailSize = ref(settings.settings.thumbnailSize);
+const cardStyle = ref(settings.settings.cardStyle);
 const scrollZoneEnabled = ref(settings.settings.scrollZoneEnabled);
 const scrollSpeed = ref(settings.settings.scrollSpeed);
 
-function commitSort() {
-  settings.set('sortField', sortField.value);
-}
-function toggleSort() {
-  sortAsc.value = !sortAsc.value;
-  settings.set('sortDirection', sortAsc.value ? 'asc' : 'desc');
-}
 function commitCol() {
   settings.set('columnCount', Number(colCount.value));
 }
 function commitThumb() {
   settings.set('thumbnailSize', Number(thumbnailSize.value));
+}
+// 卡片样式选项(分段按钮组,互斥;后续加新样式只需往这里加一项)。
+const cardStyleOptions = [
+  { value: 'hover', label: '悬停显示' },
+  { value: 'always', label: '常驻显示' },
+];
+function setCardStyle(v) {
+  cardStyle.value = v;
+  settings.set('cardStyle', v);
 }
 function toggleScrollZone() {
   scrollZoneEnabled.value = !scrollZoneEnabled.value;
@@ -182,21 +204,30 @@ async function onClearAll() {
 
         <div class="setting-item">
           <label>排序方式</label>
-          <div style="display: flex; align-items: center; gap: 10px; flex: 1;">
-            <select v-model="sortField" style="flex: 1;" @change="commitSort">
-              <option value="name">
-                文件名
-              </option>
-              <option value="size">
-                文件大小
-              </option>
-              <option value="date">
-                修改日期
-              </option>
-            </select>
-            <button class="btn-small" :title="sortAsc ? '升序' : '降序'" @click="toggleSort">
-              <i :class="sortAsc ? 'fas fa-arrow-down-short-wide' : 'fas fa-arrow-up-wide-short'" />
-            </button>
+          <div class="sort-seg-row">
+            <div class="seg-group sort-field-group">
+              <button
+                v-for="opt in sortFieldOptions"
+                :key="opt.value"
+                class="seg-btn"
+                :class="{ active: sortField === opt.value }"
+                @click="setSortField(opt.value)"
+              >
+                {{ opt.label }}
+              </button>
+            </div>
+            <div class="seg-group sort-dir-group">
+              <button
+                v-for="opt in sortDirOptions"
+                :key="opt.value"
+                class="seg-btn"
+                :class="{ active: sortDir === opt.value }"
+                :title="opt.title"
+                @click="setSortDir(opt.value)"
+              >
+                <i :class="opt.icon" />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -226,6 +257,21 @@ async function onClearAll() {
             @change="commitSpeed"
           >
           <span>{{ scrollSpeed.toFixed(1) }}</span>
+        </div>
+
+        <div class="setting-item">
+          <label>卡片样式</label>
+          <div class="seg-group">
+            <button
+              v-for="opt in cardStyleOptions"
+              :key="opt.value"
+              class="seg-btn"
+              :class="{ active: cardStyle === opt.value }"
+              @click="setCardStyle(opt.value)"
+            >
+              {{ opt.label }}
+            </button>
+          </div>
         </div>
 
         <div class="separator" />
@@ -439,6 +485,63 @@ async function onClearAll() {
 .setting-item label[inactive] {
     color: #95a5a6;
     opacity: 0.7;
+}
+
+/* 分段按钮组(互斥档位,如风扇低/中/高档):点一个生效、其余弹起。卡片样式等少量枚举选项用。 */
+/* 排序:两段并排——字段组(3 档,占宽多)+ 升降序组(2 档) */
+.sort-seg-row {
+    display: flex;
+    gap: 8px;
+    flex: 1;
+}
+
+.seg-group.sort-field-group {
+    flex: 1; /* 字段段占剩余空间(文字需要宽度) */
+}
+
+.seg-group.sort-dir-group {
+    flex: 0 0 auto; /* 升降序段按内容宽度(图标,不需要多宽);组合选择器提特异性,盖过 .seg-group{flex:1} */
+}
+
+.seg-group.sort-dir-group .seg-btn {
+    padding: 7px 9px;
+    min-width: 30px;
+}
+
+.seg-group {
+    flex: 1;
+    display: flex;
+    border: 1px solid var(--color-gray-300);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.seg-btn {
+    flex: 1;
+    padding: 7px 4px;
+    border: none;
+    border-right: 1px solid var(--color-gray-300);
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.seg-btn:last-child {
+    border-right: none;
+}
+
+.seg-btn:hover {
+    background: var(--bg-secondary);
+}
+
+.seg-btn.active {
+    background: #2C3E50;
+    color: #fff;
+    box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.25);
 }
 
 .btn-small {

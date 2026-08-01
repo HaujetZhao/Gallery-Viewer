@@ -77,7 +77,7 @@ export async function generateThumbnail(file, canvas, targetSize = 400) {
       blob,
     });
   }
-  if (strategy.name === 'video' && file.duration != null && file.duration !== beforeDuration)
+  if ((strategy.name === 'video' || strategy.name === 'audio') && file.duration != null && file.duration !== beforeDuration)
     afterTreeMutation(useRootStore().currentRootId);
   return { cached: false, strategyName: strategy.name };
 }

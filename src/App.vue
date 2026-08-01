@@ -20,6 +20,7 @@ import { useFavoritesStore } from './stores/favorites';
 import { useFsStore } from './stores/fs';
 import { useHistoryStore } from './stores/history';
 import { useModalStore } from './stores/modal';
+import { useNotesStore } from './stores/notes';
 import { useRootStore } from './stores/root';
 import { useThemeStore } from './stores/theme';
 import { useToastStore } from './stores/uiToast';
@@ -34,6 +35,7 @@ const settings = useUserSettingsStore();
 const toast = useToastStore();
 const history = useHistoryStore();
 const favorites = useFavoritesStore();
+const notes = useNotesStore();
 const modal = useModalStore();
 const { searchTerm, filteredCount, totalCount } = useGallerySearch();
 
@@ -63,6 +65,7 @@ const browserSupported = isFileSystemAccessSupported();
 const sidebarEl = ref(null);
 const settingsBtnEl = ref(null);
 const filterEl = ref(null);
+const searchInputEl = ref(null);
 // 待恢复:{ id, name } 权限需用户手势重新授权时,启动页显示"打开上次"按钮
 const restorableHandle = ref(null);
 useScrollZone([sidebarEl, settingsBtnEl, filterEl]);
@@ -76,6 +79,7 @@ onMounted(async () => {
     console.warn('initDB 失败:', e);
   }
   favorites.load(); // R6:启动加载收藏集(不阻塞,无句柄依赖)
+  notes.load(); // R14:启动加载备注(md5→文本,不阻塞)
   document.addEventListener('keydown', onKeydown);
   document.addEventListener('visibilitychange', onVisibilityChange);
   await tryRestoreFolder();
@@ -136,6 +140,14 @@ function onKeydown(e) {
   if (isCtrl && key === 'o') {
     e.preventDefault();
     open();
+  }
+  else if (isCtrl && key === 'f') {
+    // Ctrl+F:聚焦右上角搜索框(拦掉浏览器原生查找)。
+    if (searchInputEl.value) {
+      e.preventDefault();
+      searchInputEl.value.focus();
+      searchInputEl.value.select?.();
+    }
   }
   else if (isCtrl && key === 'z') {
     e.preventDefault();
@@ -239,7 +251,7 @@ function onVisibilityChange() {
     </button>
 
     <div v-if="fsStore.currentFolder" ref="filterEl" class="filter-container">
-      <input v-model="searchTerm" type="text" placeholder="搜索文件名...">
+      <input ref="searchInputEl" v-model="searchTerm" type="text" placeholder="搜索文件名...">
       <div class="filter-count">
         {{ filteredCount }}/{{ totalCount }}
       </div>

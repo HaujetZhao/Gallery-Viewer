@@ -1,11 +1,13 @@
 <script setup>
-import { ref } from 'vue';
-import { collectAllFiles } from '../models/SmartFolder';
+import { computed, ref } from 'vue';
+import { collectAllFiles, getExpandState } from '../models/SmartFolder';
 import { handleDeleteFolder } from '../services/fileOps';
 import { handleFolderClick } from '../services/folderActions';
+import { afterTreeMutation } from '../services/persistence';
 import { useContextMenuStore } from '../stores/contextMenu';
 import { useFsStore } from '../stores/fs';
 import { useHistoryStore } from '../stores/history';
+import { useRootStore } from '../stores/root';
 import { useToastStore } from '../stores/uiToast';
 
 defineOptions({ name: 'SidebarTreeItem' });
@@ -21,12 +23,23 @@ const history = useHistoryStore();
 const toast = useToastStore();
 const dragOver = ref(false);
 
+// R10:三态图标(收起 fa-folder / 单层 fa-folder-open / 递归 fa-folder-tree)。
+const folderIcon = computed(() => {
+  switch (getExpandState(props.folder)) {
+    case 'recursive': return 'fas fa-folder-tree';
+    case 'single': return 'fas fa-folder-open';
+    default: return 'fas fa-folder';
+  }
+});
+
 async function onClick() {
   await handleFolderClick(props.folder);
 }
+// R10:图标点击三态循环(收起→单层→递归→收起),改树后置脏持久化。
 function toggle(e) {
   e.stopPropagation();
-  props.folder.toggleExpanded();
+  props.folder.cycleExpand();
+  afterTreeMutation(useRootStore().currentRootId);
 }
 
 function onContextmenu(e) {
@@ -91,7 +104,7 @@ function findFileByPath(path) {
     @drop="onDrop"
   >
     <i
-      :class="folder.expanded ? 'fas fa-folder-open' : 'fas fa-folder'"
+      :class="folderIcon"
       @click="toggle"
     />
     <span class="tree-node-name">{{ folder.name }}</span>

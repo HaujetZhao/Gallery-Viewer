@@ -61,6 +61,7 @@ function cancel() {
     ref="inputEl"
     v-model="draftName"
     class="renaming-input"
+    @keydown.stop
     @keyup.enter="commit"
     @keyup.esc="cancel"
     @blur="commit"

@@ -68,6 +68,24 @@ export class SmartFolder {
     this.expanded = !this.expanded;
   }
 
+  // R10:三态展开循环(收起 → 单层 → 递归 → 收起)。
+  // 收起=!expanded;单层=expanded 且存在未展开后代;递归=expanded 且所有后代都 expanded(无后代→递归态,叶子只在 收起↔递归 间循环)。
+  cycleExpand() {
+    if (!this.expanded) {
+      // 收起 → 单层:展开自己,强制后代全收(只看一层)
+      this.expanded = true;
+      setDescendantsExpanded(this, false);
+    }
+    else if (!allDescendantsExpanded(this)) {
+      // 单层 → 递归:后代全展开
+      setDescendantsExpanded(this, true);
+    }
+    else {
+      // 递归 → 收起
+      this.expanded = false;
+    }
+  }
+
   async delete() {
     if (!this.parent || !this.parent.handle)
       throw new Error('无法删除根目录或缺少父级引用');
@@ -99,7 +117,30 @@ export class SmartFolder {
   }
 }
 
-// ===== 模块级纯算法(scan/enrich/snapshot/find/collect/count/dispose/validate);对象行为(toggleExpanded/delete/addFile/removeFile)回 class =====
+// ===== 模块级纯算法(scan/enrich/snapshot/find/collect/count/dispose/validate);对象行为(toggleExpanded/cycleExpand/delete/addFile/removeFile)回 class =====
+
+// R10 三态展开辅助:递归设所有后代 expanded。
+function setDescendantsExpanded(folder, value) {
+  for (const sub of folder.subFolders) {
+    sub.expanded = value;
+    setDescendantsExpanded(sub, value);
+  }
+}
+// R10:所有后代都 expanded(无后代→true,叶子判定为递归态)。
+function allDescendantsExpanded(folder) {
+  for (const sub of folder.subFolders) {
+    if (!sub.expanded || !allDescendantsExpanded(sub))
+      return false;
+  }
+  return true;
+}
+
+// R10:导出供 UI 判定三态图标用(收起/单层/递归)。
+export function getExpandState(folder) {
+  if (!folder.expanded)
+    return 'collapsed';
+  return allDescendantsExpanded(folder) ? 'recursive' : 'single';
+}
 
 // 递归计数整树文件(不分配数组)。persistIfDirty 算 fileCount 用——
 // 原 getAllFiles().length 为取一个数字分配万级数组(O(N) 内存)。

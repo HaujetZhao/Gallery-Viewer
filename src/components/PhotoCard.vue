@@ -6,6 +6,9 @@ import { useThumbnail } from '../composables/useThumbnail';
 import { getThumbnailStrategy } from '../services/thumbnail-strategies';
 import { useContextMenuStore } from '../stores/contextMenu';
 import { useFavoritesStore } from '../stores/favorites';
+import { useModalStore } from '../stores/modal';
+import { useNotesStore } from '../stores/notes';
+import { useUserSettingsStore } from '../stores/userSettings';
 import { formatDate, formatDuration, formatFileSize } from '../utils/format';
 import RenameInput from './RenameInput.vue';
 
@@ -15,9 +18,21 @@ const props = defineProps({
 });
 const emit = defineEmits(['click']);
 
+const settings = useUserSettingsStore();
+// 卡片信息显示样式(hover/always/...),根元素挂 card-style-<style> class,CSS 据此控制信息条显隐。
+const cardStyleClass = computed(() => `card-style-${settings.settings.cardStyle || 'hover'}`);
+
 const strategy = computed(() => getThumbnailStrategy(props.file.type));
 const badge = computed(() => strategy.value.getCardBadge());
 const isCanvas = computed(() => ['image', 'video', 'audio'].includes(strategy.value.name));
+
+// 视频/音频:右上 badge 文本显示时长(替代原 'VIDEO'/'AUDIO' 字样),与图标共存,免左下角再叠一个时长。
+const badgeText = computed(() => {
+  const name = strategy.value.name;
+  if (name === 'video' || name === 'audio')
+    return props.file.duration ? formatDuration(props.file.duration) : '';
+  return badge.value?.text ?? '';
+});
 
 // R6:收藏爱心。md5 未算(null)按未收藏且不显示爱心;favorited 依赖 favorites Set(整体替换响应式)。
 const favorites = useFavoritesStore();
@@ -28,10 +43,9 @@ function onToggleFav() {
     favorites.toggle(props.file.md5);
 }
 
-// R11:视频时长(从 _meta.duration 读,视窗抽帧时顺带抽取并持久化)。M:SS / H:MM:SS。
-const durationText = computed(() =>
-  strategy.value.name === 'video' && props.file.duration ? formatDuration(props.file.duration) : '',
-);
+// R14:md5 备注。仅当 md5 有备注时,hover 在缩略图中央叠一层备注(CSS 控制显隐,无需算坐标)。
+const notes = useNotesStore();
+const noteText = computed(() => notes.getNote(props.file.md5));
 
 const mediaEl = ref(null);
 const { loaded, loading } = useThumbnail(mediaEl, props.file, props.targetSize);
@@ -65,8 +79,12 @@ function onDragstart(e) {
   dt.effectAllowed = 'all';
 }
 
-// click + 键盘(Enter/Space)共用
+// click + 键盘(Enter/Space)共用。
+// modal 已打开时(焦点可能还停在背后这张卡片上),键盘不再重开 modal——否则空格/回车会把
+// 这张卡片重新 open 到前台,顶掉当前正在看的媒体(也会让 modal 的空格=暂停 失效)。
 function openPreview() {
+  if (useModalStore().isOpen)
+    return;
   emit('click');
 }
 </script>
@@ -74,10 +92,11 @@ function openPreview() {
 <template>
   <div
     class="photo-card"
+    :class="[cardStyleClass, { renaming: editing }]"
     tabindex="0"
     role="button"
     :aria-label="`查看 ${file.name}`"
-    draggable="true"
+    :draggable="!editing"
     @click="openPreview"
     @keydown.enter="openPreview"
     @keydown.space.prevent="openPreview"
@@ -111,12 +130,7 @@ function openPreview() {
       </div>
 
       <div v-if="badge" class="media-badge" :class="badge.className">
-        <i class="fas" :class="badge.icon" /> {{ badge.text }}
-      </div>
-
-      <!-- R11:视频时长(左下角) -->
-      <div v-if="durationText" class="duration-badge">
-        <i class="fas fa-clock" /> {{ durationText }}
+        <i class="fas" :class="badge.icon" /> {{ badgeText }}
       </div>
 
       <!-- R6:收藏爱心(左上角)。已收藏常显实心;未收藏 hover 显空心;md5 未算不显示。@click.stop 防冒泡开 modal -->
@@ -129,6 +143,11 @@ function openPreview() {
       >
         <i :class="favorited ? 'fas fa-heart' : 'far fa-heart'" />
       </button>
+
+      <!-- R14:md5 备注 hover 时叠在缩略图中央(CSS 控制显隐) -->
+      <div v-if="noteText" class="note-overlay">
+        <pre>{{ noteText }}</pre>
+      </div>
     </div>
 
     <div class="card-info-filename">
@@ -278,27 +297,6 @@ function openPreview() {
     background: rgba(103, 58, 183, 0.9);
 }
 
-/* R11:视频时长(左下角) */
-.duration-badge {
-    position: absolute;
-    bottom: 8px;
-    left: 8px;
-    padding: 3px 7px;
-    border-radius: 4px;
-    font-size: 11px;
-    font-weight: 600;
-    color: #fff;
-    background: rgba(0, 0, 0, 0.6);
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    z-index: 3;
-    pointer-events: none;
-}
-.duration-badge i {
-    font-size: 9px;
-}
-
 /* R6:收藏爱心(左上角)。已收藏常显实心红;未收藏透明、卡片 hover 显空心。
    hover 时与 Video 角标同步 translateY(100%) 下移,给顶部 hover 下滑的文件大小/日期让位,不重叠。 */
 .fav-btn {
@@ -400,6 +398,24 @@ function openPreview() {
     transform: translateY(0);
 }
 
+/* 卡片信息显示样式(由设置 cardStyle 控制,根元素挂 card-style-<style>):
+   - hover(默认):上下信息条 hover 滑入、移开隐藏。
+   - always:上下信息条常驻显示;右上 badge 与左上爱心也常驻在"被推挤下来"的位置(爱心并常显)。
+     后续新增样式在此扩展。 */
+.photo-card.card-style-always .card-info-filename,
+.photo-card.card-style-always .card-info-meta {
+    transform: translateY(0);
+}
+
+.photo-card.card-style-always .media-badge {
+    transform: translateY(100%);
+}
+
+.photo-card.card-style-always .fav-btn {
+    opacity: 1;
+    transform: translateY(100%);
+}
+
 .file-name {
     font-weight: 600;
     color: #ffffff;
@@ -429,5 +445,42 @@ function openPreview() {
 .file-date i {
     color: #ffffff;
     font-size: 10px;
+}
+
+/* R14:md5 备注 hover 时居中显示——文字背后一块半透明圆角"药丸",不遮整张图。
+   .note-overlay 是透明 flex 居中容器(无背景),<pre> 本身是药丸。 */
+.note-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px;
+    opacity: 0;
+    transition: opacity 0.18s ease;
+    pointer-events: none;
+}
+
+.photo-card:hover .note-overlay {
+    opacity: 1;
+}
+
+.note-overlay pre {
+    margin: 0;
+    max-width: 100%;
+    max-height: 100%;
+    overflow: hidden;
+    padding: 8px 14px;
+    background: rgba(0, 0, 0, 0.6);
+    border-radius: 10px;
+    color: #fff;
+    text-align: center;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: inherit;
+    font-size: 12px;
+    line-height: 1.45;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 </style>
