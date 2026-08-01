@@ -10,7 +10,7 @@ import SettingsPanel from './components/SettingsPanel.vue';
 import Sidebar from './components/Sidebar.vue';
 import Toast from './components/Toast.vue';
 import { useGallerySearch } from './composables/useGallerySearch';
-import { hoveredFile } from './composables/useHoveredFile';
+import { hoveredFile, requestRename } from './composables/useHoveredFile';
 import { useScrollZone } from './composables/useScrollZone';
 import { initDB } from './services/db';
 import { openFolderPicker, switchToRoot } from './services/folderActions';
@@ -134,6 +134,14 @@ function onKeydown(e) {
     if (f?.md5) {
       e.preventDefault();
       favorites.toggle(f.md5);
+    }
+    return;
+  }
+  // F2:重命名。modal 未开 → 重命名 hover 的卡片(modal 打开时此分支不接,留给 modal 内处理)。
+  if (!isCtrl && key === 'f2') {
+    if (!modal.isOpen && hoveredFile.value) {
+      e.preventDefault();
+      requestRename();
     }
     return;
   }

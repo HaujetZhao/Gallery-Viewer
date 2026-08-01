@@ -7,7 +7,7 @@ import { useFsStore } from '../stores/fs';
 import { useModalStore } from '../stores/modal';
 import { useUserSettingsStore } from '../stores/userSettings';
 import { windowsCompareStrings } from '../utils/format';
-import { chunkRows, computeRowHeight } from '../utils/gallery-layout';
+import { chunkRows, computeRowHeight, DETAIL_INFO_HEIGHT } from '../utils/gallery-layout';
 import PhotoCard from './PhotoCard.vue';
 
 const fsStore = useFsStore();
@@ -130,7 +130,10 @@ function measureRowHeight() {
   const el = gridRef.value;
   if (!el)
     return;
-  rowHeight.value = computeRowHeight(el.clientWidth, colCount.value, currentGap());
+  // detail 样式卡内多了图下方信息区(固定 DETAIL_INFO_HEIGHT),行高随之增大,否则虚拟化行错位。
+  const cardStyle = settings.settings.cardStyle;
+  const extraPerCard = cardStyle === 'detail' ? DETAIL_INFO_HEIGHT : 0;
+  rowHeight.value = computeRowHeight(el.clientWidth, colCount.value, currentGap(), extraPerCard);
 }
 
 let ro = null;
@@ -145,6 +148,8 @@ watch(gridRef, (el) => {
 });
 // 列数变化(宽度不变但列宽变)也要重测
 watch(colCount, () => measureRowHeight());
+// 卡片样式变化(detail 多出信息区高度)也要重测
+watch(() => settings.settings.cardStyle, () => measureRowHeight());
 
 const rerunKey = ref(0);
 watch(

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chunkRows, computeRowHeight } from './gallery-layout';
+import { chunkRows, computeRowHeight, DETAIL_INFO_HEIGHT } from './gallery-layout';
 
 describe('chunkRows', () => {
   it('空数组返回空', () => {
@@ -33,5 +33,12 @@ describe('computeRowHeight', () => {
   });
   it('colCount<=0 → 0', () => {
     expect(computeRowHeight(1000, 0, 15)).toBe(0);
+  });
+  it('extraPerCard 默认 0(三参调用回归)', () => {
+    expect(computeRowHeight(1000, 4, 15)).toBeCloseTo(253.75, 5);
+  });
+  it('detail 样式:行高 = 列宽 + DETAIL_INFO_HEIGHT + gap', () => {
+    // 列宽 = 238.75;行高 = 238.75 + 46 + 15 = 299.75
+    expect(computeRowHeight(1000, 4, 15, DETAIL_INFO_HEIGHT)).toBeCloseTo(238.75 + DETAIL_INFO_HEIGHT + 15, 5);
   });
 });

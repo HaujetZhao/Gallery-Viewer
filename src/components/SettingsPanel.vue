@@ -121,6 +121,7 @@ function commitThumb() {
 const cardStyleOptions = [
   { value: 'hover', label: '悬停显示' },
   { value: 'always', label: '常驻显示' },
+  { value: 'detail', label: '信息卡片' },
 ];
 function setCardStyle(v) {
   cardStyle.value = v;

@@ -1,7 +1,7 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useFileActions } from '../composables/useFileActions';
-import { hoveredFile } from '../composables/useHoveredFile';
+import { hoveredFile, renameTick } from '../composables/useHoveredFile';
 import { useThumbnail } from '../composables/useThumbnail';
 import { getThumbnailStrategy } from '../services/thumbnail-strategies';
 import { useContextMenuStore } from '../stores/contextMenu';
@@ -57,6 +57,12 @@ const editing = ref(false);
 function startRename() {
   editing.value = true;
 }
+
+// F2 重命名:App 全局 F2 → requestRename bump;仅 hover 中的这张卡响应(modal 打开时 App 不 bump)。
+watch(renameTick, () => {
+  if (hoveredFile.value === props.file && !editing.value)
+    startRename();
+});
 
 // 统一文件右键菜单(属性/重命名/删除);重命名回调触发本组件显示 RenameInput
 const { fileMenu } = useFileActions(startRename);
@@ -260,10 +266,11 @@ function openPreview() {
     display: none !important;
 }
 
-/* 媒体类型标识 */
+/* 媒体类型/时长标识:常驻缩略图右下角;hover 时文件名条从底部滑入,badge 同步上移避让。
+   z-index 高于文件名条。 */
 .media-badge {
     position: absolute;
-    top: calc(8px);
+    bottom: 8px;
     right: 8px;
     padding: 4px 8px;
     border-radius: 4px;
@@ -277,12 +284,12 @@ function openPreview() {
     backdrop-filter: blur(4px);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
     transition: transform 0.3s ease;
-    /* transform: translateY(-100%); */
 }
-
+/* hover/renaming/always:文件名条占住底部,badge 上移到其上方。ponytail: 30px 按文件名条高度(~25px)校准。 */
 .photo-card:hover .media-badge,
-.photo-card.renaming .media-badge {
-    transform: translateY(100%);
+.photo-card.renaming .media-badge,
+.photo-card.card-style-always .media-badge {
+    transform: translateY(-30px);
 }
 
 .badge-gif {
@@ -297,7 +304,7 @@ function openPreview() {
     background: rgba(103, 58, 183, 0.9);
 }
 
-/* R6:收藏爱心(左上角)。已收藏常显实心红;未收藏透明、卡片 hover 显空心。
+/* R6:收藏爱心(左上角)。未收藏不显示;已收藏常显实心红、无背景。
    hover 时与 Video 角标同步 translateY(100%) 下移,给顶部 hover 下滑的文件大小/日期让位,不重叠。 */
 .fav-btn {
     position: absolute;
@@ -310,26 +317,32 @@ function openPreview() {
     justify-content: center;
     border: none;
     border-radius: 50%;
-    background: rgba(0, 0, 0, 0.45);
-    color: #fff;
+    background: transparent;
+    color: #ff4d6d;
     cursor: pointer;
     z-index: 4;
     opacity: 0;
     padding: 0;
-    transition: opacity 0.2s ease, transform 0.3s ease, background 0.2s ease;
+    transition: opacity 0.2s ease, transform 0.3s ease;
 }
+/* 未收藏不显示,也不拦截点击(避免透明按钮挡着点图开 modal)。收藏走 modal 的 L 键 / 右键菜单。 */
+.fav-btn:not(.favorited) {
+    pointer-events: none;
+}
+/* hover 下移(与 badge 同步);未收藏不再显现(沿用 opacity:0) */
 .photo-card:hover .fav-btn {
-    opacity: 1;
     transform: translateY(100%);
 }
 .photo-card:hover .fav-btn:hover {
-    background: rgba(0, 0, 0, 0.65);
     transform: translateY(100%) scale(1.15);
 }
 .fav-btn.favorited {
     opacity: 1;
-    color: #ff4d6d;
-    background: rgba(0, 0, 0, 0.55);
+}
+
+/* 红心无背景,在浅色/亮图上靠单向落影增对比:filter drop-shadow 跟随字形 alpha(比 text-shadow 更贴形)。 */
+.fav-btn i {
+    filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.7));
 }
 
 /* SVG 缩略图:inline 注入(thumbnail-strategies fetch+innerHTML,与 modal 同机制);
@@ -401,19 +414,74 @@ function openPreview() {
 /* 卡片信息显示样式(由设置 cardStyle 控制,根元素挂 card-style-<style>):
    - hover(默认):上下信息条 hover 滑入、移开隐藏。
    - always:上下信息条常驻显示;右上 badge 与左上爱心也常驻在"被推挤下来"的位置(爱心并常显)。
+   - detail:上图下信息整卡——信息条从绝对叠层重排为图下方正常流(文件名+大小日期两行),
+     同卡背景一体式圆角块;badge/爱心撤销 hover 下移、常驻图上原位;备注 hover 胶囊保留。
+     信息区固定高度,与 gallery-layout.DETAIL_INFO_HEIGHT 对齐(改这里要同步改那个常量)。
      后续新增样式在此扩展。 */
 .photo-card.card-style-always .card-info-filename,
 .photo-card.card-style-always .card-info-meta {
     transform: translateY(0);
 }
 
-.photo-card.card-style-always .media-badge {
+.photo-card.card-style-always .fav-btn.favorited {
+    opacity: 1;
     transform: translateY(100%);
 }
 
-.photo-card.card-style-always .fav-btn {
-    opacity: 1;
-    transform: translateY(100%);
+/* —— detail:上图下信息整卡 —— */
+/* 信息块从绝对叠层重排为图下方正常流;去渐变背景(继承卡 bg-primary),整卡一个圆角块。
+   关掉 transform 过渡——hover/always 靠它做滑入,但 detail 信息区常驻,留着会在切换样式时
+   播一段从 translateY(±100%) 归位的交错位移动画,违和。 */
+.photo-card.card-style-detail .card-info-filename,
+.photo-card.card-style-detail .card-info-meta {
+    position: static;
+    transform: none;
+    background: none;
+    color: var(--text-primary);
+    z-index: auto;
+    transition: none;
+}
+
+.photo-card.card-style-detail .card-info-filename {
+    padding: 5px 10px 0;
+    min-height: 0;
+    justify-content: flex-start;
+}
+
+.photo-card.card-style-detail .card-info-meta {
+    padding: 3px 10px 7px;
+}
+
+/* meta 子元素原为白色(叠在图上渐变层时用);detail 下信息区在卡背景上,改主题次级文字色。 */
+.photo-card.card-style-detail .card-info-meta .file-meta,
+.photo-card.card-style-detail .card-info-meta .file-size,
+.photo-card.card-style-detail .card-info-meta .file-date,
+.photo-card.card-style-detail .card-info-meta .file-size i,
+.photo-card.card-style-detail .card-info-meta .file-date i {
+    color: var(--text-secondary);
+}
+
+/* 文件名左对齐单行省略(detail 信息区第一行) */
+.photo-card.card-style-detail .card-info-filename .file-name {
+    text-align: left;
+    font-size: 13px;
+    color: var(--text-primary);
+}
+
+/* detail:信息区在图外(下方独立区),badge 在图右下不与信息区重叠,保持原位不上移。 */
+.photo-card.card-style-detail .media-badge,
+.photo-card.card-style-detail:hover .media-badge {
+    transform: none;
+}
+
+/* detail 下爱心原位不下移(无顶部叠层让位);显隐走默认——未收藏隐藏、卡片 hover 显空心,已收藏常显实心。 */
+.photo-card.card-style-detail .fav-btn,
+.photo-card.card-style-detail:hover .fav-btn {
+    transform: none;
+}
+
+.photo-card.card-style-detail:hover .fav-btn:hover {
+    transform: scale(1.15);
 }
 
 .file-name {

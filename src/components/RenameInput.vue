@@ -15,6 +15,7 @@ const toast = useToastStore();
 const draftName = ref(props.file.name);
 const inputEl = ref(null);
 let committing = false; // 防重入(提交后 input 卸载的边角)
+let cancelled = false; // ESC 取消标志:卸载 focused input 会触发 blur → commit,用此拦住误提交
 
 // 挂载即选区(扩展名外)+ focus
 onMounted(() => {
@@ -29,7 +30,7 @@ onMounted(() => {
 });
 
 async function commit() {
-  if (committing)
+  if (committing || cancelled)
     return;
   committing = true;
   const newName = draftName.value.trim();
@@ -52,6 +53,7 @@ async function commit() {
   }
 }
 function cancel() {
+  cancelled = true; // 先置标志,再 emit done 卸载;卸载触发的 blur 会被上面 commit 的 cancelled 守卫拦下
   emit('done');
 }
 </script>
