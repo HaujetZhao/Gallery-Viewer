@@ -13,7 +13,7 @@ import { deleteThumbnail, getThumbnailFromDB, saveThumbnailToDB, touchThumbnailI
 import { ensureFileMetaLoaded } from './fileMeta';
 import { peek } from './fileResource';
 import { refreshFolder } from './folderActions';
-import { getThumbnailStrategy } from './thumbnail-strategies';
+import { extractAudioDuration, getThumbnailStrategy } from './thumbnail-strategies';
 
 // 把缓存 blob 画到 canvas(缓存恢复,不做缩放,blob 本就是 targetSize 方图)。
 // R3-1:createImageBitmap 解码(与 image 策略同型热路径,缓存命中也走解码,首切提速同样受益)。
@@ -59,6 +59,10 @@ export async function generateThumbnail(file, canvas, targetSize = 400) {
   // file-meta 懒加载:md5 就绪后与缩略图同流程取回 duration/dim 填 _meta(缓存命中/未命中都需——
   // 缓存命中分支不再抽帧,否则副本的 duration 拿不到)。幂等:_meta.duration 已有则 skip。
   await ensureFileMetaLoaded(file);
+  // audio duration 不依赖缩略图抽帧(独立 createAudio)——file-meta miss 时补抽,
+  // 与缓存命中与否无关(否则缓存命中的音频永远拿不到 duration)。extractAudioDuration 内部 saveFileMeta。
+  if (strategy.name === 'audio' && file._meta?.duration == null)
+    await extractAudioDuration(file);
   // userData 懒加载:与 file-meta 同流程,填 favorites/notes 镜像(卡片爱心/备注即时显示)。
   // 仅 image/video/audio 走此分支(GIF/SVG 无 md5,现状不支持收藏/备注)。幂等:已加载则 skip。
   await Promise.all([

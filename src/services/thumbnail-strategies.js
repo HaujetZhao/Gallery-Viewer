@@ -235,9 +235,8 @@ export const ThumbnailStrategies = {
     },
 
     generateThumbnail: async (element, fileData, targetSize) => {
-      // file-meta:音频时长进 md5 索引 store(镜像 video);extractAudioDuration 内部 saveFileMeta。
-      if (fileData._meta?.duration == null && fileData.blobUrl)
-        await extractAudioDuration(fileData);
+      // 注:音频 duration 不在此抽——缩略图缓存命中时不进 generateThumbnail → 拿不到。
+      // 改由 thumbnail.js ensureFileMetaLoaded 之后独立抽(与缩略图缓存解耦)。
       try {
         const coverBlob = await extractAudioCover(fileData);
         if (coverBlob) {
@@ -311,8 +310,9 @@ export const ThumbnailStrategies = {
 };
 
 // 抽取音频时长(创建 <audio preload=metadata> 读 duration),写回 file-meta store(md5 索引)。
-// 4s 超时兜底(损坏文件/jsdom 不触发 loadedmetadata 也不卡住);镜像 video 抽帧时的时长提取。
-function extractAudioDuration(fileData) {
+// 由 thumbnail.js 在 ensureFileMetaLoaded 之后调(与缩略图缓存解耦——音频 duration 不依赖抽帧)。
+// 4s 超时兜底(损坏文件/jsdom 不触发 loadedmetadata 也不卡住)。
+export function extractAudioDuration(fileData) {
   return new Promise((resolve) => {
     const audio = document.createElement('audio');
     audio.preload = 'metadata';

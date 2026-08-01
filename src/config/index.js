@@ -1,7 +1,8 @@
 // 应用配置中心。搬自源码 js/config.js 的 CONFIG,无外部依赖。
 export const CONFIG = {
   DATABASE: {
-    NAME: 'GalleryThumbnailDB',
+    // 相册浏览器本地库(三 store:thumbnails 缩略图 / file-meta 文件固有 / user-data 用户附加)
+    NAME: 'GalleryDB',
     VERSION: 2, // v2: 加 file-meta + user-data store
     STORES: {
       THUMBNAILS: 'thumbnails',
