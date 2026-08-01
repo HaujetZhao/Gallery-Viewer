@@ -1,22 +1,26 @@
-import { get, set } from 'idb-keyval';
-// 备注集合(md5 为 key → 多行文本)。idb-keyval 持久化;Map 为响应式镜像(同 favorites 套路)。
-// get/set/has 给 UI 读;空串视为无备注(set 时删除 key);启动 load()。无 md5 文件不参与。
+// 备注集合(md5 → 多行文本)。持久化走 user-data store({favorite,note} 聚合,md5 索引)。
+// 懒加载:视窗触发 ensureLoaded 填镜像(与缩略图同流程)。Map 为响应式镜像(整体替换触发)。
+// 空串视为无备注(userData.setNote 内部转 undefined + 写空删条目)。
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-
-const KEY = 'notes';
+import { ensureUserDataLoaded, setNote } from '../services/userData';
 
 export const useNotesStore = defineStore('notes', () => {
   const notesMap = ref(new Map());
 
-  async function load() {
-    try {
-      const arr = await get(KEY);
-      notesMap.value = new Map(arr || []);
+  // 由 thumbnail.js 视窗加载调。幂等:notesMap 已有该 md5 则跳过;
+  // "已加载但无备注"的幂等性靠 userData.ensureUserDataLoaded 内部 loaded Map 缓存(二次调用直接返回缓存,不再 getUserData)。
+  async function ensureLoaded(md5) {
+    if (!md5 || notesMap.value.has(md5))
+      return;
+    const data = await ensureUserDataLoaded(md5);
+    const note = data?.note;
+    if (note && !notesMap.value.has(md5)) {
+      const next = new Map(notesMap.value);
+      next.set(md5, note);
+      notesMap.value = next;
     }
-    catch (e) {
-      console.warn('备注加载失败:', e);
-    }
+    // 无 note 时不写入 notesMap——但 userData.ensureUserDataLoaded 已缓存该 md5,二次 ensureLoaded 直接返回,不再 getUserData
   }
 
   function getNote(md5) {
@@ -27,7 +31,7 @@ export const useNotesStore = defineStore('notes', () => {
     return !!md5 && notesMap.value.has(md5);
   }
 
-  async function setNote(md5, text) {
+  async function setNoteWrapper(md5, text) {
     if (!md5)
       return;
     const next = new Map(notesMap.value);
@@ -35,15 +39,10 @@ export const useNotesStore = defineStore('notes', () => {
     if (trimmed)
       next.set(md5, text);
     else
-      next.delete(md5); // 空串视为无备注 → 删 key
-    notesMap.value = next; // 整体替换触发响应式
-    try {
-      await set(KEY, [...next]);
-    }
-    catch (e) {
-      console.warn('备注保存失败:', e);
-    }
+      next.delete(md5);
+    notesMap.value = next;
+    await setNote(md5, text);
   }
 
-  return { notesMap, load, getNote, has, setNote };
+  return { notesMap, ensureLoaded, getNote, has, setNote: setNoteWrapper };
 });
