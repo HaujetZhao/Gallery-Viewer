@@ -135,10 +135,6 @@ function openPreview() {
         <i class="fas fa-spinner" :class="{ 'fa-spin': loading }" />
       </div>
 
-      <div v-if="badge" class="media-badge" :class="badge.className">
-        <i class="fas" :class="badge.icon" /> {{ badgeText }}
-      </div>
-
       <!-- R6:收藏爱心(左上角)。已收藏常显实心;未收藏 hover 显空心;md5 未算不显示。@click.stop 防冒泡开 modal -->
       <button
         v-if="hasMd5"
@@ -157,6 +153,10 @@ function openPreview() {
     </div>
 
     <div class="card-info-filename">
+      <div v-if="badge && badgeText" class="media-badge" :class="badge.className">
+        <i v-if="strategy.name === 'video' || strategy.name === 'audio'" class="fas" :class="badge.icon" />
+        {{ badgeText }}
+      </div>
       <RenameInput v-if="editing" :file="props.file" @done="editing = false" />
       <div v-else class="file-name">
         {{ file.name }}
@@ -266,42 +266,30 @@ function openPreview() {
     display: none !important;
 }
 
-/* 媒体类型/时长标识:常驻缩略图右下角;hover 时文件名条从底部滑入,badge 同步上移避让。
-   z-index 高于文件名条。 */
+/* 媒体类型/时长标识:钉在 card-info-filename 顶部(bottom:100%),跟随其 transform 整体上下——
+   非 hover 时 card-info-filename 下藏,badge 恰好落在缩略图右下;hover 时整体上移到文件名条上方。
+   上移量天然 = 文件名条高度,无需 JS 测高/硬编码。 */
 .media-badge {
     position: absolute;
-    bottom: 8px;
+    bottom: calc(100% + 4px);
     right: 8px;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 10px;
-    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.55);
+    font-size: 12px;
+    font-weight: 500;
     color: white;
     display: flex;
-    align-items: center;
+    align-items: baseline;
     gap: 4px;
     z-index: 3;
     backdrop-filter: blur(4px);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-    transition: transform 0.3s ease;
-}
-/* hover/renaming/always:文件名条占住底部,badge 上移到其上方。ponytail: 30px 按文件名条高度(~25px)校准。 */
-.photo-card:hover .media-badge,
-.photo-card.renaming .media-badge,
-.photo-card.card-style-always .media-badge {
-    transform: translateY(-30px);
 }
 
-.badge-gif {
-    background: rgba(156, 39, 176, 0.9);
-}
-
-.badge-video {
-    background: rgba(244, 67, 54, 0.9);
-}
-
-.badge-audio {
-    background: rgba(103, 58, 183, 0.9);
+/* 音频图标上色(胶囊黑底上的紫色标识);视频图标沿用白色,文字时长也白 */
+.media-badge.badge-audio i {
+    color: #b388ff;
 }
 
 /* R6:收藏爱心(左上角)。未收藏不显示;已收藏常显实心红、无背景。
@@ -429,12 +417,12 @@ function openPreview() {
 }
 
 /* —— detail:上图下信息整卡 —— */
-/* 信息块从绝对叠层重排为图下方正常流;去渐变背景(继承卡 bg-primary),整卡一个圆角块。
-   关掉 transform 过渡——hover/always 靠它做滑入,但 detail 信息区常驻,留着会在切换样式时
-   播一段从 translateY(±100%) 归位的交错位移动画,违和。 */
+/* 信息块从绝对叠层重排为图下方正常流(relative 仍占流,兼作 badge 的定位锚点);去渐变背景
+   (继承卡 bg-primary),整卡一个圆角块。关掉 transform 过渡——hover/always 靠它做滑入,但 detail
+   信息区常驻,留着会在切换样式时播一段从 translateY(±100%) 归位的交错位移动画,违和。 */
 .photo-card.card-style-detail .card-info-filename,
 .photo-card.card-style-detail .card-info-meta {
-    position: static;
+    position: relative;
     transform: none;
     background: none;
     color: var(--text-primary);
@@ -461,10 +449,9 @@ function openPreview() {
     color: var(--text-secondary);
 }
 
-/* 文件名左对齐单行省略(detail 信息区第一行) */
+/* 文件名左对齐单行省略(detail 信息区第一行);字号沿用 base 14px,与 hover/always 一致 */
 .photo-card.card-style-detail .card-info-filename .file-name {
     text-align: left;
-    font-size: 13px;
     color: var(--text-primary);
 }
 
