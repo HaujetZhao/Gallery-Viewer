@@ -2,8 +2,12 @@
 export const CONFIG = {
   DATABASE: {
     NAME: 'GalleryThumbnailDB',
-    VERSION: 1,
-    STORES: { THUMBNAILS: 'thumbnails' },
+    VERSION: 2, // v2: 加 file-meta + user-data store
+    STORES: {
+      THUMBNAILS: 'thumbnails',
+      FILE_META: 'file-meta',
+      USER_DATA: 'user-data',
+    },
   },
   PERFORMANCE: {
     // 可视区卡片同时解码的张数。值越大,首屏出图越快但 CPU/内存占用越高;

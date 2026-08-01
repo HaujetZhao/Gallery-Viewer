@@ -12,9 +12,12 @@ export function initDB() {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = (e) => {
       const d = e.target.result;
-      if (!d.objectStoreNames.contains(STORE_NAME)) {
+      if (!d.objectStoreNames.contains(STORE_NAME))
         d.createObjectStore(STORE_NAME, { keyPath: 'id' });
-      }
+      if (!d.objectStoreNames.contains(CONFIG.DATABASE.STORES.FILE_META))
+        d.createObjectStore(CONFIG.DATABASE.STORES.FILE_META, { keyPath: 'md5' });
+      if (!d.objectStoreNames.contains(CONFIG.DATABASE.STORES.USER_DATA))
+        d.createObjectStore(CONFIG.DATABASE.STORES.USER_DATA, { keyPath: 'md5' });
     };
     request.onsuccess = (e) => {
       db = e.target.result;
@@ -129,4 +132,107 @@ export function deleteThumbnail(id) {
   if (!db)
     return;
   db.transaction([STORE_NAME], 'readwrite').objectStore(STORE_NAME).delete(id);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// v2 新增 store:file-meta(文件固有媒体属性)/ user-data(用户附加聚合)
+// 共性:md5 索引 + 读改写合并写(不覆盖其他字段)。
+// db 实参可选,缺省用模块级 db;同时支持 (db, md5, ...) 与 (md5, ...) 两种调用。
+// ─────────────────────────────────────────────────────────────────────────
+function pick(d) {
+  return d || db;
+}
+
+// file-meta:文件固有媒体属性(duration / width / height 等,md5 索引,合并写)
+export function getFileMeta(d, md5) {
+  if (typeof d === 'string') {
+    md5 = d;
+    d = null;
+  }
+  const conn = pick(d);
+  return new Promise((resolve) => {
+    if (!conn)
+      return resolve(null);
+    const req = conn.transaction([CONFIG.DATABASE.STORES.FILE_META], 'readonly')
+      .objectStore(CONFIG.DATABASE.STORES.FILE_META)
+      .get(md5);
+    req.onsuccess = e => resolve(e.target.result ?? null);
+    req.onerror = () => resolve(null);
+  });
+}
+export function putFileMeta(d, md5, patch) {
+  if (typeof d === 'string') {
+    patch = md5;
+    md5 = d;
+    d = null;
+  }
+  const conn = pick(d);
+  return new Promise((resolve) => {
+    if (!conn)
+      return resolve();
+    const store = CONFIG.DATABASE.STORES.FILE_META;
+    const tx = conn.transaction([store], 'readwrite');
+    const s = tx.objectStore(store);
+    const getReq = s.get(md5);
+    getReq.onsuccess = () => {
+      const merged = { ...(getReq.result || {}), ...patch, md5 };
+      s.put(merged);
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => resolve();
+  });
+}
+
+// user-data:用户附加聚合(favorite / note 等,md5 索引,合并写)
+export function getUserData(d, md5) {
+  if (typeof d === 'string') {
+    md5 = d;
+    d = null;
+  }
+  const conn = pick(d);
+  return new Promise((resolve) => {
+    if (!conn)
+      return resolve(null);
+    const req = conn.transaction([CONFIG.DATABASE.STORES.USER_DATA], 'readonly')
+      .objectStore(CONFIG.DATABASE.STORES.USER_DATA)
+      .get(md5);
+    req.onsuccess = e => resolve(e.target.result ?? null);
+    req.onerror = () => resolve(null);
+  });
+}
+export function putUserData(d, md5, patch) {
+  if (typeof d === 'string') {
+    patch = md5;
+    md5 = d;
+    d = null;
+  }
+  const conn = pick(d);
+  return new Promise((resolve) => {
+    if (!conn)
+      return resolve();
+    const store = CONFIG.DATABASE.STORES.USER_DATA;
+    const tx = conn.transaction([store], 'readwrite');
+    const s = tx.objectStore(store);
+    const getReq = s.get(md5);
+    getReq.onsuccess = () => {
+      const merged = { ...(getReq.result || {}), ...patch, md5 };
+      s.put(merged);
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => resolve();
+  });
+}
+
+// 删除条目(setFavorite/setNote 写后若 favorite 与 note 均空 → 调此,保持 store 精简)
+export function deleteUserData(d, md5) {
+  if (typeof d === 'string') {
+    md5 = d;
+    d = null;
+  }
+  const conn = pick(d);
+  if (!conn)
+    return;
+  conn.transaction([CONFIG.DATABASE.STORES.USER_DATA], 'readwrite')
+    .objectStore(CONFIG.DATABASE.STORES.USER_DATA)
+    .delete(md5);
 }
