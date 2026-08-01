@@ -6,6 +6,7 @@
 // 必须传 { imageOrientation: 'from-image' },否则带 EXIF 方向的手机照片缩略图会侧躺/倒置。
 import { FileTypes } from '../config/file-types';
 import { ensureBlobUrl } from '../models/SmartFile';
+import { saveFileMeta } from './fileMeta';
 import { peek } from './fileResource';
 
 export const ThumbnailStrategies = {
@@ -176,10 +177,10 @@ export const ThumbnailStrategies = {
           element.toBlob(blob => resolve(blob), 'image/jpeg', 0.85);
         }
 
-        function onLoadedMetadata() {
-          // R11:顺带抽 duration 存 _meta(仅首次、有效有限值),随快照持久化。ensureBlobUrl 已写 size/lastModified。
-          if (fileData._meta && fileData._meta.duration == null && Number.isFinite(video.duration))
-            fileData._meta = { ...fileData._meta, duration: video.duration };
+        async function onLoadedMetadata() {
+          // file-meta:duration/dim 进 md5 索引 store(跨副本共享);_meta 作运行时缓存(saveFileMeta 内填)。
+          if (fileData._meta?.duration == null && Number.isFinite(video.duration))
+            await saveFileMeta(fileData, { duration: video.duration, width: video.videoWidth, height: video.videoHeight });
           video.currentTime = Math.min(5, video.duration / 2);
         }
 
@@ -234,8 +235,8 @@ export const ThumbnailStrategies = {
     },
 
     generateThumbnail: async (element, fileData, targetSize) => {
-      // 顺带抽 duration 存 _meta(镜像 video R11),供卡片右上 badge 显示音频时长。
-      if (fileData._meta && fileData._meta.duration == null && fileData.blobUrl)
+      // file-meta:音频时长进 md5 索引 store(镜像 video);extractAudioDuration 内部 saveFileMeta。
+      if (fileData._meta?.duration == null && fileData.blobUrl)
         await extractAudioDuration(fileData);
       try {
         const coverBlob = await extractAudioCover(fileData);
@@ -309,7 +310,7 @@ export const ThumbnailStrategies = {
   },
 };
 
-// 抽取音频时长(创建 <audio preload=metadata> 读 duration),写回 fileData._meta.duration。
+// 抽取音频时长(创建 <audio preload=metadata> 读 duration),写回 file-meta store(md5 索引)。
 // 4s 超时兜底(损坏文件/jsdom 不触发 loadedmetadata 也不卡住);镜像 video 抽帧时的时长提取。
 function extractAudioDuration(fileData) {
   return new Promise((resolve) => {
@@ -317,6 +318,18 @@ function extractAudioDuration(fileData) {
     audio.preload = 'metadata';
     let done = false;
     let timer = null;
+    async function onMeta() {
+      if (done)
+        return;
+      done = true;
+      clearTimeout(timer);
+      audio.removeEventListener('loadedmetadata', onMeta);
+      audio.removeEventListener('error', finish);
+      audio.src = '';
+      if (Number.isFinite(audio.duration) && fileData._meta?.duration == null)
+        await saveFileMeta(fileData, { duration: audio.duration });
+      resolve();
+    }
     function finish() {
       if (done)
         return;
@@ -326,11 +339,6 @@ function extractAudioDuration(fileData) {
       audio.removeEventListener('error', finish);
       audio.src = '';
       resolve();
-    }
-    function onMeta() {
-      if (fileData._meta && fileData._meta.duration == null && Number.isFinite(audio.duration))
-        fileData._meta = { ...fileData._meta, duration: audio.duration };
-      finish();
     }
     audio.addEventListener('loadedmetadata', onMeta);
     audio.addEventListener('error', finish);
