@@ -1,7 +1,6 @@
 import { triggerRedraw } from '../composables/useThumbnail';
 import { ensureBlobUrl } from '../models/SmartFile';
 import { useFsStore } from '../stores/fs';
-import { useRootStore } from '../stores/root';
 import { useToastStore } from '../stores/uiToast';
 import { useUserSettingsStore } from '../stores/userSettings';
 // 缩略图生成主体。搬自源码 js/thumbnails.js 的 generateAndShowThumbnail,去 observer/队列/DOM 耦合。
@@ -9,9 +8,9 @@ import { useUserSettingsStore } from '../stores/userSettings';
 // IntersectionObserver + 并发队列留到阶段 5 gallery 的 useThumbnail composable。
 import { calculateMD5 } from '../utils/file';
 import { deleteThumbnail, getThumbnailFromDB, saveThumbnailToDB, touchThumbnailInDB } from './db';
+import { ensureFileMetaLoaded } from './fileMeta';
 import { peek } from './fileResource';
 import { refreshFolder } from './folderActions';
-import { afterTreeMutation } from './persistence';
 import { getThumbnailStrategy } from './thumbnail-strategies';
 
 // 把缓存 blob 画到 canvas(缓存恢复,不做缩放,blob 本就是 targetSize 方图)。
@@ -55,6 +54,9 @@ export async function generateThumbnail(file, canvas, targetSize = 400) {
     const raw = peek(file)?.file ?? await file.handle.getFile();
     file.md5 = await calculateMD5(raw);
   }
+  // file-meta 懒加载:md5 就绪后与缩略图同流程取回 duration/dim 填 _meta(缓存命中/未命中都需——
+  // 缓存命中分支不再抽帧,否则副本的 duration 拿不到)。幂等:_meta.duration 已有则 skip。
+  await ensureFileMetaLoaded(file);
   const cached = await getThumbnailFromDB(file.md5, targetSize);
 
   if (cached) {
@@ -64,8 +66,6 @@ export async function generateThumbnail(file, canvas, targetSize = 400) {
   }
 
   // 未命中:策略生成(已画到 canvas)→ 存 DB
-  // R11:视频 strategy 在抽帧时顺带写 _meta.duration;首次抽到 → 置脏 + 调度持久化(随快照落盘,刷新仍在)。
-  const beforeDuration = file.duration;
   const blob = await strategy.generateThumbnail(canvas, file, targetSize);
   if (blob) {
     await saveThumbnailToDB({
@@ -77,8 +77,6 @@ export async function generateThumbnail(file, canvas, targetSize = 400) {
       blob,
     });
   }
-  if ((strategy.name === 'video' || strategy.name === 'audio') && file.duration != null && file.duration !== beforeDuration)
-    afterTreeMutation(useRootStore().currentRootId);
   return { cached: false, strategyName: strategy.name };
 }
 
