@@ -153,7 +153,7 @@ function openPreview() {
     </div>
 
     <div class="card-info-filename">
-      <div v-if="badge && badgeText" class="media-badge" :class="badge.className">
+      <div v-if="badge && (badgeText || strategy.name === 'video' || strategy.name === 'audio')" class="media-badge" :class="badge.className">
         <i v-if="strategy.name === 'video' || strategy.name === 'audio'" class="fas" :class="badge.icon" />
         {{ badgeText }}
       </div>

@@ -233,6 +233,21 @@ async function onClearAll() {
         </div>
 
         <div class="setting-item">
+          <label>卡片样式</label>
+          <div class="seg-group">
+            <button
+              v-for="opt in cardStyleOptions"
+              :key="opt.value"
+              class="seg-btn"
+              :class="{ active: cardStyle === opt.value }"
+              @click="setCardStyle(opt.value)"
+            >
+              {{ opt.label }}
+            </button>
+          </div>
+        </div>
+
+        <div class="setting-item">
           <label>显示列数</label>
           <input v-model.number="colCount" type="range" min="1" max="10" step="1" @change="commitCol">
           <span>{{ colCount }}列</span>
@@ -258,21 +273,6 @@ async function onClearAll() {
             @change="commitSpeed"
           >
           <span>{{ scrollSpeed.toFixed(1) }}</span>
-        </div>
-
-        <div class="setting-item">
-          <label>卡片样式</label>
-          <div class="seg-group">
-            <button
-              v-for="opt in cardStyleOptions"
-              :key="opt.value"
-              class="seg-btn"
-              :class="{ active: cardStyle === opt.value }"
-              @click="setCardStyle(opt.value)"
-            >
-              {{ opt.label }}
-            </button>
-          </div>
         </div>
 
         <div class="separator" />
