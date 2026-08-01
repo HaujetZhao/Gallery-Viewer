@@ -33,7 +33,8 @@ export class SmartFile {
     return this._meta?.lastModified;
   }
 
-  // R11:视频时长(视窗抽帧时顺带写 _meta.duration,随快照持久化)。非视频/未抽 → undefined。
+  // 视频时长。_meta.duration 作运行时缓存——由 file-meta store(md5 索引)懒加载填入,或抽帧时填入。
+  // 不随快照持久化(跨副本共享走 file-meta store)。非视频/未加载 → undefined。
   get duration() {
     return this._meta?.duration;
   }
@@ -121,20 +122,18 @@ export function fileToSnapshot(file) {
     name: file.name,
     size: file.size,
     lastModified: file.lastModified,
-    duration: file.duration ?? null, // R11:视频时长随快照持久化
     md5: file.md5 ?? null,
+    // duration 不再随快照——迁至 file-meta store(md5 索引,跨副本共享)
   };
 }
 
-// 从快照重建(sync,零 IO)。size/lastModified/duration 落 _meta(池空时 getter 读得到)。
+// 从快照重建(sync,零 IO)。size/lastModified 落 _meta(池空时 getter 读得到)。
+// duration 不从快照恢复(从 file-meta store 懒加载)。
 export function fileFromSnapshot(snap, parent) {
   const f = Object.create(SmartFile.prototype);
   f.handle = snap.handle;
   f.parent = parent;
-  const meta = { size: snap.size, lastModified: snap.lastModified };
-  if (snap.duration != null)
-    meta.duration = snap.duration; // R11:旧快照无 duration 字段时不写(getter 返回 undefined)
-  f._meta = meta;
+  f._meta = { size: snap.size, lastModified: snap.lastModified };
   f.md5 = snap.md5 ?? null;
   return f;
 }

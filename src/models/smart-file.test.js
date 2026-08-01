@@ -67,6 +67,21 @@ describe('smartFile rehydrate', () => {
     expect(f2.md5).toBe(f.md5);
     destroy(f);
   });
+
+  it('fileToSnapshot 不含 duration(已迁 file-meta store)', () => {
+    const handle = { name: 'a.mp4' };
+    const f = new SmartFile({ handle, parent: null });
+    f._meta = { size: 100, lastModified: 1, duration: 9 };
+    f.md5 = 'm1';
+    const snap = fileToSnapshot(f);
+    expect(snap.duration).toBeUndefined();
+  });
+
+  it('fileFromSnapshot 不读 duration(旧快照字段忽略,从 file-meta store 重载)', () => {
+    const snap = { handle: {}, name: 'a.mp4', size: 1, lastModified: 1, duration: 9, md5: 'm1' };
+    const f = fileFromSnapshot(snap, null);
+    expect(f.duration).toBeUndefined();
+  });
 });
 
 // T15:SmartFile.move 锚定 T08 关键改动——调 parent.removeFile + target.addFile,不内联 splice。
