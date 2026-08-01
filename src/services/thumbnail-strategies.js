@@ -316,18 +316,26 @@ export function extractAudioDuration(fileData) {
   return new Promise((resolve) => {
     const audio = document.createElement('audio');
     audio.preload = 'metadata';
+    // 挂 DOM:Chrome 对未挂 DOM 的 <audio> 可能不主动加载元数据(video 抽帧有 seek 强制加载)。
+    audio.style.display = 'none';
+    document.body.appendChild(audio);
     let done = false;
     let timer = null;
+    function cleanup() {
+      audio.removeEventListener('loadedmetadata', onMeta);
+      audio.removeEventListener('error', finish);
+      audio.src = '';
+      audio.remove();
+    }
     async function onMeta() {
       if (done)
         return;
       done = true;
       clearTimeout(timer);
-      audio.removeEventListener('loadedmetadata', onMeta);
-      audio.removeEventListener('error', finish);
-      audio.src = '';
-      if (Number.isFinite(audio.duration) && fileData._meta?.duration == null)
-        await saveFileMeta(fileData, { duration: audio.duration });
+      const dur = audio.duration; // ⚠️ 先存(cleanup 清 src 后 duration 失效为 NaN——旧 bug 在此)
+      cleanup();
+      if (Number.isFinite(dur) && fileData._meta?.duration == null)
+        await saveFileMeta(fileData, { duration: dur });
       resolve();
     }
     function finish() {
@@ -335,9 +343,7 @@ export function extractAudioDuration(fileData) {
         return;
       done = true;
       clearTimeout(timer);
-      audio.removeEventListener('loadedmetadata', onMeta);
-      audio.removeEventListener('error', finish);
-      audio.src = '';
+      cleanup();
       resolve();
     }
     audio.addEventListener('loadedmetadata', onMeta);
