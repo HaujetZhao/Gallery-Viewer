@@ -64,11 +64,16 @@ export class SmartFile {
     // 先 destroy 释放 url,避免 handle.move 报 "A FileSystemHandle cannot be moved while it is locked"
     // (缩略图 canvas/img 持有 blobUrl 时,Chrome 视文件为锁定)。move 后再 acquire 重建。
     destroy(this);
+    // move 只改名、内容字节不变 → md5 保留(缩略图/收藏/file-meta 缓存仍命中),_meta 更新 size/mtime
+    // 并保留 duration(否则重命名后 badge 时长清空,缩略图却仍显示,自相矛盾)。
+    const prevDuration = this._meta?.duration;
     try {
       await this.handle.move(newName);
       const entry = await acquire(this);
       this._meta = { size: entry.file.size, lastModified: entry.file.lastModified };
-      this.md5 = null;
+      if (prevDuration != null)
+        this._meta.duration = prevDuration;
+      // md5 不清:move 不改内容,旧 md5 仍正确;若外部确实改了内容,detectFileChange 会兜底清。
       return true;
     }
     catch (err) {
@@ -76,8 +81,11 @@ export class SmartFile {
         console.warn('重命名失败后重建资源失败,blobUrl 将为 null:', e);
         return null;
       });
-      if (entry)
+      if (entry) {
         this._meta = { size: entry.file.size, lastModified: entry.file.lastModified };
+        if (prevDuration != null)
+          this._meta.duration = prevDuration;
+      }
       console.error('重命名失败:', err);
       throw err;
     }
