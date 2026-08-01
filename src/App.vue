@@ -20,7 +20,6 @@ import { useFavoritesStore } from './stores/favorites';
 import { useFsStore } from './stores/fs';
 import { useHistoryStore } from './stores/history';
 import { useModalStore } from './stores/modal';
-import { useNotesStore } from './stores/notes';
 import { useRootStore } from './stores/root';
 import { useThemeStore } from './stores/theme';
 import { useToastStore } from './stores/uiToast';
@@ -35,7 +34,6 @@ const settings = useUserSettingsStore();
 const toast = useToastStore();
 const history = useHistoryStore();
 const favorites = useFavoritesStore();
-const notes = useNotesStore();
 const modal = useModalStore();
 const { searchTerm, filteredCount, totalCount } = useGallerySearch();
 
@@ -78,8 +76,8 @@ onMounted(async () => {
   catch (e) {
     console.warn('initDB 失败:', e);
   }
-  favorites.load(); // R6:启动加载收藏集(不阻塞,无句柄依赖)
-  notes.load(); // R14:启动加载备注(md5→文本,不阻塞)
+  // R6/R14:favorites/notes 不再启动 load——改为 thumbnail.js 视窗与缩略图同流程懒加载
+  // (userData.ensureLoaded 填镜像,卡片爱心/备注按需显示,无需启动 IO)。
   document.addEventListener('keydown', onKeydown);
   document.addEventListener('visibilitychange', onVisibilityChange);
   await tryRestoreFolder();

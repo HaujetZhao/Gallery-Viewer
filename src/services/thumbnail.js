@@ -1,6 +1,8 @@
 import { triggerRedraw } from '../composables/useThumbnail';
 import { ensureBlobUrl } from '../models/SmartFile';
+import { useFavoritesStore } from '../stores/favorites';
 import { useFsStore } from '../stores/fs';
+import { useNotesStore } from '../stores/notes';
 import { useToastStore } from '../stores/uiToast';
 import { useUserSettingsStore } from '../stores/userSettings';
 // 缩略图生成主体。搬自源码 js/thumbnails.js 的 generateAndShowThumbnail,去 observer/队列/DOM 耦合。
@@ -57,6 +59,12 @@ export async function generateThumbnail(file, canvas, targetSize = 400) {
   // file-meta 懒加载:md5 就绪后与缩略图同流程取回 duration/dim 填 _meta(缓存命中/未命中都需——
   // 缓存命中分支不再抽帧,否则副本的 duration 拿不到)。幂等:_meta.duration 已有则 skip。
   await ensureFileMetaLoaded(file);
+  // userData 懒加载:与 file-meta 同流程,填 favorites/notes 镜像(卡片爱心/备注即时显示)。
+  // 仅 image/video/audio 走此分支(GIF/SVG 无 md5,现状不支持收藏/备注)。幂等:已加载则 skip。
+  await Promise.all([
+    useFavoritesStore().ensureLoaded(file.md5),
+    useNotesStore().ensureLoaded(file.md5),
+  ]);
   const cached = await getThumbnailFromDB(file.md5, targetSize);
 
   if (cached) {
