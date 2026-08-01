@@ -33,6 +33,11 @@ export class SmartFile {
     return this._meta?.lastModified;
   }
 
+  // R11:视频时长(视窗抽帧时顺带写 _meta.duration,随快照持久化)。非视频/未抽 → undefined。
+  get duration() {
+    return this._meta?.duration;
+  }
+
   get type() {
     return this._extractType(this.name);
   }
@@ -116,16 +121,20 @@ export function fileToSnapshot(file) {
     name: file.name,
     size: file.size,
     lastModified: file.lastModified,
+    duration: file.duration ?? null, // R11:视频时长随快照持久化
     md5: file.md5 ?? null,
   };
 }
 
-// 从快照重建(sync,零 IO)。size/lastModified 落 _meta(池空时 getter 读得到)。
+// 从快照重建(sync,零 IO)。size/lastModified/duration 落 _meta(池空时 getter 读得到)。
 export function fileFromSnapshot(snap, parent) {
   const f = Object.create(SmartFile.prototype);
   f.handle = snap.handle;
   f.parent = parent;
-  f._meta = { size: snap.size, lastModified: snap.lastModified };
+  const meta = { size: snap.size, lastModified: snap.lastModified };
+  if (snap.duration != null)
+    meta.duration = snap.duration; // R11:旧快照无 duration 字段时不写(getter 返回 undefined)
+  f._meta = meta;
   f.md5 = snap.md5 ?? null;
   return f;
 }
@@ -133,4 +142,27 @@ export function fileFromSnapshot(snap, parent) {
 // 释放池条目(无视 owners)。文件从树移除 / 文件夹销毁用。
 export function disposeFile(file) {
   destroy(file);
+}
+
+// R3:单文件"改"检测——读 getFile 比 _meta,变了则更新 _meta + 清 md5(缩略图下次懒加载重算)。
+// 纯函数:不碰 store。modal 打开时调(ensureBlobUrl 后 peek 复用 File,省一次 IO)。返回是否变了。
+export async function detectFileChange(file) {
+  if (!file?.handle)
+    return false;
+  try {
+    const raw = peek(file)?.file ?? await file.handle.getFile();
+    if (!file._meta) {
+      file._meta = { size: raw.size, lastModified: raw.lastModified };
+      return false;
+    }
+    if (file._meta.size !== raw.size || file._meta.lastModified !== raw.lastModified) {
+      file._meta = { size: raw.size, lastModified: raw.lastModified };
+      file.md5 = null; // 内容变 → 清 md5(缩略图懒加载重算)
+      return true;
+    }
+  }
+  catch (e) {
+    console.warn(`detectFileChange ${file.name} 失败:`, e);
+  }
+  return false;
 }

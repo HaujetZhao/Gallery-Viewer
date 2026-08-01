@@ -13,6 +13,18 @@ export function formatDate(ts) {
   return new Date(ts).toLocaleDateString();
 }
 
+// R11:视频时长格式。秒 → M:SS;<1h 用 H:MM:SS。无效(损坏/Infinity)返回空串。
+export function formatDuration(sec) {
+  if (!Number.isFinite(sec) || sec < 0)
+    return '';
+  const total = Math.floor(sec);
+  const s = total % 60;
+  const m = Math.floor(total / 60) % 60;
+  const h = Math.floor(total / 3600);
+  const pad = n => String(n).padStart(2, '0');
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
+
 // Windows 风格自然排序(数字按数值比较,中文 zh-CN)
 export function windowsCompareStrings(a, b) {
   return a.localeCompare(b, 'zh-CN', { numeric: true, sensitivity: 'base' });

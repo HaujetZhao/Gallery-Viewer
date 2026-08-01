@@ -1,10 +1,12 @@
 <script setup>
 import { computed, ref } from 'vue';
 import { useFileActions } from '../composables/useFileActions';
+import { hoveredFile } from '../composables/useHoveredFile';
 import { useThumbnail } from '../composables/useThumbnail';
 import { getThumbnailStrategy } from '../services/thumbnail-strategies';
 import { useContextMenuStore } from '../stores/contextMenu';
-import { formatDate, formatFileSize } from '../utils/format';
+import { useFavoritesStore } from '../stores/favorites';
+import { formatDate, formatDuration, formatFileSize } from '../utils/format';
 import RenameInput from './RenameInput.vue';
 
 const props = defineProps({
@@ -16,6 +18,20 @@ const emit = defineEmits(['click']);
 const strategy = computed(() => getThumbnailStrategy(props.file.type));
 const badge = computed(() => strategy.value.getCardBadge());
 const isCanvas = computed(() => ['image', 'video', 'audio'].includes(strategy.value.name));
+
+// R6:收藏爱心。md5 未算(null)按未收藏且不显示爱心;favorited 依赖 favorites Set(整体替换响应式)。
+const favorites = useFavoritesStore();
+const hasMd5 = computed(() => !!props.file.md5);
+const favorited = computed(() => favorites.isFavorite(props.file.md5));
+function onToggleFav() {
+  if (props.file.md5)
+    favorites.toggle(props.file.md5);
+}
+
+// R11:视频时长(从 _meta.duration 读,视窗抽帧时顺带抽取并持久化)。M:SS / H:MM:SS。
+const durationText = computed(() =>
+  strategy.value.name === 'video' && props.file.duration ? formatDuration(props.file.duration) : '',
+);
 
 const mediaEl = ref(null);
 const { loaded, loading } = useThumbnail(mediaEl, props.file, props.targetSize);
@@ -67,6 +83,8 @@ function openPreview() {
     @keydown.space.prevent="openPreview"
     @contextmenu.prevent="onContextmenu"
     @dragstart="onDragstart"
+    @mouseenter="hoveredFile = file"
+    @mouseleave="hoveredFile = null"
   >
     <div class="thumbnail-container">
       <canvas
@@ -95,6 +113,22 @@ function openPreview() {
       <div v-if="badge" class="media-badge" :class="badge.className">
         <i class="fas" :class="badge.icon" /> {{ badge.text }}
       </div>
+
+      <!-- R11:视频时长(左下角) -->
+      <div v-if="durationText" class="duration-badge">
+        <i class="fas fa-clock" /> {{ durationText }}
+      </div>
+
+      <!-- R6:收藏爱心(左上角)。已收藏常显实心;未收藏 hover 显空心;md5 未算不显示。@click.stop 防冒泡开 modal -->
+      <button
+        v-if="hasMd5"
+        class="fav-btn"
+        :class="{ favorited }"
+        title="收藏 (L)"
+        @click.stop="onToggleFav"
+      >
+        <i :class="favorited ? 'fas fa-heart' : 'far fa-heart'" />
+      </button>
     </div>
 
     <div class="card-info-filename">
@@ -242,6 +276,62 @@ function openPreview() {
 
 .badge-audio {
     background: rgba(103, 58, 183, 0.9);
+}
+
+/* R11:视频时长(左下角) */
+.duration-badge {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    padding: 3px 7px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    z-index: 3;
+    pointer-events: none;
+}
+.duration-badge i {
+    font-size: 9px;
+}
+
+/* R6:收藏爱心(左上角)。已收藏常显实心红;未收藏透明、卡片 hover 显空心。
+   hover 时与 Video 角标同步 translateY(100%) 下移,给顶部 hover 下滑的文件大小/日期让位,不重叠。 */
+.fav-btn {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.45);
+    color: #fff;
+    cursor: pointer;
+    z-index: 4;
+    opacity: 0;
+    padding: 0;
+    transition: opacity 0.2s ease, transform 0.3s ease, background 0.2s ease;
+}
+.photo-card:hover .fav-btn {
+    opacity: 1;
+    transform: translateY(100%);
+}
+.photo-card:hover .fav-btn:hover {
+    background: rgba(0, 0, 0, 0.65);
+    transform: translateY(100%) scale(1.15);
+}
+.fav-btn.favorited {
+    opacity: 1;
+    color: #ff4d6d;
+    background: rgba(0, 0, 0, 0.55);
 }
 
 /* SVG 缩略图:inline 注入(thumbnail-strategies fetch+innerHTML,与 modal 同机制);

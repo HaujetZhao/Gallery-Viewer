@@ -2,21 +2,30 @@
 import { ref } from 'vue';
 import { useSidebar } from '../composables/useSidebar';
 import { switchToAllPhotos } from '../services/folderActions';
+import { useContextMenuStore } from '../stores/contextMenu';
 import { useFsStore } from '../stores/fs';
 import RootSwitcher from './RootSwitcher.vue';
 import SidebarTreeItem from './SidebarTreeItem.vue';
 
 const fsStore = useFsStore();
+const contextMenu = useContextMenuStore();
 const resizeEl = ref(null);
 const { pinned, width, togglePin } = useSidebar(resizeEl);
 
 async function onAllMediaClick() {
   await switchToAllPhotos();
 }
+
+// 反馈1:侧栏任意处右键吞掉原生菜单(.prevent);若自定义菜单正开着,顺手关掉它
+// (useOverlay 的 outsideClick 只听 click,右键不关)。节点自身右键已 stopPropagation,不会到这里。
+function onSidebarContextmenu() {
+  if (contextMenu.visible)
+    contextMenu.hide();
+}
 </script>
 
 <template>
-  <div id="sidebar" :class="{ pinned }" :style="{ '--sidebar-width': `${width}px` }">
+  <div id="sidebar" :class="{ pinned }" :style="{ '--sidebar-width': `${width}px` }" @contextmenu.prevent="onSidebarContextmenu">
     <div id="sidebar-content">
       <div class="sidebar-header">
         <RootSwitcher />

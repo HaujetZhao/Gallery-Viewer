@@ -32,9 +32,16 @@ export const useRootStore = defineStore('root', () => {
     await handleStore.update(id, patch);
   }
 
+  // R1:按 id 顺序重排响应式 roots + 同步 handleStore(与 updateMeta 同款"两边同步")。
+  async function reorder(ids) {
+    const map = new Map(roots.value.map(r => [r.id, r]));
+    roots.value = ids.map(id => map.get(id)).filter(Boolean);
+    await handleStore.reorder(ids);
+  }
+
   function setCurrent(id) {
     currentRootId.value = id;
   }
 
-  return { roots, currentRootId, loadFromHandleStore, add, remove, updateMeta, setCurrent };
+  return { roots, currentRootId, loadFromHandleStore, add, remove, updateMeta, reorder, setCurrent };
 });

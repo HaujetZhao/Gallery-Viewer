@@ -1,7 +1,8 @@
 <script setup>
 import { ref, watch } from 'vue';
 import { useModal } from '../composables/useModal';
-import { ensureBlobUrl } from '../models/SmartFile';
+import { triggerRedraw } from '../composables/useThumbnail';
+import { detectFileChange, ensureBlobUrl } from '../models/SmartFile';
 import { useModalStore } from '../stores/modal';
 import AudioPlayer from './AudioPlayer.vue';
 
@@ -19,7 +20,9 @@ const { loading, svgText, mediaKind, isHoveringVideo, onImgLoad, fitted } = useM
 // 所有类型先 ensureBlobUrl(确保 peek 有 url):
 // image/video 直接读 blobUrl 设 imgSrc;audio(AudioPlayer :src)/svg(loadSvg fetch)靠 ensureBlobUrl 后 peek 有 url。
 // Phase 2:listFolder 零 getFile → 新文件 blobUrl 可能 null,enrich 完成前打开 Modal 也要懒建。
+// R3:顺手 detectFileChange(比 _meta,变则清 md5);关 modal 时若变了 → triggerRedraw 重挂卡片重生缩略图。
 const imgSrc = ref('');
+let fileChanged = false;
 watch(
   [() => modal.currentFile, () => mediaKind.value],
   async () => {
@@ -27,8 +30,12 @@ watch(
     if (f) {
       await ensureBlobUrl(f);
       imgSrc.value = (mediaKind.value === 'image' || mediaKind.value === 'video') ? f.blobUrl : '';
+      fileChanged = await detectFileChange(f); // 不阻塞大图(ensureBlobUrl 已读完 getFile,peek 复用)
     }
     else {
+      if (fileChanged)
+        triggerRedraw(); // 关闭时若该图内容变了,重挂卡片让 useThumbnail 按新 md5 重生缩略图
+      fileChanged = false;
       imgSrc.value = '';
     }
   },

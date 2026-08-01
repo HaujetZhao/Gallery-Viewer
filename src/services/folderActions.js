@@ -49,16 +49,8 @@ async function scanAndPersist(id) {
     await persistIfDirty(id); // 首次/reload 全树扫后必 dirty(integrateScanResult 检测 newFiles)→ 持久化
 }
 
-// R2:只扫 root 一层(顶层增删即时),不递归深层(深层点开才校验)。
-// trust:true → 顶层名字集合一致则零 IO(integrateScanResult 检测增删置 dirty)。
-async function rootEagerScan(root, token) {
-  if (!root?.handle)
-    return;
-  const fs = useFsStore();
-  const result = await scanFolder(root, { trust: true });
-  integrateScanResult(root, result, fs);
-  await enrichFolder(root, { token });
-}
+// R2:切根秒显快照后,后台递归整树做名字集合校验(trust 一致零 IO),变了的对新增文件 enrich。
+// 不再只扫 root 一层——深层磁盘增删也即时拾取(不点开也反映)。复用 scanAndPersist(全树 + persistIfDirty)。
 
 // 打开新文件夹(picker)。已保存(handleStore 命中)→ 复用 switchToRoot 秒显+toast,不重建;否则新建扫+记录+切换。
 export async function openFolderPicker() {
@@ -109,7 +101,6 @@ export async function switchToRoot(id) {
     toast.error('未获得文件夹访问权限');
     return null;
   }
-  let restoredFromSnap = false;
   try {
     const snap = await loadScan(id);
     // 切到新根前:先 flush 旧根在途的 debounced 写(落盘旧根改动,防根切换静默丢改动——rename 后 1s 内切根,
@@ -122,7 +113,6 @@ export async function switchToRoot(id) {
       const root = folderFromSnapshot(snap, null); // 秒显(零 IO,纯函数建原始树)
       fs.rootFolder = root; // root 挂到 ref → 整棵树深代理(folderFromSnapshot 建的原始树,挂树即代理化)
       fs.currentFolder = root;
-      restoredFromSnap = true;
     }
     else {
       const root = await loadProject(handle);
@@ -136,11 +126,8 @@ export async function switchToRoot(id) {
   }
   rootStore.setCurrent(id);
   await rootStore.updateMeta(id, { lastUsed: Date.now() });
-  // R2:有 snap → root 一层 eager(替代全树后台扫);R3:仅 dirty 才持久化。无 snap/恢复失败 → 全树扫建快照
-  if (restoredFromSnap)
-    rootEagerScan(fs.rootFolder).then(() => persistIfDirty(id));
-  else
-    scanAndPersist(id);
+  // R2:有 snap → 秒显后后台递归整树校验(深层增删也拾取);无 snap/恢复失败 → 全树扫建快照。两者都走 scanAndPersist。
+  scanAndPersist(id);
   return fs.rootFolder;
 }
 

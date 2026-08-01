@@ -72,6 +72,26 @@ export async function update(id, patch) {
   }
 }
 
+// R1:按 id 顺序重排内存 cache + persist(顺序真源在 handleStore IDB cache)。
+export async function reorder(ids) {
+  const list = await loadRaw();
+  const map = new Map(list.map(it => [it.id, it]));
+  const next = [];
+  for (const id of ids) {
+    const it = map.get(id);
+    if (it) {
+      next.push(it);
+      map.delete(id);
+    }
+  }
+  // ponytail: ids 未覆盖的(防御,正常不会发生)保留原相对顺序追加末尾
+  for (const it of map.values())
+    next.push(it);
+  list.length = 0;
+  list.push(...next);
+  await persist();
+}
+
 export async function getHandle(id) {
   const list = await loadRaw();
   return list.find(it => it.id === id)?.handle || null;

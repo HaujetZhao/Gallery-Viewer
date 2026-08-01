@@ -103,6 +103,11 @@ useOverlay({
     color: #333;
 }
 
+.context-menu-item.disabled {
+    opacity: 0.4;
+    pointer-events: none;
+}
+
 .context-menu-item.danger:hover {
     background-color: #fee;
 }

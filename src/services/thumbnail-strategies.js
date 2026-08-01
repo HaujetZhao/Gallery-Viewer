@@ -177,6 +177,9 @@ export const ThumbnailStrategies = {
         }
 
         function onLoadedMetadata() {
+          // R11:顺带抽 duration 存 _meta(仅首次、有效有限值),随快照持久化。ensureBlobUrl 已写 size/lastModified。
+          if (fileData._meta && fileData._meta.duration == null && Number.isFinite(video.duration))
+            fileData._meta = { ...fileData._meta, duration: video.duration };
           video.currentTime = Math.min(5, video.duration / 2);
         }
 

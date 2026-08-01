@@ -1,6 +1,7 @@
 import { triggerRedraw } from '../composables/useThumbnail';
 import { ensureBlobUrl } from '../models/SmartFile';
 import { useFsStore } from '../stores/fs';
+import { useRootStore } from '../stores/root';
 import { useToastStore } from '../stores/uiToast';
 import { useUserSettingsStore } from '../stores/userSettings';
 // 缩略图生成主体。搬自源码 js/thumbnails.js 的 generateAndShowThumbnail,去 observer/队列/DOM 耦合。
@@ -10,6 +11,7 @@ import { calculateMD5 } from '../utils/file';
 import { deleteThumbnail, getThumbnailFromDB, saveThumbnailToDB, touchThumbnailInDB } from './db';
 import { peek } from './fileResource';
 import { refreshFolder } from './folderActions';
+import { afterTreeMutation } from './persistence';
 import { getThumbnailStrategy } from './thumbnail-strategies';
 
 // 把缓存 blob 画到 canvas(缓存恢复,不做缩放,blob 本就是 targetSize 方图)。
@@ -62,6 +64,8 @@ export async function generateThumbnail(file, canvas, targetSize = 400) {
   }
 
   // 未命中:策略生成(已画到 canvas)→ 存 DB
+  // R11:视频 strategy 在抽帧时顺带写 _meta.duration;首次抽到 → 置脏 + 调度持久化(随快照落盘,刷新仍在)。
+  const beforeDuration = file.duration;
   const blob = await strategy.generateThumbnail(canvas, file, targetSize);
   if (blob) {
     await saveThumbnailToDB({
@@ -73,6 +77,8 @@ export async function generateThumbnail(file, canvas, targetSize = 400) {
       blob,
     });
   }
+  if (strategy.name === 'video' && file.duration != null && file.duration !== beforeDuration)
+    afterTreeMutation(useRootStore().currentRootId);
   return { cached: false, strategyName: strategy.name };
 }
 

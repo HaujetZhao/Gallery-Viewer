@@ -10,13 +10,16 @@ import SettingsPanel from './components/SettingsPanel.vue';
 import Sidebar from './components/Sidebar.vue';
 import Toast from './components/Toast.vue';
 import { useGallerySearch } from './composables/useGallerySearch';
+import { hoveredFile } from './composables/useHoveredFile';
 import { useScrollZone } from './composables/useScrollZone';
 import { initDB } from './services/db';
 import { openFolderPicker, switchToRoot } from './services/folderActions';
 import * as handleStore from './services/handleStore';
 import { flushPendingPersist } from './services/persistence';
+import { useFavoritesStore } from './stores/favorites';
 import { useFsStore } from './stores/fs';
 import { useHistoryStore } from './stores/history';
+import { useModalStore } from './stores/modal';
 import { useRootStore } from './stores/root';
 import { useThemeStore } from './stores/theme';
 import { useToastStore } from './stores/uiToast';
@@ -30,6 +33,8 @@ const rootStore = useRootStore();
 const settings = useUserSettingsStore();
 const toast = useToastStore();
 const history = useHistoryStore();
+const favorites = useFavoritesStore();
+const modal = useModalStore();
 const { searchTerm, filteredCount, totalCount } = useGallerySearch();
 
 const sidebarPinned = computed(() => !!settings.settings.sidebarPinned);
@@ -70,6 +75,7 @@ onMounted(async () => {
   catch (e) {
     console.warn('initDB 失败:', e);
   }
+  favorites.load(); // R6:启动加载收藏集(不阻塞,无句柄依赖)
   document.addEventListener('keydown', onKeydown);
   document.addEventListener('visibilitychange', onVisibilityChange);
   await tryRestoreFolder();
@@ -118,6 +124,15 @@ function onKeydown(e) {
     return;
   const isCtrl = e.ctrlKey || e.metaKey;
   const key = e.key.toLowerCase();
+  // R6:L 切收藏。modal 打开 → 切当前大图;否则切 hover 的卡片。输入框聚焦已在上方 return。
+  if (!isCtrl && key === 'l') {
+    const f = modal.isOpen ? modal.currentFile : hoveredFile.value;
+    if (f?.md5) {
+      e.preventDefault();
+      favorites.toggle(f.md5);
+    }
+    return;
+  }
   if (isCtrl && key === 'o') {
     e.preventDefault();
     open();

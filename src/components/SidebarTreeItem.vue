@@ -30,12 +30,11 @@ function toggle(e) {
 }
 
 function onContextmenu(e) {
-  if (props.isRoot)
-    return;
+  // 根目录也弹同款菜单,但"删除文件夹"禁用(disabled:true 灰显不可点)。
   e.preventDefault();
   e.stopPropagation();
   contextMenu.show(e.clientX, e.clientY, [
-    { label: '删除文件夹', icon: 'fas fa-trash-alt', danger: true, action: () => handleDeleteFolder(props.folder) },
+    { label: '删除文件夹', icon: 'fas fa-trash-alt', danger: true, disabled: props.isRoot, action: () => handleDeleteFolder(props.folder) },
   ]);
 }
 
