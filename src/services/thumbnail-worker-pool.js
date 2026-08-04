@@ -5,6 +5,8 @@
 // worker 内 createImageBitmap + cover-fit drawImage + convertToBlob,回传小 jpeg blob。
 // 无 Worker / OffscreenCanvas(如测试环境 jsdom)→ isPoolAvailable()=false,策略走主线程兜底。
 import { CONFIG } from '../config/index';
+// ?worker&inline 内联进单 HTML,约定见 CLAUDE.md 第 9 条。
+import ThumbnailWorker from './thumbnail-worker.js?worker&inline';
 
 const POOL_SIZE = CONFIG.PERFORMANCE.THUMBNAIL_QUEUE_SIZE;
 
@@ -44,9 +46,8 @@ function onMsg(worker, e) {
 
 if (typeof Worker !== 'undefined' && typeof OffscreenCanvas !== 'undefined') {
   try {
-    const url = new URL('./thumbnail-worker.js', import.meta.url);
     for (let i = 0; i < POOL_SIZE; i++) {
-      const w = new Worker(url, { type: 'module' });
+      const w = new ThumbnailWorker();
       w.onmessage = e => onMsg(w, e);
       w.onerror = (err) => {
         // worker 崩:reject 其在途任务(若有)。worker 不销毁、回空闲栈复用——崩过的 worker 下次派活

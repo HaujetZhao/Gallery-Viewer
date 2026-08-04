@@ -2,6 +2,8 @@
 // calculateMD5 只 hash 前 2MB——必须保留此语义,否则与老版本 IndexedDB 缓存 key 不一致。
 // R15:SparkMD5 哈希搬到 Web Worker(消除快速滚动多卡进视窗算 md5 的主线程掉帧)。
 import SparkMD5 from 'spark-md5';
+// ?worker&inline 内联进单 HTML,约定见 CLAUDE.md 第 9 条。
+import Md5Worker from './md5.worker.js?worker&inline';
 
 // 单 worker + 队列(够用;想榨多核再上池)。worker 崩溃 → 回退主线程。
 // 测试环境(jsdom 无法加载模块 worker)→ 直接走主线程,避免 calculateMD5 用例挂起。
@@ -15,7 +17,7 @@ function getWorker() {
   if (worker || workerBroken)
     return worker;
   try {
-    worker = new Worker(new URL('./md5.worker.js', import.meta.url), { type: 'module' });
+    worker = new Md5Worker();
     worker.onmessage = (e) => {
       const { id, hash, error } = e.data || {};
       const p = pending.get(id);
