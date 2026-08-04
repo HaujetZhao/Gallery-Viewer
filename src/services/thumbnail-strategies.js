@@ -13,7 +13,7 @@ import { FileTypes } from '../config/file-types';
 import { ensureBlobUrl } from '../models/SmartFile';
 import { saveFileMeta } from './fileMeta';
 import { peek } from './fileResource';
-import { isPoolAvailable, renderInWorker } from './thumbnail-worker-pool';
+import { isPoolAvailable, renderBitmapInWorker, renderInWorker } from './thumbnail-worker-pool';
 
 // 把小 jpeg blob 画到 canvas(缓存命中 + worker 回传 blob 共用)。1:1 不缩放,blob 本就是 targetSize 方图。
 // createImageBitmap 传 'from-image' 防御性正方向(与原 <img> 一致;已正向 jpeg 无害)。
@@ -210,6 +210,37 @@ export const ThumbnailStrategies = {
           if (captured)
             return;
           captured = true;
+          // 抓帧 → worker 池做 cover-fit 降采样 + 编码(主线程只剩「抓帧异步 + 画小 blob」)。
+          // createImageBitmap(video) 在解码线程抓当前帧(off),产出 ImageBitmap(transferable)进 worker。
+          // 无池 → 主线程 drawVideoFrame + toBlob 兜底(原路径)。
+          if (isPoolAvailable()) {
+            let workerBitmap = null;
+            createImageBitmap(video)
+              .then(async (bmp) => {
+                workerBitmap = bmp;
+                const blob = await renderBitmapInWorker(bmp, targetSize); // bmp transferred 进 worker
+                workerBitmap = null; // 已转移,主线程引用失效
+                try {
+                  await drawBlobToCanvas(element, blob);
+                  cleanup();
+                  onDrawn?.();
+                  resolve(blob);
+                }
+                catch {
+                  finishWithDefault();
+                }
+              })
+              .catch(() => {
+                try {
+                  workerBitmap?.close?.();
+                }
+                catch {
+                  // ignore
+                }
+                finishWithDefault();
+              });
+            return;
+          }
           try {
             ThumbnailStrategies.video.drawVideoFrame(element, video, targetSize);
             onDrawn?.(); // 抽帧画完 → 翻 loaded(不等 toBlob 编码)

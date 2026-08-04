@@ -14,8 +14,12 @@ const queue = []; // 满载时排队:{ file, targetSize, resolve, reject }
 
 function dispatch(worker, task) {
   worker._task = task;
-  // File 非 transferable 但可 structured-clone(共享底层 blob 数据引用),无需转移列表。
-  worker.postMessage({ file: task.file, targetSize: task.targetSize });
+  if (task.isBitmap)
+    // ImageBitmap 可 transfer(零拷贝)。
+    worker.postMessage({ bitmap: task.bitmap, targetSize: task.targetSize }, [task.bitmap]);
+  else
+    // File 非 transferable 但可 structured-clone(共享底层 blob 数据引用),无需转移列表。
+    worker.postMessage({ file: task.file, targetSize: task.targetSize });
 }
 
 function release(worker) {
@@ -68,6 +72,17 @@ export function isPoolAvailable() {
 export function renderInWorker(file, targetSize) {
   return new Promise((resolve, reject) => {
     const task = { file, targetSize, resolve, reject };
+    if (free.length)
+      dispatch(free.pop(), task);
+    else
+      queue.push(task);
+  });
+}
+
+// 视频帧:主线程 createImageBitmap(video) 抓好的帧,transfer 进 worker 做 cover-fit + 编码。
+export function renderBitmapInWorker(bitmap, targetSize) {
+  return new Promise((resolve, reject) => {
+    const task = { bitmap, targetSize, resolve, reject, isBitmap: true };
     if (free.length)
       dispatch(free.pop(), task);
     else

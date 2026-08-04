@@ -26,14 +26,17 @@ vi.mock('../models/SmartFile', () => ({
   ensureBlobUrl: vi.fn(() => ensureBlobUrlHolder.returns),
 }));
 
-// worker 池:桩 isPoolAvailable/renderInWorker。renderInWorker 模拟 worker 行为——收 File,回 jpeg blob。
+// worker 池:桩 isPoolAvailable/renderInWorker/renderBitmapInWorker。
+// renderInWorker 收 File(image 路径),renderBitmapInWorker 收 ImageBitmap(video 抓帧路径),都回 jpeg blob。
 const poolMock = vi.hoisted(() => ({
   available: true,
   renderInWorker: vi.fn(async (_file, _targetSize) => new Blob([], { type: 'image/jpeg' })),
+  renderBitmapInWorker: vi.fn(async (_bitmap, _targetSize) => new Blob([], { type: 'image/jpeg' })),
 }));
 vi.mock('./thumbnail-worker-pool', () => ({
   isPoolAvailable: () => poolMock.available,
   renderInWorker: poolMock.renderInWorker,
+  renderBitmapInWorker: poolMock.renderBitmapInWorker,
 }));
 
 // 造假 ImageBitmap:createImageBitmap 桩返回它。drawImage 用它的 width/height。
