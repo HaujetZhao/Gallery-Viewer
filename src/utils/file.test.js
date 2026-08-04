@@ -34,9 +34,37 @@ function makePngBuffer(w, h) {
   return new File([buf], 't.png', { type: 'image/png' });
 }
 
+// 造 JPEG buffer:SOI(FFD8)+ APP0 段 + SOF0 段(精度/高@+3/宽@+5)。
+// 锁 SOF 偏移回归:旧代码读 offset+1 当宽(段长低位+精度=0x1108=4360 垃圾)、offset+3(真高)当宽。
+function makeJpegBuffer(w, h) {
+  // SOI(2) + APP0(2+16) + SOF0(2+8)
+  const buf = new ArrayBuffer(2 + 18 + 10);
+  const v = new DataView(buf);
+  let p = 0;
+  v.setUint16(p, 0xFFD8); p += 2; // SOI
+  // APP0 段:marker FFE0 + length 16 + "JFIF"\0 + ...
+  v.setUint16(p, 0xFFE0); p += 2;
+  v.setUint16(p, 16); p += 2; // length=16
+  v.setUint32(p, 0x4A464946); p += 4; // "JFIF"
+  // 剩 10 字节填 0(版本/密度/缩略图),跳过
+  p = 2 + 18;
+  // SOF0 段:marker FFC0 + length(8+3*Nf,Nf=3 → 17) + precision(1) + height(2) + width(2) + Nf(1)
+  v.setUint16(p, 0xFFC0); p += 2;
+  v.setUint16(p, 17); p += 2; // length=17(0x0011)
+  v.setUint8(p, 8); p += 1; // precision=8
+  v.setUint16(p, h); p += 2; // height
+  v.setUint16(p, w); p += 2; // width
+  v.setUint8(p, 3); // Nf=3
+  return new File([buf], 't.jpg', { type: 'image/jpeg' });
+}
+
 describe('getImageInfoFromHeader', () => {
   it('读 PNG width/height(零解码魔数)', async () => {
     expect(await getImageInfoFromHeader(makePngBuffer(800, 600))).toEqual([800, 600, 'png']);
+  });
+  it('读 JPEG width/height(SOF 偏移回归锁:width@offset+5,height@offset+3)', async () => {
+    // 旧 bug:返回 [height, 4360(段长17+精度8=0x1108)] → 缩略图 resize 强拉压扁
+    expect(await getImageInfoFromHeader(makeJpegBuffer(8736, 4360))).toEqual([8736, 4360, 'jpg']);
   });
   it('小文件(<30 字节) → null', async () => {
     expect(await getImageInfoFromHeader(new File([new Uint8Array(10)], 'tiny'))).toBeNull();

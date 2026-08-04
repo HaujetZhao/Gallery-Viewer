@@ -9,6 +9,7 @@ dist-pwa/
 .vite/
 
 # 日志
+logs
 *.log
 npm-debug.log*
 

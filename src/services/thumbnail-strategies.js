@@ -1,13 +1,53 @@
-// 缩略图生成策略。搬自源码 js/thumbnail-strategies.js,零改动(仅加 export + import FileTypes)。
+// 缩略图生成策略。搬自源码 js/thumbnail-strategies.js,仅加 export + import FileTypes。
 // 为不同媒体类型提供缩略图生成和卡片标识。
 //
 // R3-1:image 策略改用 createImageBitmap 解码(off-main-thread,比 Image+onload 快、不占主线程)。
 // 关键等价性:createImageBitmap 默认 imageOrientation:'none'(不正 EXIF),而 <img> 元素默认 from-image。
 // 必须传 { imageOrientation: 'from-image' },否则带 EXIF 方向的手机照片缩略图会侧躺/倒置。
+//
+// image 策略的整条缩略图管线(解码 + drawImage 降采样 + toBlob 编码)丢进 OffscreenCanvas worker 池:
+// File(structured-clone,廉价)进 worker → worker 内 createImageBitmap 解码(走共享解码线程池,off)
+// → cover-fit drawImage + convertToBlob → 小 jpeg blob 回传 → 主线程把 blob 画上可见 canvas(~ms)。
+// 全分辨率 bitmap 只在 worker 堆存活,主线程零参与(不实例化/不 GC),治感应滚动卡顿。
 import { FileTypes } from '../config/file-types';
 import { ensureBlobUrl } from '../models/SmartFile';
 import { saveFileMeta } from './fileMeta';
 import { peek } from './fileResource';
+import { isPoolAvailable, renderInWorker } from './thumbnail-worker-pool';
+
+// 把小 jpeg blob 画到 canvas(缓存命中 + worker 回传 blob 共用)。1:1 不缩放,blob 本就是 targetSize 方图。
+// createImageBitmap 传 'from-image' 防御性正方向(与原 <img> 一致;已正向 jpeg 无害)。
+export async function drawBlobToCanvas(canvas, blob) {
+  const bitmap = await createImageBitmap(blob, { imageOrientation: 'from-image' });
+  try {
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    canvas.getContext('2d').drawImage(bitmap, 0, 0);
+  }
+  finally {
+    bitmap.close?.();
+  }
+}
+
+// 主线程兜底:worker 池不可用时(无 Worker/OffscreenCanvas,如 jsdom)走原路径。
+// createImageBitmap 解码 + 临时 canvas cover-fit drawImage + toBlob;用完关闭 bitmap。
+async function drawCoverToBlobMain(file, targetSize) {
+  const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  try {
+    const tmp = document.createElement('canvas');
+    tmp.width = targetSize;
+    tmp.height = targetSize;
+    const ctx = tmp.getContext('2d');
+    const ratio = Math.max(targetSize / bitmap.width, targetSize / bitmap.height);
+    const dx = (targetSize - bitmap.width * ratio) / 2;
+    const dy = (targetSize - bitmap.height * ratio) / 2;
+    ctx.drawImage(bitmap, 0, 0, bitmap.width, bitmap.height, dx, dy, bitmap.width * ratio, bitmap.height * ratio);
+    return await new Promise(resolve => tmp.toBlob(resolve, 'image/jpeg', 0.85));
+  }
+  finally {
+    bitmap.close?.();
+  }
+}
 
 export const ThumbnailStrategies = {
   // 图片策略
@@ -21,44 +61,22 @@ export const ThumbnailStrategies = {
     },
 
     generateThumbnail: async (element, fileData, targetSize, onDrawn) => {
-      // R3-1:createImageBitmap 解码(off-main-thread,比 Image+onload 快)。
       // File 来源:复用池里 ensureBlobUrl/peek 已 acquire 的 File(thumbnail.js md5 计算也这么复用),
       // peek 未命中才 fallback handle.getFile()——不二次 IO。
-      // imageOrientation:'from-image' 保持 EXIF 方向等价(<img> 默认行为)。
       const file = peek(fileData)?.file ?? await fileData.handle.getFile();
-      const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
 
-      try {
-        const canvas = element;
-        canvas.width = targetSize;
-        canvas.height = targetSize;
-        const ctx = canvas.getContext('2d');
-        const ratio = Math.max(targetSize / bitmap.width, targetSize / bitmap.height);
-        const centerShift_x = (targetSize - bitmap.width * ratio) / 2;
-        const centerShift_y = (targetSize - bitmap.height * ratio) / 2;
+      // 整条(createImageBitmap 解码 + cover-fit drawImage + convertToBlob)丢进 worker 池,主线程零参与。
+      // 全分辨率 bitmap 只在 worker 堆存活,主线程不实例化/不 GC → 治感应滚动卡顿(50MP 图主线程降采样)。
+      // 解码仍走共享解码线程池(off),与主线程调用并行度一致,不拖慢。
+      // 无池(测试环境)→ drawCoverToBlobMain 主线程兜底(createImageBitmap + 临时 canvas drawImage + toBlob)。
+      const blob = isPoolAvailable()
+        ? await renderInWorker(file, targetSize) // File 进 worker,worker 内解码+绘制+编码
+        : await drawCoverToBlobMain(file, targetSize);
 
-        ctx.drawImage(
-          bitmap,
-          0,
-          0,
-          bitmap.width,
-          bitmap.height,
-          centerShift_x,
-          centerShift_y,
-          bitmap.width * ratio,
-          bitmap.height * ratio,
-        );
-
-        // 画完即翻 loaded(见 generateThumbnail docstring),不等 toBlob 编码。
-        onDrawn?.();
-
-        return new Promise((resolve) => {
-          canvas.toBlob(blob => resolve(blob), 'image/jpeg', 0.85);
-        });
-      }
-      finally {
-        bitmap.close?.(); // 释放位图内存(无论 toBlob 成败)
-      }
+      // worker 产的小 jpeg blob 画上可见 canvas(~ms);再翻 loaded。
+      await drawBlobToCanvas(element, blob);
+      onDrawn?.();
+      return blob;
     },
 
     getCardBadge: () => null,

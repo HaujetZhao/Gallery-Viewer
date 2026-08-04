@@ -26,6 +26,16 @@ vi.mock('../models/SmartFile', () => ({
   ensureBlobUrl: vi.fn(() => ensureBlobUrlHolder.returns),
 }));
 
+// worker 池:桩 isPoolAvailable/renderInWorker。renderInWorker 模拟 worker 行为——收 File,回 jpeg blob。
+const poolMock = vi.hoisted(() => ({
+  available: true,
+  renderInWorker: vi.fn(async (_file, _targetSize) => new Blob([], { type: 'image/jpeg' })),
+}));
+vi.mock('./thumbnail-worker-pool', () => ({
+  isPoolAvailable: () => poolMock.available,
+  renderInWorker: poolMock.renderInWorker,
+}));
+
 // 造假 ImageBitmap:createImageBitmap 桩返回它。drawImage 用它的 width/height。
 function fakeBitmap(width, height) {
   return {
@@ -50,6 +60,8 @@ beforeEach(() => {
   peekHolder.returns = null;
   ensureBlobUrl.mockClear();
   ensureBlobUrlHolder.returns = null;
+  poolMock.available = true;
+  poolMock.renderInWorker.mockClear();
 });
 
 // M1 测试卫生:还原 stub 的 createImageBitmap,防漏到同文件/同 run 后续测试(createImageBitmap 是全局)。
@@ -57,44 +69,34 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('image 策略 generateThumbnail(R3-1:createImageBitmap 解码)', () => {
-  it('用 createImageBitmap 解码而非 new Image,且传 { imageOrientation: "from-image" }(EXIF 等价性)', async () => {
+describe('image 策略 generateThumbnail(整条管线丢进 worker 池,主线程零解码)', () => {
+  it('file 传 renderInWorker(file, targetSize),不二次 getFile,onDrawn 后返 jpeg blob', async () => {
     const rawFile = { name: 'a.jpg', size: 100 };
     const handle = { getFile: vi.fn() };
     const fileData = { handle }; // SmartFile:peek 用 holder 命中
 
     peekHolder.returns = { file: rawFile }; // 模拟 ensureBlobUrl 已 acquire,peek 命中
 
-    const { canvas, ctx } = fakeCanvas();
-    const bitmap = fakeBitmap(800, 600);
-    globalThis.createImageBitmap.mockResolvedValue(bitmap);
+    const { canvas } = fakeCanvas();
+    // 主线程只剩 drawBlobToCanvas 的一次 createImageBitmap(blob) 重绘;解码在 worker(mock 掉)。
+    globalThis.createImageBitmap.mockImplementation(async () => fakeBitmap(800, 600));
 
-    const blob = await ThumbnailStrategies.image.generateThumbnail(canvas, fileData, 400);
+    const onDrawn = vi.fn();
+    const blob = await ThumbnailStrategies.image.generateThumbnail(canvas, fileData, 400, onDrawn);
 
-    // 关键:createImageBitmap 被调,且第一个参数是 raw File(来自 peek,不二次 getFile)
-    expect(createImageBitmap).toHaveBeenCalledTimes(1);
-    expect(createImageBitmap).toHaveBeenCalledWith(rawFile, { imageOrientation: 'from-image' });
-    // 没走 getFile(peek 命中)
+    // 关键:File(peek 命中,不二次 getFile)+ targetSize 透传给 worker 池
     expect(handle.getFile).not.toHaveBeenCalled();
-    // 用 bitmap 的 width/height 计算 ratio(而非 img)
-    expect(ctx.drawImage).toHaveBeenCalledWith(
-      bitmap,
-      0,
-      0,
-      800,
-      600, // 源用 bitmap 的尺寸
-      expect.any(Number),
-      expect.any(Number),
-      expect.any(Number),
-      expect.any(Number),
-    );
-    // 返回 jpeg blob(toBlob 被调)
+    expect(poolMock.renderInWorker).toHaveBeenCalledTimes(1);
+    expect(poolMock.renderInWorker).toHaveBeenCalledWith(rawFile, 400);
+    // 主线程不再为解码调 createImageBitmap(只 drawBlobToCanvas 的小 blob 重绘 1 次)
+    expect(createImageBitmap).toHaveBeenCalledTimes(1);
+    // onDrawn 被调(画上可见 canvas 后)+ 返 jpeg blob
+    expect(onDrawn).toHaveBeenCalled();
     expect(blob).toBeInstanceOf(Blob);
     expect(blob.type).toBe('image/jpeg');
-    expect(canvas.toBlob).toHaveBeenCalled();
   });
 
-  it('peek 未命中时 fallback 到 handle.getFile()(与 thumbnail.js md5 复用一致)', async () => {
+  it('peek 未命中时 fallback handle.getFile(),renderInWorker 收到 getFile 的 File', async () => {
     const rawFile = { name: 'b.jpg', size: 200 };
     const handle = { getFile: vi.fn(async () => rawFile) };
     const fileData = { handle };
@@ -102,28 +104,33 @@ describe('image 策略 generateThumbnail(R3-1:createImageBitmap 解码)', () => 
     peekHolder.returns = null; // peek 未命中
 
     const { canvas } = fakeCanvas();
-    globalThis.createImageBitmap.mockResolvedValue(fakeBitmap(1024, 768));
+    globalThis.createImageBitmap.mockImplementation(async () => fakeBitmap(1024, 768));
 
     await ThumbnailStrategies.image.generateThumbnail(canvas, fileData, 400);
 
     expect(handle.getFile).toHaveBeenCalledTimes(1); // peek 没命中,fallback getFile
-    expect(createImageBitmap).toHaveBeenCalledWith(rawFile, { imageOrientation: 'from-image' });
+    expect(poolMock.renderInWorker).toHaveBeenCalledWith(rawFile, 400);
   });
 
-  it('bitmap 用完 close() 释放内存', async () => {
+  it('worker 池不可用时回退主线程 drawCoverToBlobMain(createImageBitmap + drawImage + toBlob)', async () => {
+    poolMock.available = false;
     const rawFile = { name: 'c.jpg', size: 300 };
-    const handle = { getFile: vi.fn() };
-    const fileData = { handle };
-
     peekHolder.returns = { file: rawFile };
+    // drawCoverToBlobMain / drawBlobToCanvas 都要 canvas.getContext:jsdom 返回 null → 原型桩假 ctx + toBlob
+    const fakeCtx = { drawImage: vi.fn() };
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(fakeCtx);
+    vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(cb => cb(new Blob([], { type: 'image/jpeg' })));
+    globalThis.createImageBitmap.mockImplementation(async () => fakeBitmap(500, 500));
 
     const { canvas } = fakeCanvas();
-    const bitmap = fakeBitmap(500, 500);
-    globalThis.createImageBitmap.mockResolvedValue(bitmap);
+    const blob = await ThumbnailStrategies.image.generateThumbnail(canvas, { handle: { getFile: vi.fn() } }, 400);
 
-    await ThumbnailStrategies.image.generateThumbnail(canvas, fileData, 400);
-
-    expect(bitmap.close).toHaveBeenCalledTimes(1);
+    expect(poolMock.renderInWorker).not.toHaveBeenCalled(); // 池不可用,不走 worker
+    // 主线程兜底:createImageBitmap(file) 解码 + drawBlobToCanvas 的 blob 重绘 = 2 次
+    expect(createImageBitmap).toHaveBeenCalledTimes(2);
+    expect(createImageBitmap).toHaveBeenNthCalledWith(1, rawFile, { imageOrientation: 'from-image' });
+    expect(blob).toBeInstanceOf(Blob);
+    expect(blob.type).toBe('image/jpeg');
   });
 });
 

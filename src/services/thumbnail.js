@@ -14,28 +14,15 @@ import { ensureFileMetaLoaded } from './fileMeta';
 import { peek } from './fileResource';
 import { refreshFolder } from './folderActions';
 import { afterFolderMutation } from './persistence';
-import { extractAudioDuration, getThumbnailStrategy } from './thumbnail-strategies';
+import { drawBlobToCanvas, extractAudioDuration, getThumbnailStrategy } from './thumbnail-strategies';
 
-// 把缓存 blob 画到 canvas(缓存恢复,不做缩放,blob 本就是 targetSize 方图)。
-// R3-1:createImageBitmap 解码(与 image 策略同型热路径,缓存命中也走解码,首切提速同样受益)。
-// cached.blob 是之前 canvas.toBlob 存的"已正向" jpeg,但 createImageBitmap 默认 imageOrientation:'none',
-// 为与原 <img> 行为保持一致(防御性,即使 jpeg 已正向也无害),仍传 'from-image'。
-async function drawBlobToCanvas(canvas, blob) {
-  const bitmap = await createImageBitmap(blob, { imageOrientation: 'from-image' });
-  try {
-    canvas.width = bitmap.width;
-    canvas.height = bitmap.height;
-    canvas.getContext('2d').drawImage(bitmap, 0, 0);
-  }
-  finally {
-    bitmap.close?.(); // 释放位图内存
-  }
-}
+// drawBlobToCanvas(缓存命中 + worker 回传 blob 共用)从 thumbnail-strategies.js 导入。
 
 // 生成缩略图并画到 canvas。返回 { cached, strategyName }。
 // GIF/SVG 不缓存,直接渲染;image/video/audio 走 IndexedDB 缓存(md5 + targetSize 为键)。
-// onDrawn:缩略图「已画到 canvas(可见)」时调,useThumbnail 据此即刻翻 loaded(移除转场遮罩),
-// 不等 toBlob 编码/IDB 存盘——否则一批卡的编码集中完成 → loaded 集中翻 → 遮罩整批消失。
+// onDrawn:缩略图「已画到 canvas(可见)」时调,useThumbnail 据此即刻翻 loaded(移除转场遮罩)。
+// image 策略的整条管线(解码 + 降采样 + 编码)在 worker 池(OffscreenCanvas)跑,主线程零参与;
+// onDrawn 在 worker 回传的小 blob 画上可见 canvas 后才翻。
 export async function generateThumbnail(file, canvas, targetSize = 400, onDrawn) {
   const strategy = getThumbnailStrategy(file.type);
 
@@ -84,7 +71,8 @@ export async function generateThumbnail(file, canvas, targetSize = 400, onDrawn)
     return { cached: true, strategyName: strategy.name };
   }
 
-  // 未命中:策略生成(strategy 画完即调 onDrawn,再 toBlob 编码)→ 存 DB(fire-and-forget)。
+  // 未命中:策略生成(image 策略整条管线在 worker 池跑,主线程零参与;onDrawn 在小 blob 画上可见 canvas 后调)
+  // → 存 DB(fire-and-forget)。
   const blob = await strategy.generateThumbnail(canvas, file, targetSize, onDrawn);
   if (blob) {
     saveThumbnailToDB({

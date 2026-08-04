@@ -91,7 +91,10 @@ export async function getImageInfoFromHeader(file) {
       const marker = view.getUint16(offset);
       offset += 2;
       if (marker === 0xFFC0 || marker === 0xFFC2)
-        return [view.getUint16(offset + 3), view.getUint16(offset + 1), 'jpg'];
+        // JPEG SOF 段(过 marker 后):offset+0,1=段长 Lf,offset+2=精度 P,
+        // offset+3,4=高 Y,offset+5,6=宽 X。旧代码读 offset+1(段长低位+精度=垃圾,如 0x1108=4360)
+        // 当宽、offset+3(真高)当宽——维度假,导致缩略图 resize 强拉压扁。改为标准偏移。
+        return [view.getUint16(offset + 5), view.getUint16(offset + 3), 'jpg'];
       offset += view.getUint16(offset);
     }
   }
