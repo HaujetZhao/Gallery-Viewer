@@ -11,6 +11,7 @@
 // 全分辨率 bitmap 只在 worker 堆存活,主线程零参与(不实例化/不 GC),治感应滚动卡顿。
 import { FileTypes } from '../config/file-types';
 import { ensureBlobUrl } from '../models/SmartFile';
+import { coverFitParams } from '../utils/coverFit';
 import { saveFileMeta } from './fileMeta';
 import { peek } from './fileResource';
 import { isPoolAvailable, renderBitmapInWorker, renderInWorker } from './thumbnail-worker-pool';
@@ -38,10 +39,8 @@ async function drawCoverToBlobMain(file, targetSize) {
     tmp.width = targetSize;
     tmp.height = targetSize;
     const ctx = tmp.getContext('2d');
-    const ratio = Math.max(targetSize / bitmap.width, targetSize / bitmap.height);
-    const dx = (targetSize - bitmap.width * ratio) / 2;
-    const dy = (targetSize - bitmap.height * ratio) / 2;
-    ctx.drawImage(bitmap, 0, 0, bitmap.width, bitmap.height, dx, dy, bitmap.width * ratio, bitmap.height * ratio);
+    const { dx, dy, dw, dh } = coverFitParams(bitmap.width, bitmap.height, targetSize);
+    ctx.drawImage(bitmap, 0, 0, bitmap.width, bitmap.height, dx, dy, dw, dh);
     return await new Promise(resolve => tmp.toBlob(resolve, 'image/jpeg', 0.85));
   }
   finally {
@@ -141,20 +140,8 @@ export const ThumbnailStrategies = {
       canvas.width = targetSize;
       canvas.height = targetSize;
       const ctx = canvas.getContext('2d');
-      const ratio = Math.max(targetSize / video.videoWidth, targetSize / video.videoHeight);
-      const centerShift_x = (targetSize - video.videoWidth * ratio) / 2;
-      const centerShift_y = (targetSize - video.videoHeight * ratio) / 2;
-      ctx.drawImage(
-        video,
-        0,
-        0,
-        video.videoWidth,
-        video.videoHeight,
-        centerShift_x,
-        centerShift_y,
-        video.videoWidth * ratio,
-        video.videoHeight * ratio,
-      );
+      const { dx, dy, dw, dh } = coverFitParams(video.videoWidth, video.videoHeight, targetSize);
+      ctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, dx, dy, dw, dh);
     },
 
     drawDefaultThumbnail: (canvas, targetSize) => {
@@ -206,39 +193,25 @@ export const ThumbnailStrategies = {
           video.currentTime = Math.min(5, video.duration / 2);
         }
 
+        // 抓帧 → worker 池做 cover-fit 降采样 + 编码(主线程只剩「抓帧异步 + 画小 blob」)。
+        // createImageBitmap(video) 在解码线程抓当前帧(off),产出 ImageBitmap(transferable)进 worker。
+        // bmp 一旦进 renderBitmapInWorker 即 transfer 给 worker(主线程引用失效),无须主线程 close。
+        // 无池 → drawVideoFrame + toBlob 主线程兜底(原路径)。
+        async function renderViaWorker() {
+          const bmp = await createImageBitmap(video); // 失败直接抛 → 调用方 .catch → finishWithDefault
+          const blob = await renderBitmapInWorker(bmp, targetSize);
+          await drawBlobToCanvas(element, blob);
+          cleanup();
+          onDrawn?.();
+          resolve(blob);
+        }
+
         function onSeeked() {
           if (captured)
             return;
           captured = true;
-          // 抓帧 → worker 池做 cover-fit 降采样 + 编码(主线程只剩「抓帧异步 + 画小 blob」)。
-          // createImageBitmap(video) 在解码线程抓当前帧(off),产出 ImageBitmap(transferable)进 worker。
-          // 无池 → 主线程 drawVideoFrame + toBlob 兜底(原路径)。
           if (isPoolAvailable()) {
-            let workerBitmap = null;
-            createImageBitmap(video)
-              .then(async (bmp) => {
-                workerBitmap = bmp;
-                const blob = await renderBitmapInWorker(bmp, targetSize); // bmp transferred 进 worker
-                workerBitmap = null; // 已转移,主线程引用失效
-                try {
-                  await drawBlobToCanvas(element, blob);
-                  cleanup();
-                  onDrawn?.();
-                  resolve(blob);
-                }
-                catch {
-                  finishWithDefault();
-                }
-              })
-              .catch(() => {
-                try {
-                  workerBitmap?.close?.();
-                }
-                catch {
-                  // ignore
-                }
-                finishWithDefault();
-              });
+            renderViaWorker().catch(() => finishWithDefault());
             return;
           }
           try {
@@ -305,21 +278,9 @@ export const ThumbnailStrategies = {
           canvas.width = targetSize;
           canvas.height = targetSize;
           const ctx = canvas.getContext('2d');
-          const ratio = Math.max(targetSize / img.width, targetSize / img.height);
-          const centerShift_x = (targetSize - img.width * ratio) / 2;
-          const centerShift_y = (targetSize - img.height * ratio) / 2;
+          const { dx, dy, dw, dh } = coverFitParams(img.width, img.height, targetSize);
 
-          ctx.drawImage(
-            img,
-            0,
-            0,
-            img.width,
-            img.height,
-            centerShift_x,
-            centerShift_y,
-            img.width * ratio,
-            img.height * ratio,
-          );
+          ctx.drawImage(img, 0, 0, img.width, img.height, dx, dy, dw, dh);
 
           URL.revokeObjectURL(img.src);
           onDrawn?.(); // 封面画完 → 翻 loaded

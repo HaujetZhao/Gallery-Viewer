@@ -3,18 +3,18 @@
 //  ② { bitmap, targetSize } —— 视频:主线程 createImageBitmap(video) 已抓好的帧(transfer 进来,零拷贝)。
 // 然后 OffscreenCanvas cover-fit drawImage + convertToBlob → 小 jpeg blob(structured-clone 回主线程)。
 // 全分辨率 bitmap 只在 worker 堆存活,主线程不实例化/不 GC。
+import { coverFitParams } from '../utils/coverFit';
+
 globalThis.onmessage = async (e) => {
   const { file, bitmap: inBitmap, targetSize } = e.data;
-  let bitmap = inBitmap || null;
+  let bitmap = inBitmap;
   try {
     if (!bitmap)
       bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
     const canvas = new OffscreenCanvas(targetSize, targetSize);
     const ctx = canvas.getContext('2d');
-    const ratio = Math.max(targetSize / bitmap.width, targetSize / bitmap.height);
-    const dx = (targetSize - bitmap.width * ratio) / 2;
-    const dy = (targetSize - bitmap.height * ratio) / 2;
-    ctx.drawImage(bitmap, 0, 0, bitmap.width, bitmap.height, dx, dy, bitmap.width * ratio, bitmap.height * ratio);
+    const { dx, dy, dw, dh } = coverFitParams(bitmap.width, bitmap.height, targetSize);
+    ctx.drawImage(bitmap, 0, 0, bitmap.width, bitmap.height, dx, dy, dw, dh);
     bitmap.close?.();
     bitmap = null;
     const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.85 });
@@ -22,12 +22,8 @@ globalThis.onmessage = async (e) => {
     globalThis.postMessage({ ok: true, blob });
   }
   catch (err) {
-    try {
-      bitmap?.close?.();
-    }
-    catch {
-      // bitmap 可能已失效
-    }
+    // bitmap 可能为 null(成功路径已置空);close?.() 对已关闭/失效位图是安全的空操作。
+    bitmap?.close?.();
     globalThis.postMessage({ ok: false, error: err?.message || 'worker render failed' });
   }
 };

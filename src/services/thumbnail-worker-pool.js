@@ -14,19 +14,19 @@ const queue = []; // 满载时排队:{ file, targetSize, resolve, reject }
 
 function dispatch(worker, task) {
   worker._task = task;
-  if (task.isBitmap)
-    // ImageBitmap 可 transfer(零拷贝)。
-    worker.postMessage({ bitmap: task.bitmap, targetSize: task.targetSize }, [task.bitmap]);
-  else
-    // File 非 transferable 但可 structured-clone(共享底层 blob 数据引用),无需转移列表。
-    worker.postMessage({ file: task.file, targetSize: task.targetSize });
+  // task 带 bitmap(视频抓帧路径)则 transfer(零拷贝);否则 File 走 structured-clone(共享底层 blob 引用)。
+  // 统一消息形状 {file?, bitmap?, targetSize},worker 端按 bitmap 是否存在二选一。
+  worker.postMessage(
+    { file: task.file, bitmap: task.bitmap, targetSize: task.targetSize },
+    task.bitmap ? [task.bitmap] : [],
+  );
 }
 
 function release(worker) {
-  // 有排队任务则直接顶上,否则归入空闲栈
+  // 有排队任务则直接顶上,否则归入空闲栈(worker 此刻正忙刚结束,不可能已在 free 中)
   if (queue.length)
     dispatch(worker, queue.shift());
-  else if (!free.includes(worker))
+  else
     free.push(worker);
 }
 
@@ -49,7 +49,8 @@ if (typeof Worker !== 'undefined' && typeof OffscreenCanvas !== 'undefined') {
       const w = new Worker(url, { type: 'module' });
       w.onmessage = e => onMsg(w, e);
       w.onerror = (err) => {
-        // worker 崩:reject 其在途任务(若有),worker 仍可复用(下次 onmessage 失败再 reject)
+        // worker 崩:reject 其在途任务(若有)。worker 不销毁、回空闲栈复用——崩过的 worker 下次派活
+        // 可能仍失败(postMessage 后无 onmessage 回复),届时该任务靠自己的超时/调用方兜底处理。
         const task = w._task;
         w._task = null;
         if (task)
@@ -69,9 +70,10 @@ export function isPoolAvailable() {
   return poolAvailable;
 }
 
-export function renderInWorker(file, targetSize) {
+function submit(task) {
   return new Promise((resolve, reject) => {
-    const task = { file, targetSize, resolve, reject };
+    task.resolve = resolve;
+    task.reject = reject;
     if (free.length)
       dispatch(free.pop(), task);
     else
@@ -79,13 +81,12 @@ export function renderInWorker(file, targetSize) {
   });
 }
 
+// 图片:File 进 worker,worker 内 createImageBitmap 解码。
+export function renderInWorker(file, targetSize) {
+  return submit({ file, targetSize });
+}
+
 // 视频帧:主线程 createImageBitmap(video) 抓好的帧,transfer 进 worker 做 cover-fit + 编码。
 export function renderBitmapInWorker(bitmap, targetSize) {
-  return new Promise((resolve, reject) => {
-    const task = { bitmap, targetSize, resolve, reject, isBitmap: true };
-    if (free.length)
-      dispatch(free.pop(), task);
-    else
-      queue.push(task);
-  });
+  return submit({ bitmap, targetSize });
 }
