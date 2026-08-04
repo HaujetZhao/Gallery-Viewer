@@ -40,6 +40,8 @@ export const CONFIG = {
     sidebarWidth: 280,
     theme: 'ocean',
     cardStyle: 'hover', // 卡片信息显示样式:hover(悬停滑入)/always(常驻叠层)/detail(上图下信息整卡)。可扩展更多。
+    videoPreviewMode: 'thumbnail', // 视频卡片预览:thumbnail(静态缩略图)/hover(悬浮循环播放)/auto(视口内常驻循环播放)
+    videoPreviewSpeed: 1, // 视频预览播放速度倍率(0.5~4)
   },
   CACHE: { OLD_THRESHOLD_DAYS: 20, AUTO_CLEANUP_ENABLED: false },
 };

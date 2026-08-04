@@ -9,6 +9,7 @@ import { useFsStore } from '../stores/fs';
 import { useThemeStore } from '../stores/theme';
 import { useToastStore } from '../stores/uiToast';
 import { useUserSettingsStore } from '../stores/userSettings';
+import NumberScrubInput from './NumberScrubInput.vue';
 
 const props = defineProps({ modelValue: Boolean });
 const emit = defineEmits(['update:modelValue']);
@@ -110,6 +111,8 @@ const thumbnailSize = ref(settings.settings.thumbnailSize);
 const cardStyle = ref(settings.settings.cardStyle);
 const scrollZoneEnabled = ref(settings.settings.scrollZoneEnabled);
 const scrollSpeed = ref(settings.settings.scrollSpeed);
+const videoPreviewMode = ref(settings.settings.videoPreviewMode);
+const videoPreviewSpeed = ref(settings.settings.videoPreviewSpeed);
 
 function commitCol() {
   settings.set('columnCount', Number(colCount.value));
@@ -127,6 +130,22 @@ function setCardStyle(v) {
   cardStyle.value = v;
   settings.set('cardStyle', v);
 }
+// 视频预览:三态分段(缩略图/悬浮/自动)+ 播放速度(缩略图模式禁用)。
+const videoPreviewOptions = [
+  { value: 'thumbnail', label: '缩略图' },
+  { value: 'hover', label: '悬浮' },
+  { value: 'auto', label: '自动' },
+];
+function setVideoPreviewMode(v) {
+  videoPreviewMode.value = v;
+  settings.set('videoPreviewMode', v);
+}
+// 预览速度走拖动/键入实时更新,localStorage 落盘防抖(拖动过程中不频繁写)。
+let videoSpeedTimer = null;
+watch(videoPreviewSpeed, (v) => {
+  clearTimeout(videoSpeedTimer);
+  videoSpeedTimer = setTimeout(() => settings.set('videoPreviewSpeed', v), 300);
+});
 function toggleScrollZone() {
   scrollZoneEnabled.value = !scrollZoneEnabled.value;
   settings.set('scrollZoneEnabled', scrollZoneEnabled.value);
@@ -251,6 +270,31 @@ async function onClearAll() {
           <label>显示列数</label>
           <input v-model.number="colCount" type="range" min="1" max="10" step="1" @change="commitCol">
           <span>{{ colCount }}列</span>
+        </div>
+
+        <div class="setting-item">
+          <label>视频预览</label>
+          <div class="seg-group">
+            <button
+              v-for="opt in videoPreviewOptions"
+              :key="opt.value"
+              class="seg-btn"
+              :class="{ active: videoPreviewMode === opt.value }"
+              @click="setVideoPreviewMode(opt.value)"
+            >
+              {{ opt.label }}
+            </button>
+          </div>
+          <NumberScrubInput
+            v-model="videoPreviewSpeed"
+            :min="0.5"
+            :max="4"
+            :step="0.1"
+            suffix="x"
+            :disabled="videoPreviewMode === 'thumbnail'"
+            class="preview-speed-scrub"
+            title="预览播放速度"
+          />
         </div>
 
         <div class="setting-item">
@@ -463,6 +507,13 @@ async function onClearAll() {
     background: #e0e5ec;
     border-radius: 3px;
     outline: none;
+}
+
+/* 视频预览行:分段按钮(默认 flex:1 撑满)+ 右侧 PS 式拖动数字框(固定 64px)。
+   行本身保持默认 .setting-item(gap:15px、label min-width:80px),与其它行对齐。
+   禁用态由 NumberScrubInput 内部 .scrub-input:disabled 负责。 */
+.preview-speed-scrub {
+    flex: 0 0 40px;
 }
 
 .setting-item input[type="range"]::-webkit-slider-thumb {

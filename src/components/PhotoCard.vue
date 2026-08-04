@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { useFileActions } from '../composables/useFileActions';
 import { hoveredFile, renameTick } from '../composables/useHoveredFile';
 import { useThumbnail } from '../composables/useThumbnail';
+import { ensureBlobUrl } from '../models/SmartFile';
 import { getThumbnailStrategy } from '../services/thumbnail-strategies';
 import { useContextMenuStore } from '../stores/contextMenu';
 import { useFavoritesStore } from '../stores/favorites';
@@ -19,12 +20,22 @@ const props = defineProps({
 const emit = defineEmits(['click']);
 
 const settings = useUserSettingsStore();
+const modalStore = useModalStore();
 // 卡片信息显示样式(hover/always/...),根元素挂 card-style-<style> class,CSS 据此控制信息条显隐。
 const cardStyleClass = computed(() => `card-style-${settings.settings.cardStyle || 'hover'}`);
 
 const strategy = computed(() => getThumbnailStrategy(props.file.type));
 const badge = computed(() => strategy.value.getCardBadge());
-const isCanvas = computed(() => ['image', 'video', 'audio'].includes(strategy.value.name));
+// 视频预览方式(设置面板):thumbnail=静态缩略图 / hover=悬浮循环 / auto=视口内常驻循环。
+const videoPreviewMode = computed(() => settings.settings.videoPreviewMode || 'thumbnail');
+const videoPreviewSpeed = computed(() => settings.settings.videoPreviewSpeed ?? 1);
+const isVideo = computed(() => strategy.value.name === 'video');
+// 视频:仅缩略图模式用 canvas 静态帧;悬浮/自动用 <video> 元素(见模板)。image/audio 恒用 canvas。
+const isCanvas = computed(() => {
+  if (isVideo.value)
+    return videoPreviewMode.value === 'thumbnail';
+  return ['image', 'audio'].includes(strategy.value.name);
+});
 
 // 视频/音频:右上 badge 文本显示时长(替代原 'VIDEO'/'AUDIO' 字样),与图标共存,免左下角再叠一个时长。
 const badgeText = computed(() => {
@@ -48,7 +59,50 @@ const notes = useNotesStore();
 const noteText = computed(() => notes.getNote(props.file.md5));
 
 const mediaEl = ref(null);
-const { loaded, loading } = useThumbnail(mediaEl, props.file, props.targetSize);
+const { loaded, loading, isVisible } = useThumbnail(mediaEl, props.file, props.targetSize);
+
+// 视频预览播/停:只在视口内播放(isVisible 由 useThumbnail 追踪);悬浮模式额外要求卡片 hover,auto 视口内即播。
+const cardHovered = ref(false);
+function updatePlayback() {
+  const v = mediaEl.value;
+  if (!v || v.tagName !== 'VIDEO')
+    return;
+  // modal 打开时一律暂停卡片预览(避免与全屏媒体同时播/抢资源),关闭后恢复。
+  if (modalStore.isOpen) {
+    v.pause?.();
+    return;
+  }
+  if (videoPreviewMode.value === 'thumbnail') {
+    v.pause?.();
+    return;
+  }
+  const shouldPlay = isVisible.value && (videoPreviewMode.value === 'auto' || cardHovered.value);
+  if (shouldPlay)
+    v.play?.().catch(() => {});
+  else
+    v.pause?.();
+}
+watch([isVisible, cardHovered, videoPreviewMode], updatePlayback);
+// modal 开/关会让卡片预览暂停/恢复。
+watch(() => modalStore.isOpen, updatePlayback);
+// 播放速度变化即时生效。
+watch(videoPreviewSpeed, () => {
+  const v = mediaEl.value;
+  if (v && v.tagName === 'VIDEO')
+    v.playbackRate = videoPreviewSpeed.value;
+});
+// <video> 预览元素挂载时设 src + 速度;src 就绪后补一次播放判定(hover 早于 src 也能开播)。
+watch(mediaEl, (el) => {
+  if (!el || el.tagName !== 'VIDEO')
+    return;
+  el.playbackRate = videoPreviewSpeed.value;
+  ensureBlobUrl(props.file).then(() => {
+    if (mediaEl.value === el) {
+      el.src = props.file.blobUrl;
+      updatePlayback();
+    }
+  });
+});
 
 const contextMenu = useContextMenuStore();
 
@@ -108,12 +162,23 @@ function openPreview() {
     @keydown.space.prevent="openPreview"
     @contextmenu.prevent="onContextmenu"
     @dragstart="onDragstart"
-    @mouseenter="hoveredFile = file"
-    @mouseleave="hoveredFile = null"
+    @mouseenter="hoveredFile = file; cardHovered = true"
+    @mouseleave="hoveredFile = null; cardHovered = false"
   >
     <div class="thumbnail-container">
+      <!-- 视频悬浮/自动预览:<video> 循环静音播放,src 由 mediaEl watch 设,播/停由 isVisible+hover 驱动(仅视口内播) -->
+      <video
+        v-if="isVideo && videoPreviewMode !== 'thumbnail'"
+        ref="mediaEl"
+        class="thumbnail-video"
+        muted
+        loop
+        playsinline
+        preload="metadata"
+        :data-loading="loading ? 'true' : 'false'"
+      />
       <canvas
-        v-if="isCanvas"
+        v-else-if="isCanvas"
         ref="mediaEl"
         class="thumbnail-canvas"
         :data-loading="loading ? 'true' : 'false'"
@@ -229,7 +294,8 @@ function openPreview() {
 }
 
 .thumbnail-canvas,
-.thumbnail-img {
+.thumbnail-img,
+.thumbnail-video {
     width: 100%;
     height: 100%;
     display: block;
@@ -241,7 +307,8 @@ function openPreview() {
 }
 
 .thumbnail-canvas[data-loading="true"],
-.thumbnail-img[data-loading="true"] {
+.thumbnail-img[data-loading="true"],
+.thumbnail-video[data-loading="true"] {
     opacity: 0.5;
 }
 

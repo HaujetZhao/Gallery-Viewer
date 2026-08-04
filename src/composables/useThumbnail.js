@@ -1,7 +1,7 @@
 // 缩略图懒加载 composable。搬自源码 js/thumbnails.js 的 observer + 队列。
 // 全局共享单例(observer + queue,并发上限 4);每卡片 useThumbnail 只 observe 自己的 mediaEl。
 // 软取消用响应式 loading ref 代替源码 dataset;loaded/loading 状态绑到 el.__thumb。
-import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { onBeforeUnmount, ref, watch } from 'vue';
 import { CONFIG } from '../config/index';
 import { generateThumbnail } from '../services/thumbnail';
 
@@ -39,10 +39,30 @@ function ensureObserver() {
   if (observer)
     return observer;
   observer = new IntersectionObserver(handleIntersect, {
-    rootMargin: CONFIG.PERFORMANCE.INTERSECTION_MARGIN, // '100px'
+    rootMargin: CONFIG.PERFORMANCE.INTERSECTION_MARGIN, // '100px' 图片缩略图预加载 margin
     threshold: 0,
   });
   return observer;
+}
+
+// 视频预览专用 observer:threshold 1.0 + 无 margin —— 整卡完全进入视口才算"可见"(播放),露边缘不算。
+// 与生成 observer(threshold 0 + 100px 预加载 margin)分离,互不干扰。
+let playObserver = null;
+function handlePlayIntersect(entries) {
+  for (const entry of entries) {
+    const t = entry.target.__thumb;
+    if (t)
+      t.isVisible.value = entry.isIntersecting;
+  }
+}
+function ensurePlayObserver() {
+  if (playObserver)
+    return playObserver;
+  playObserver = new IntersectionObserver(handlePlayIntersect, {
+    rootMargin: '0px',
+    threshold: 1.0,
+  });
+  return playObserver;
 }
 
 async function schedule() {
@@ -102,25 +122,56 @@ export function triggerRedraw() {
   redrawSignal.value++;
 }
 
-// 每卡片 composable。mediaElRef 指向 canvas/img/object 元素。
+// 每卡片 composable。mediaElRef 指向 canvas/img/video/object 元素。
+// 普通媒体(canvas/img):懒生成静态缩略图。视频预览(元素为 <video>):不生成静态帧,
+// 只持续追踪可见性(isVisible)供 PhotoCard 播/停;loaded 由首帧就绪(loadeddata)驱动(loading 指示随之消失)。
+// 元素可随预览模式切换在 canvas↔video 间替换,故用 watch(mediaElRef) 而非 onMounted 绑定。
 export function useThumbnail(mediaElRef, file, targetSize = 400) {
   const loaded = ref(false);
   const loading = ref(false);
+  const isVisible = ref(false);
+  let boundEl = null;
 
-  onMounted(() => {
+  function onVideoReady() {
+    loaded.value = true; // 首帧就绪或加载失败都翻 loaded,loading 指示不再卡
+  }
+
+  function bind() {
     const el = mediaElRef.value;
-    if (!el)
+    if (!el || el === boundEl)
       return;
+    if (boundEl) {
+      observer?.unobserve(boundEl);
+      playObserver?.unobserve(boundEl);
+      if (boundEl.tagName === 'VIDEO') {
+        boundEl.removeEventListener('loadeddata', onVideoReady);
+        boundEl.removeEventListener('error', onVideoReady);
+      }
+    }
+    boundEl = el;
+    loaded.value = false;
+    loading.value = false;
     // 状态绑到元素,observer 回调读
-    el.__thumb = { file, targetSize, loaded, loading };
-    ensureObserver().observe(el);
-  });
+    el.__thumb = { file, targetSize, loaded, loading, isVisible };
+    if (el.tagName === 'VIDEO') {
+      // 视频预览:整卡完全进入视口才播放 → 走播放专用 observer;loaded 由首帧就绪驱动。
+      ensurePlayObserver().observe(el);
+      el.addEventListener('loadeddata', onVideoReady);
+      el.addEventListener('error', onVideoReady);
+    }
+    else {
+      ensureObserver().observe(el);
+    }
+  }
+
+  watch(mediaElRef, bind, { flush: 'post' });
 
   onBeforeUnmount(() => {
-    const el = mediaElRef.value;
-    if (el)
-      observer?.unobserve(el);
+    if (boundEl) {
+      observer?.unobserve(boundEl);
+      playObserver?.unobserve(boundEl);
+    }
   });
 
-  return { loaded, loading };
+  return { loaded, loading, isVisible };
 }
