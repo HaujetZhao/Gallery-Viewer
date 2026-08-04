@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { acquire } from '../services/fileResource';
 import { SmartFile } from './SmartFile';
-import { detectMetaChanges, enrichFolder, findFolderByPath, folderFromSnapshot, folderToSnapshot, scanFolder, SmartFolder } from './SmartFolder';
+import { detectMetaChanges, enrichFolder, findFolderByPath, foldersFromRecordMap, folderToRecord, scanFolder, SmartFolder } from './SmartFolder';
+
+// integrateScanResult(service)走 markFolderDirty → 用 root store;model 测试不关心 dirty,mock 掉避免 Pinia 耦合。
+vi.mock('../services/persistence', () => ({ markFolderDirty: vi.fn(), afterFolderMutation: vi.fn() }));
 
 beforeEach(() => {
   URL.createObjectURL = vi.fn(() => 'blob:fake');
@@ -60,20 +63,38 @@ function buildTree() {
   return root;
 }
 
-describe('smartFolder rehydrate', () => {
-  it('toSnapshot 序列化整棵树(name/expanded/subFolders/files)', () => {
+// 整树 → recordMap(遍历,每夹 folderToRecord 一条)。测试往返用;persistIfDirty 实际只写 dirty 子集。
+function treeToRecordMap(folder, map = new Map()) {
+  if (!folder)
+    return map;
+  map.set(folder.path, folderToRecord(folder));
+  for (const sub of folder.subFolders)
+    treeToRecordMap(sub, map);
+  return map;
+}
+
+describe('smartFolder rehydrate (per-folder record)', () => {
+  it('folderToRecord 序列化单夹(本夹 files + 子夹 path 引用,非递归)', () => {
     const root = buildTree();
-    const snap = folderToSnapshot(root);
-    expect(snap.name).toBe('root');
-    expect(snap.expanded).toBe(false);
-    expect(snap.subFolders).toHaveLength(1);
-    expect(snap.subFolders[0].name).toBe('sub');
-    expect(snap.subFolders[0].files[0].name).toBe('a.jpg');
+    const rec = folderToRecord(root);
+    expect(rec.path).toBe('root');
+    expect(rec.name).toBe('root');
+    expect(rec.expanded).toBe(false);
+    expect(rec.files).toEqual([]); // 根夹无文件(buildTree 文件在 sub)
+    expect(rec.subFolderPaths).toEqual(['root/sub']); // 子夹用 path 引用,不嵌套
   });
 
-  it('fromSnapshot 重建树 + parent 接回 + expanded 恢复', () => {
-    const snap = folderToSnapshot(buildTree());
-    const root2 = folderFromSnapshot(snap, null);
+  it('folderToRecord 单夹文件序列化', () => {
+    const sub = buildTree().subFolders[0];
+    const rec = folderToRecord(sub);
+    expect(rec.path).toBe('root/sub');
+    expect(rec.files[0].name).toBe('a.jpg');
+  });
+
+  it('folderToRecord → foldersFromRecordMap 往返 + parent 接回 + expanded 恢复', () => {
+    const map = treeToRecordMap(buildTree());
+    expect(map.size).toBe(2); // root + sub
+    const root2 = foldersFromRecordMap('root', map, null);
 
     expect(root2.name).toBe('root');
     expect(root2.subFolders).toHaveLength(1);
@@ -84,24 +105,20 @@ describe('smartFolder rehydrate', () => {
     expect(root2.expanded).toBe(false);
   });
 
-  // Phase 3 Step 2:fromSnapshot 纯函数化,不写任何外部状态(T06 前 folder 注册归 switchToRoot;T06 后 folder 挂树即代理,无需注册)。
-  // 这里用一个外部 Map 验证:fromSnapshot 不会偷偷往它写(纯函数证据)。
-  it('fromSnapshot 不写外部状态(纯函数)', () => {
-    const snap = folderToSnapshot(buildTree());
+  // foldersFromRecordMap 纯函数:不写外部状态(用 externalMap 验证不偷偷写入)。
+  it('foldersFromRecordMap 不写外部状态(纯函数)', () => {
+    const map = treeToRecordMap(buildTree());
     const externalMap = new Map();
-    const root2 = folderFromSnapshot(snap, null);
+    const root2 = foldersFromRecordMap('root', map, null);
 
-    // folder 树结构正确
-    expect(root2.name).toBe('root');
     expect(root2.path).toBe('root');
-    expect(root2.subFolders[0].name).toBe('sub');
     expect(root2.subFolders[0].path).toBe('root/sub');
     expect(root2.subFolders[0].parent).toBe(root2);
+    expect(externalMap.size).toBe(0); // 不碰外部 Map
+  });
 
-    // fromSnapshot 不碰外部 Map
-    expect(externalMap.has('root')).toBe(false);
-    expect(externalMap.has('root/sub')).toBe(false);
-    expect(externalMap.size).toBe(0);
+  it('foldersFromRecordMap 缺根 record 返回 null(防御)', () => {
+    expect(foldersFromRecordMap('missing', new Map(), null)).toBeNull();
   });
 });
 
@@ -157,8 +174,7 @@ describe('scanFolder 纯函数(不改入参,零 getFile)+ enrich', () => {
     const folder = new SmartFolder({ handle: makeDirHandle(entries), parent: null });
     const result = await scanFolder(folder);
     // 模拟 service 层写回(folder 在真实 store 里是代理,这里直接写也行)
-    const fakeFs = {};
-    integrateScanResult(folder, result, fakeFs);
+    integrateScanResult(folder, result);
 
     expect(entries[0].getFile).not.toHaveBeenCalled(); // scan 阶段零 IO
     expect(folder.files[0].size).toBeUndefined(); // 缺省
@@ -250,8 +266,7 @@ describe('scanFolder 纯函数(不改入参,零 getFile)+ enrich', () => {
 
     // integrateScanResult 才 dispose(走 service 层副作用)
     const { integrateScanResult } = await import('../services/scanIntegration');
-    const fakeFs = {};
-    integrateScanResult(folder, result, fakeFs);
+    integrateScanResult(folder, result);
     expect(revoke).toHaveBeenCalled(); // gone 被 dispose → destroy(revoke blobUrl)
     expect(folder.files.map(f => f.name)).toEqual(['a.jpg']); // 写回代理 folder
   });
@@ -281,7 +296,7 @@ describe('integrateScanResult helper(service 层整合副作用)', () => {
       removedFolders: [removedSub],
     };
 
-    integrateScanResult(folder, result, {});
+    integrateScanResult(folder, result);
 
     expect(folder.files).toBe(result.files); // 写回(代理 folder 属性变更触发响应式)
     expect(folder.subFolders).toBe(result.subFolders);

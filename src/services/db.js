@@ -304,3 +304,47 @@ export function kvDel(storeName, key) {
     tx.onerror = () => resolve();
   });
 }
+
+// 按前缀批量读(out-of-line key 的 string 前缀扫描)。返回 [{ key, value }]。
+// 用于 scans store:切根时一次拉回该根所有文件夹 record(prefix = `${rootId}::`)。
+export function kvGetByPrefix(storeName, prefix) {
+  return new Promise((resolve) => {
+    if (!db)
+      return resolve([]);
+    const result = [];
+    // 字符串 key 上界:prefix + ￿(几乎涵盖所有同前缀的 key)
+    const range = IDBKeyRange.bound(prefix, `${prefix}￿`);
+    const req = db.transaction([storeName], 'readonly').objectStore(storeName).openCursor(range);
+    req.onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        result.push({ key: cursor.key, value: cursor.value });
+        cursor.continue();
+      }
+      else {
+        resolve(result);
+      }
+    };
+    req.onerror = () => resolve([]);
+  });
+}
+
+// 按前缀批量删(out-of-line key)。用于 clearScan(rootId):移除根时清掉该根所有 record,不残留孤儿。
+export function kvDelByPrefix(storeName, prefix) {
+  return new Promise((resolve) => {
+    if (!db)
+      return resolve();
+    const range = IDBKeyRange.bound(prefix, `${prefix}￿`);
+    const tx = db.transaction([storeName], 'readwrite');
+    const req = tx.objectStore(storeName).openCursor(range);
+    req.onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        cursor.delete();
+        cursor.continue();
+      }
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => resolve();
+  });
+}

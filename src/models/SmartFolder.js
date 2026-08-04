@@ -176,23 +176,33 @@ export function findFolderByPath(root, path) {
   return null;
 }
 
-// 序列化为可持久化快照(整棵树 plain,handle 可克隆进 IDB)。不含 parent(重建时接回)。
-export function folderToSnapshot(folder) {
+// 序列化为单个文件夹的 record(非递归):本夹 files + 子夹用 path 引用(不嵌套)。
+// per-folder 持久化:写粒度 = 文件夹,改一个文件只重写它所属的文件夹 record,不动整库。
+// path 字段供重建时 Map 索引;handle 可结构化克隆进 IDB。
+export function folderToRecord(folder) {
   return {
+    path: folder.path,
     handle: folder.handle,
     name: folder.name,
-    files: folder.files.map(f => fileToSnapshot(f)),
-    subFolders: folder.subFolders.map(f => folderToSnapshot(f)),
     expanded: folder.expanded,
+    files: folder.files.map(f => fileToSnapshot(f)),
+    subFolderPaths: folder.subFolders.map(f => f.path),
   };
 }
 
-// 从快照重建整棵树(sync,零 IO,纯函数)。parent 按传参接回。不写外部状态(挂树代理化归调用方)。
-export function folderFromSnapshot(snap, parent) {
-  const folder = new SmartFolder({ handle: snap.handle, parent });
-  folder.expanded = snap.expanded;
-  folder.files = snap.files.map(f => fileFromSnapshot(f, folder));
-  folder.subFolders = snap.subFolders.map(s => folderFromSnapshot(s, folder));
+// 从 recordMap(path → record)重建整棵树(sync,零 IO,纯函数)。parent 按传参接回。
+// 入口 path = 根文件夹的 path(= 根 handle.name);递归按 subFolderPaths 从 Map 取子夹 record。
+// record 缺失(孤儿/遗漏)→ 返回 null,调用方跳过(防御:正常 flush 不变量保证不缺)。
+export function foldersFromRecordMap(path, map, parent) {
+  const rec = map.get(path);
+  if (!rec)
+    return null;
+  const folder = new SmartFolder({ handle: rec.handle, parent });
+  folder.expanded = rec.expanded || false;
+  folder.files = (rec.files || []).map(f => fileFromSnapshot(f, folder));
+  folder.subFolders = (rec.subFolderPaths || [])
+    .map(p => foldersFromRecordMap(p, map, folder))
+    .filter(Boolean);
   return folder;
 }
 

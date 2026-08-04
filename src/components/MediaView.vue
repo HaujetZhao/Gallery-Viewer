@@ -7,9 +7,8 @@ import { triggerRedraw } from '../composables/useThumbnail';
 import { FileTypes } from '../config/file-types';
 import { detectFileChange, ensureBlobUrl } from '../models/SmartFile';
 import { peek } from '../services/fileResource';
-import { afterTreeMutation } from '../services/persistence';
+import { afterFolderMutation } from '../services/persistence';
 import { useModalStore } from '../stores/modal';
-import { useRootStore } from '../stores/root';
 import { ensureMediaSession } from '../utils/mediaSession';
 import AudioPlayer from './AudioPlayer.vue';
 
@@ -86,7 +85,8 @@ function onLoadedMetadata(e) {
   // R5:时长回填(解决 R11 老缓存视频时长为空的边界)
   if (f.duration == null && Number.isFinite(video.duration)) {
     f._meta = { ...(f._meta || { size: f.size, lastModified: f.lastModified }), duration: video.duration };
-    afterTreeMutation(useRootStore().currentRootId); // 随快照持久化
+    // per-folder:duration 走 file-meta store(md5 索引)独立持久化;此处只标该夹脏(路径等可能变)。
+    afterFolderMutation(f.parent);
   }
   tryAutoplay(video);
 }

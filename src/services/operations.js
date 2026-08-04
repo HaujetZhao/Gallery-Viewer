@@ -25,6 +25,12 @@ class Operation {
     throw new Error('undo() must be implemented');
   }
 
+  // 该操作(execute/undo 均适用)可能改动的文件夹列表——per-folder 持久化据此标脏。
+  // 默认:目标的父文件夹。子类按需覆写(move 影响源 + 目标两个夹)。
+  getAffectedFolders() {
+    return this.target?.parent ? [this.target.parent] : [];
+  }
+
   getDescription() {
     throw new Error('getDescription() must be implemented');
   }
@@ -125,6 +131,10 @@ export class FileDeleteOperation extends Operation {
   getDescription() {
     return `删除文件:${this.originalName}`;
   }
+
+  getAffectedFolders() {
+    return [this.parentFolder];
+  }
 }
 
 export class FileRenameOperation extends Operation {
@@ -171,5 +181,10 @@ export class FileMoveOperation extends Operation {
 
   getDescription() {
     return `移动文件:${this.fileData.name}`;
+  }
+
+  // move 改两个夹:源(文件移出)+ 目标(文件移入)。undo 反向,但两个夹都仍受影响。
+  getAffectedFolders() {
+    return [this.sourceFolder, this.targetFolder].filter(Boolean);
   }
 }

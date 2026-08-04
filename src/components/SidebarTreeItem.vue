@@ -3,11 +3,10 @@ import { computed, ref } from 'vue';
 import { collectAllFiles, getExpandState } from '../models/SmartFolder';
 import { handleDeleteFolder } from '../services/fileOps';
 import { handleFolderClick } from '../services/folderActions';
-import { afterTreeMutation } from '../services/persistence';
+import { afterFolderMutation } from '../services/persistence';
 import { useContextMenuStore } from '../stores/contextMenu';
 import { useFsStore } from '../stores/fs';
 import { useHistoryStore } from '../stores/history';
-import { useRootStore } from '../stores/root';
 import { useToastStore } from '../stores/uiToast';
 
 defineOptions({ name: 'SidebarTreeItem' });
@@ -35,11 +34,11 @@ const folderIcon = computed(() => {
 async function onClick() {
   await handleFolderClick(props.folder);
 }
-// R10:图标点击三态循环(收起→单层→递归→收起),改树后置脏持久化。
+// R10:图标点击三态循环(收起→单层→递归→收起),改树后置脏持久化(per-folder:只标此夹)。
 function toggle(e) {
   e.stopPropagation();
   props.folder.cycleExpand();
-  afterTreeMutation(useRootStore().currentRootId);
+  afterFolderMutation(props.folder);
 }
 
 function onContextmenu(e) {

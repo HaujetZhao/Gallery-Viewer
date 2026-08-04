@@ -6,9 +6,9 @@ import { useRootStore } from '../stores/root';
 import { makeCancelToken } from '../utils/concurrency';
 import { handleFolderClick, startBackgroundScan } from './folderActions';
 import { cancelPendingPersist } from './persistence';
-import { saveScan } from './scanCache';
+import { saveFolderRecord } from './scanCache';
 
-vi.mock('./scanCache', () => ({ saveScan: vi.fn(async () => {}), loadScan: vi.fn(async () => null), clearScan: vi.fn(async () => {}) }));
+vi.mock('./scanCache', () => ({ saveFolderRecord: vi.fn(async () => {}), loadScan: vi.fn(async () => new Map()), clearScan: vi.fn(async () => {}) }));
 vi.mock('./handleStore', () => ({ add: vi.fn(async () => 'id'), getHandle: vi.fn(async () => null), verifyPermission: vi.fn(async () => true), loadAll: vi.fn(async () => []), update: vi.fn(async () => {}), remove: vi.fn(async () => {}) }));
 
 // startBackgroundScan Phase 3 起调 integrateScanResult → useFsStore(),需要激活 Pinia。
@@ -24,16 +24,18 @@ beforeEach(async () => {
   const mod = await import('../models/SmartFolder');
   folderFns = {
     enrichFolder: vi.spyOn(mod, 'enrichFolder').mockResolvedValue(),
-    folderToSnapshot: vi.spyOn(mod, 'folderToSnapshot').mockReturnValue({}),
+    folderToRecord: vi.spyOn(mod, 'folderToRecord').mockReturnValue({}),
     countAllFiles: vi.spyOn(mod, 'countAllFiles').mockReturnValue(0),
     validateFolder: vi.spyOn(mod, 'validateFolder').mockResolvedValue(true),
+    findFolderByPath: vi.spyOn(mod, 'findFolderByPath').mockReturnValue(null),
   };
 });
 afterEach(() => {
   folderFns?.enrichFolder.mockRestore();
-  folderFns?.folderToSnapshot.mockRestore();
+  folderFns?.folderToRecord.mockRestore();
   folderFns?.countAllFiles.mockRestore();
   folderFns?.validateFolder.mockRestore();
+  folderFns?.findFolderByPath.mockRestore();
 });
 
 // 假文件夹:Phase 3 Step 1 起 startBackgroundScan 调 scanFolder(读 handle.values())+ enrich。
@@ -114,11 +116,11 @@ describe('startBackgroundScan', () => {
   });
 });
 
-// R3-2:handleFolderClick 命中变更不阻塞——loadFolder 先返回,debounced saveScan 推进 timer 后才调。
+// R3-2:handleFolderClick 命中变更不阻塞——loadFolder 先返回,debounced saveFolderRecord 推进 timer 后才调。
 describe('handleFolderClick', () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    saveScan.mockClear();
+    saveFolderRecord.mockClear();
     cancelPendingPersist(); // 清掉上一用例残留的 timer
   });
   afterEach(() => {
@@ -126,21 +128,22 @@ describe('handleFolderClick', () => {
     vi.useRealTimers();
   });
 
-  it('handleFolderClick 命中变更:loadFolder 先返回,saveScan 推进 timer 后才调(R3-2 不阻塞)', async () => {
+  it('handleFolderClick 命中变更:loadFolder 先返回,saveFolderRecord 推进 timer 后才调(R3-2 不阻塞)', async () => {
     const fs = useFsStore();
     const rootStore = useRootStore();
     rootStore.add('r1', 'root', 0, 0);
     rootStore.setCurrent('r1');
-    fs.rootDirty = false;
     fs.rootFolder = {};
 
-    // 假 folder:validate=true,scan 返回 newFiles 使 dirty=true,enrich/loadFolder 立即 resolve。
+    // 假 folder:validate=true,scan 返回 newFiles 使该夹标脏,enrich/loadFolder 立即 resolve。
     const folder = {
       name: 'sub',
       files: [],
       subFolders: [],
       path: 'root/sub',
     };
+    // persistIfDirty 用 findFolderByPath 定位脏夹 → mock 返回此 folder(folderToRecord 已 spy)。
+    folderFns.findFolderByPath.mockReturnValue(folder);
     // scanFolder 是 SmartFolder 模块导出,这里直接 mock 模块拿结果。
     const smartFolderMod = await import('../models/SmartFolder');
     vi.spyOn(smartFolderMod, 'scanFolder').mockResolvedValue({
@@ -154,16 +157,16 @@ describe('handleFolderClick', () => {
 
     await handleFolderClick(folder);
 
-    // 不推进 timer:loadFolder 已完成(点击不阻塞),saveScan 尚未触发(debounce 等待中)。
+    // 不推进 timer:loadFolder 已完成(点击不阻塞),saveFolderRecord 尚未触发(debounce 等待中)。
     // 注:fs.currentFolder 经 reactive 代理化,与原始 folder 引用不等,用路径断言。
     expect(fs.currentFolder.path).toBe(folder.path); // loadFolder 已设 currentFolder
-    expect(saveScan).not.toHaveBeenCalled(); // debounce 未到 1s
-    expect(fs.rootDirty).toBe(true); // dirty 仍在(尚未持久化)
+    expect(saveFolderRecord).not.toHaveBeenCalled(); // debounce 未到 1s
+    expect(fs.dirtyFolders.has('r1::root/sub')).toBe(true); // 该夹标脏(尚未持久化)
 
     // 推进 1s:debounced persist 触发。
     await vi.advanceTimersByTimeAsync(1000);
-    expect(saveScan).toHaveBeenCalledTimes(1);
-    expect(fs.rootDirty).toBe(false); // 持久化后清 dirty
+    expect(saveFolderRecord).toHaveBeenCalledTimes(1);
+    expect(fs.dirtyFolders.size).toBe(0); // 持久化后清 dirty
 
     smartFolderMod.scanFolder.mockRestore();
   });

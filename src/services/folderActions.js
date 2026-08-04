@@ -1,12 +1,12 @@
 import { CONFIG } from '../config/index';
-import { collectAllFiles, createFolder, detectMetaChanges, enrichFolder, folderFromSnapshot, scanFolder, validateFolder } from '../models/SmartFolder';
+import { collectAllFiles, createFolder, detectMetaChanges, enrichFolder, foldersFromRecordMap, scanFolder, validateFolder } from '../models/SmartFolder';
 import { useFsStore } from '../stores/fs';
 import { useRootStore } from '../stores/root';
 import { useToastStore } from '../stores/uiToast';
 import { isFileSystemAccessSupported } from '../utils/browser';
 import { makeCancelToken, runConcurrent } from '../utils/concurrency';
 import * as handleStore from './handleStore';
-import { cancelPendingPersist, flushPendingPersist, persistIfDirty, schedulePersist } from './persistence';
+import { cancelPendingPersist, flushPendingPersist, markFolderDirty, persistIfDirty, schedulePersist } from './persistence';
 import { handleFolderNotFound } from './recovery';
 import { loadScan } from './scanCache';
 import { integrateScanResult, resetFoldersData } from './scanIntegration';
@@ -45,8 +45,13 @@ async function scanAndPersist(id) {
   await startBackgroundScan(root, token);
   if (token.cancelled)
     return; // 被新切换打断,不存旧快照(避免覆盖更新的树)
-  if (id)
-    await persistIfDirty(id); // 首次/reload 全树扫后必 dirty(integrateScanResult 检测 newFiles)→ 持久化
+  if (id) {
+    // 根夹是重建入口(foldersFromRecordMap 从 rootPath 起步),必须有 record。它的 integrateScanResult
+    // 在 getFolderData 里发生,而那时 currentRootId 尚未 set(openFolderPicker/switchToRoot 在 initProject
+    // 之后才 setCurrent)→ markFolderDirty 提前 return 漏标。此处(currentRootId 已设)补标,保证根夹落盘。
+    markFolderDirty(root);
+    await persistIfDirty(); // 首次/reload 全树扫后各夹 dirty(integrateScanResult 检测 newFiles 标脏)→ 持久化
+  }
 }
 
 // R2:切根秒显快照后,后台递归整树做名字集合校验(trust 一致零 IO),变了的对新增文件 enrich。
@@ -102,17 +107,26 @@ export async function switchToRoot(id) {
     return null;
   }
   try {
-    const snap = await loadScan(id);
+    const recordMap = await loadScan(id);
     // 切到新根前:先 flush 旧根在途的 debounced 写(落盘旧根改动,防根切换静默丢改动——rename 后 1s 内切根,
     // 旧 timer 被弃会丢旧根改动)。必须紧贴 resetFoldersData 之前:flush 后旧根已存,reset 才安全清 store。
     // 此刻 currentRootId 还是旧根(setCurrent 在 try 之后),flush 写的是旧根。
     await flushPendingPersist();
     resetFoldersData(fs);
     fs.rootHandle = handle;
-    if (snap) {
-      const root = folderFromSnapshot(snap, null); // 秒显(零 IO,纯函数建原始树)
-      fs.rootFolder = root; // root 挂到 ref → 整棵树深代理(folderFromSnapshot 建的原始树,挂树即代理化)
-      fs.currentFolder = root;
+    if (recordMap.size) {
+      // 秒显:从 recordMap 重建整棵树(零 IO 纯函数)。根 path = 根 handle.name(根文件夹 path 即根名)。
+      const root = foldersFromRecordMap(handle.name, recordMap, null);
+      if (root) {
+        fs.rootFolder = root; // 挂到 ref → 整棵树深代理
+        fs.currentFolder = root;
+      }
+      else {
+        // recordMap 非空但缺根 record(异常)→ 回退重扫
+        const root = await loadProject(handle);
+        fs.rootFolder = root;
+        fs.currentFolder = root;
+      }
     }
     else {
       const root = await loadProject(handle);
@@ -134,9 +148,8 @@ export async function switchToRoot(id) {
 // 建根 SmartFolder(扫根一层)。只被 loadProject ← initProject/switchToRoot 以根 handle 调用。
 // T06(单 ref 持树):createFolder 返回原始 folder,integrate 写回后由调用方 fs.rootFolder = root 挂树代理化。
 export async function getFolderData(dirHandle) {
-  const fs = useFsStore();
   const createResult = await createFolder({ handle: dirHandle, parent: null });
-  integrateScanResult(createResult.folder, createResult, fs); // 写回 files/subFolders(此时 folder 未挂树,UI 未显示,无响应式要求)
+  integrateScanResult(createResult.folder, createResult); // 写回 files/subFolders(此时 folder 未挂树,UI 未显示,无响应式要求)
   return createResult.folder;
 }
 
@@ -155,7 +168,6 @@ export async function loadProject(handle) {
 export async function startBackgroundScan(parentFolder, token = bgToken) {
   if (!parentFolder)
     return;
-  const fs = useFsStore();
   // Phase 2/3:先补当前层 files 的 size/mtime(scanFolder 零 getFile 后,新文件 _meta=null)
   await enrichFolder(parentFolder, { token });
   if (!parentFolder.subFolders)
@@ -167,7 +179,7 @@ export async function startBackgroundScan(parentFolder, token = bgToken) {
         return;
       try {
         const result = await scanFolder(subFolderData, { trust: true }); // 纯列名(零 getFile)
-        integrateScanResult(subFolderData, result, fs); // 写回代理 + dispose removedFiles
+        integrateScanResult(subFolderData, result); // 写回代理 + dispose removedFiles
         await startBackgroundScan(subFolderData, token); // 递归:enrich sub + 遍历
       }
       catch (e) {
@@ -203,7 +215,7 @@ export async function refreshFolder(folder) {
   const fs = useFsStore();
   try {
     const result = await scanFolder(folder); // 纯函数(不信任:reload 抓增删改名)
-    integrateScanResult(folder, result, fs); // 写回代理 + dispose removedFiles
+    integrateScanResult(folder, result); // 写回代理 + dispose removedFiles
     await enrichFolder(folder);
     await detectMetaChanges(folder); // 读全部元数据,size/mtime 变→清 md5
   }
@@ -244,7 +256,6 @@ export async function handleFolderClick(folder) {
   if (!folder)
     return;
   const fs = useFsStore();
-  const rootStore = useRootStore();
   if (folder === fs.allMediaFolder) {
     await loadFolder(folder);
     return;
@@ -259,9 +270,9 @@ export async function handleFolderClick(folder) {
     // R3-2+R3-3:enrich(await,补 size/mtime 给 sort)→ schedulePersist(不 await,后台 debounce 合并写,不阻塞点击)
     //           → loadFolder(await,先显示)。持久化晚 1s 触发;切根时由 flushPendingPersist 落盘旧根改动(reload 则 cancel)。
     const result = await scanFolder(folder, { trust: true });
-    integrateScanResult(folder, result, fs);
+    integrateScanResult(folder, result);
     await enrichFolder(folder);
-    schedulePersist(rootStore.currentRootId);
+    schedulePersist();
     await loadFolder(folder);
   }
   catch (err) {

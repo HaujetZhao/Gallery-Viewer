@@ -3,8 +3,7 @@
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 import { FileDeleteOperation, FileMoveOperation, FileRenameOperation } from '../services/operations';
-import { afterTreeMutation } from '../services/persistence';
-import { useRootStore } from './root';
+import { afterFolderMutation } from '../services/persistence';
 
 const MAX_SIZE = 50;
 
@@ -16,8 +15,9 @@ export const useHistoryStore = defineStore('history', () => {
     stack.value.push(op);
     if (stack.value.length > MAX_SIZE)
       stack.value.shift();
-    // 树变更 → 置脏 + debounced 持久化(T07 收口:store 不直接碰 rootDirty/schedulePersist,改调持久化层语义入口)。
-    afterTreeMutation(useRootStore().currentRootId);
+    // 树变更 → 标受影响文件夹脏 + debounced 持久化(per-folder:rename/delete 标父夹,move 标源+目标)。
+    for (const f of op.getAffectedFolders())
+      afterFolderMutation(f);
   }
   async function undoLastOperation() {
     if (!stack.value.length)
@@ -27,7 +27,8 @@ export const useHistoryStore = defineStore('history', () => {
     const op = stack.value[stack.value.length - 1];
     await op.undo(); // 失败则抛出,下方不执行(op 留栈、不落盘)
     stack.value.pop(); // 成功才 pop
-    afterTreeMutation(useRootStore().currentRootId); // undo 也改了树 → 置脏 + debounced 持久化
+    for (const f of op.getAffectedFolders())
+      afterFolderMutation(f); // undo 也改了树 → 标脏 + debounced 持久化
     return op;
   }
   function clear() {

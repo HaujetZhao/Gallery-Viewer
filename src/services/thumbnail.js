@@ -3,7 +3,6 @@ import { ensureBlobUrl } from '../models/SmartFile';
 import { useFavoritesStore } from '../stores/favorites';
 import { useFsStore } from '../stores/fs';
 import { useNotesStore } from '../stores/notes';
-import { useRootStore } from '../stores/root';
 import { useToastStore } from '../stores/uiToast';
 import { useUserSettingsStore } from '../stores/userSettings';
 // 缩略图生成主体。搬自源码 js/thumbnails.js 的 generateAndShowThumbnail,去 observer/队列/DOM 耦合。
@@ -14,7 +13,7 @@ import { deleteThumbnail, getThumbnailFromDB, saveThumbnailToDB, touchThumbnailI
 import { ensureFileMetaLoaded } from './fileMeta';
 import { peek } from './fileResource';
 import { refreshFolder } from './folderActions';
-import { afterTreeMutation } from './persistence';
+import { afterFolderMutation } from './persistence';
 import { extractAudioDuration, getThumbnailStrategy } from './thumbnail-strategies';
 
 // 把缓存 blob 画到 canvas(缓存恢复,不做缩放,blob 本就是 targetSize 方图)。
@@ -57,9 +56,9 @@ export async function generateThumbnail(file, canvas, targetSize = 400) {
     // 代价:首切每张可见图读 2MB 算 md5(按需、视窗触发,非万张预扫)。chunkSize=2097152 锁定(旧 IDB key 兼容)。
     const raw = peek(file)?.file ?? await file.handle.getFile();
     file.md5 = await calculateMD5(raw);
-    // R16-a:首次算出 md5(null→有值)即落盘——md5 随快照持久化后,切根/重载直接命中缓存、
-    // 全局收藏/备注筛选也能覆盖未进视窗的文件(同 R11 duration 套路)。本分支只在 null→有值进入,幂等。
-    afterTreeMutation(useRootStore().currentRootId);
+    // R16-a:首次算出 md5(null→有值)即落盘——md5 随该文件夹 record 持久化后,切根/重载直接命中缓存、
+    // 全局收藏/备注筛选也能覆盖未进视窗的文件。per-folder:只标此夹脏(不动整库)。本分支只在 null→有值进入,幂等。
+    afterFolderMutation(file.parent);
   }
   // file-meta 懒加载:md5 就绪后与缩略图同流程取回 duration/dim 填 _meta(缓存命中/未命中都需——
   // 缓存命中分支不再抽帧,否则副本的 duration 拿不到)。幂等:_meta.duration 已有则 skip。
