@@ -2,11 +2,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { _resetCache, add, getHandle, getLastUsed, loadAll, remove, update } from './handleStore';
 
+// mock GalleryDB 的 KV 函数(取代原 idb-keyval);按 key 存值,忽略 storeName 参数。
 const store = new Map();
-vi.mock('idb-keyval', () => ({
-  get: vi.fn(k => store.get(k)),
-  set: vi.fn((k, v) => { store.set(k, v); }),
-  del: vi.fn((k) => { store.delete(k); }),
+vi.mock('./db', () => ({
+  kvGet: vi.fn((_storeName, k) => Promise.resolve(store.get(k))),
+  kvSet: vi.fn((_storeName, k, v) => {
+    store.set(k, v);
+    return Promise.resolve();
+  }),
+  kvDel: vi.fn((_storeName, k) => {
+    store.delete(k);
+    return Promise.resolve();
+  }),
 }));
 
 function makeHandle(name, sameEntry = false) {

@@ -18,6 +18,12 @@ export function initDB() {
         d.createObjectStore(CONFIG.DATABASE.STORES.FILE_META, { keyPath: 'md5' });
       if (!d.objectStoreNames.contains(CONFIG.DATABASE.STORES.USER_DATA))
         d.createObjectStore(CONFIG.DATABASE.STORES.USER_DATA, { keyPath: 'md5' });
+      // roots / scans:out-of-line key(KV 风格,不设 keyPath,put/get/delete 显式传 key)。
+      // roots 整个数组存单 key('roots');scans 每根一份,key=`scan-<rootId>`。
+      if (!d.objectStoreNames.contains(CONFIG.DATABASE.STORES.ROOTS))
+        d.createObjectStore(CONFIG.DATABASE.STORES.ROOTS);
+      if (!d.objectStoreNames.contains(CONFIG.DATABASE.STORES.SCANS))
+        d.createObjectStore(CONFIG.DATABASE.STORES.SCANS);
     };
     request.onsuccess = (e) => {
       db = e.target.result;
@@ -235,4 +241,66 @@ export function deleteUserData(d, md5) {
   conn.transaction([CONFIG.DATABASE.STORES.USER_DATA], 'readwrite')
     .objectStore(CONFIG.DATABASE.STORES.USER_DATA)
     .delete(md5);
+}
+
+// R16-a:cursor 全扫 user-data store,返回所有条目数组(每条 {md5,favorite?,note?})。
+// 用户数据量小,全局"收藏/备注筛选"开启时拉一次建两个 Set 并缓存;用户数据增量改写不会很多,可接受。
+export function getAllUserData(d) {
+  const conn = pick(d);
+  return new Promise((resolve) => {
+    if (!conn)
+      return resolve([]);
+    const result = [];
+    const req = conn.transaction([CONFIG.DATABASE.STORES.USER_DATA], 'readonly')
+      .objectStore(CONFIG.DATABASE.STORES.USER_DATA)
+      .openCursor();
+    req.onsuccess = (event) => {
+      const cursor = event.target.result;
+      if (cursor) {
+        result.push(cursor.value);
+        cursor.continue();
+      }
+      else {
+        resolve(result);
+      }
+    };
+    req.onerror = () => resolve([]);
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// KV 风格(out-of-line key)通用读写:供 roots / scans 两个 store 用。
+// 取代原 idb-keyval 的 get/set/del——同款语义(缺 key 返回 undefined;返回 Promise)。
+// storeName 由调用方传入(CONFIG.DATABASE.STORES.ROOTS / SCANS),key 为字符串。
+// ─────────────────────────────────────────────────────────────────────────
+export function kvGet(storeName, key) {
+  return new Promise((resolve) => {
+    if (!db)
+      return resolve(undefined);
+    const req = db.transaction([storeName], 'readonly').objectStore(storeName).get(key);
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror = () => resolve(undefined);
+  });
+}
+
+export function kvSet(storeName, key, value) {
+  return new Promise((resolve) => {
+    if (!db)
+      return resolve();
+    const tx = db.transaction([storeName], 'readwrite');
+    tx.objectStore(storeName).put(value, key); // 显式传 key(out-of-line)
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => resolve();
+  });
+}
+
+export function kvDel(storeName, key) {
+  return new Promise((resolve) => {
+    if (!db)
+      return resolve();
+    const tx = db.transaction([storeName], 'readwrite');
+    tx.objectStore(storeName).delete(key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => resolve();
+  });
 }

@@ -2,6 +2,8 @@
 import { computed, inject, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue';
 import { extractID3Tags } from '../services/id3-parser';
 import { extractAudioCover } from '../services/thumbnail-strategies';
+import { useModalStore } from '../stores/modal';
+import { ensureMediaSession } from '../utils/mediaSession';
 
 const props = defineProps({ file: { type: Object, required: true } });
 const emit = defineEmits(['prev', 'next']);
@@ -9,8 +11,21 @@ const emit = defineEmits(['prev', 'next']);
 // 注入 useModal 的媒体元素注册口:音频激活时把 <audio> 注册进 mediaElRef,
 // 供 ←/→ seek、空格 暂停统一处理(组件自注册,时序比父级读子 ref 稳)。
 const mediaApi = inject('modalMedia');
+const modal = useModalStore();
 
 const audioEl = ref(null);
+
+// R17:音频的 MediaSession 绑定(<audio> 元素在本组件,故在此绑;视频在 MediaView 绑)。
+let msCleanup = null;
+function bindMs() {
+  unbindMs();
+  if (audioEl.value)
+    msCleanup = ensureMediaSession(audioEl.value, props.file, { onPrev: () => modal.prev(), onNext: () => modal.next() });
+}
+function unbindMs() {
+  msCleanup?.();
+  msCleanup = null;
+}
 const progressBarEl = ref(null);
 const isPlaying = ref(false);
 const currentTime = ref(0);
@@ -155,6 +170,7 @@ watch(
   () => {
     currentTime.value = 0;
     loadInfo();
+    bindMs(); // R17 换文件重绑(刷新 metadata 标题)
   },
 );
 
@@ -165,6 +181,7 @@ onMounted(() => {
   loadInfo();
   audioEl.value.play().catch(() => {}); // autoplay(浏览器策略可能拦,静默)
   mediaApi?.setMediaEl(audioEl.value); // 注册 <audio> 给 useModal(seek/空格)
+  bindMs(); // R17 绑系统媒体键
 });
 
 // R12 KeepAlive 协同:切走暂停、切回续播(对齐视频 onActivated/onDeactivated 行为;
@@ -172,15 +189,18 @@ onMounted(() => {
 onActivated(() => {
   mediaApi?.setMediaEl(audioEl.value); // 切回时重新注册(确保 mediaElRef 指向当前音频,而非上一个视频)
   audioEl.value?.play().catch(() => {});
+  bindMs(); // R17 切回重绑
 });
 onDeactivated(() => {
   audioEl.value?.pause();
+  unbindMs(); // R17 切走解绑,避免后台被耳机控制
 });
 
 onBeforeUnmount(() => {
   stopVisualizer();
   document.removeEventListener('mousemove', onDragMove);
   document.removeEventListener('mouseup', onDragEnd);
+  unbindMs(); // R17 卸载兜底解绑
   if (audioEl.value) {
     audioEl.value.pause();
     audioEl.value.src = '';

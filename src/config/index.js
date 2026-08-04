@@ -1,13 +1,16 @@
 // 应用配置中心。搬自源码 js/config.js 的 CONFIG,无外部依赖。
 export const CONFIG = {
   DATABASE: {
-    // 相册浏览器本地库(三 store:thumbnails 缩略图 / file-meta 文件固有 / user-data 用户附加)
+    // 相册浏览器本地库(五 store:thumbnails/file-meta/user-data 按 md5 三分类;
+    // roots 多根句柄 / scans 扫描快照 按 rootId 索引,KV 风格 out-of-line key)
     NAME: 'GalleryDB',
-    VERSION: 2, // v2: 加 file-meta + user-data store
+    VERSION: 3, // v3: 加 roots + scans store(收口原 idb-keyval 默认 store)
     STORES: {
       THUMBNAILS: 'thumbnails',
       FILE_META: 'file-meta',
       USER_DATA: 'user-data',
+      ROOTS: 'roots',
+      SCANS: 'scans',
     },
   },
   PERFORMANCE: {

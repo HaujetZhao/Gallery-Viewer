@@ -3,6 +3,7 @@
 // 全局"筛选收藏"(R16-a)届时用 cursor 全扫 user-data store(本 plan 不实现)。
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
+import { useGallerySearch } from '../composables/useGallerySearch';
 import { ensureUserDataLoaded, setFavorite } from '../services/userData';
 
 export const useFavoritesStore = defineStore('favorites', () => {
@@ -36,6 +37,8 @@ export const useFavoritesStore = defineStore('favorites', () => {
       next.add(md5);
     favSet.value = next;
     await setFavorite(md5, !favorited);
+    // R16-a:收藏变更后失效全局筛选集合(若筛选开启则重拉,使新收藏项即时可见)。
+    useGallerySearch().invalidateFilterSets();
   }
 
   return { favSet, ensureLoaded, isFavorite, toggle };

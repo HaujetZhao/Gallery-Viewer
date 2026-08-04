@@ -1,4 +1,6 @@
 // 属性面板 store。open(file) → 加载元数据 → 显示。
+// R16-b:open 支持 { focusNote / focusRename }——打开后聚焦备注栏 / 文件名重命名,
+// 让"备注"和"重命名"入口有区别于"属性"(纯查看)的直达行为(方案 A:统一走属性面板)。
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { getMetadataStrategy } from '../services/metadata';
@@ -8,12 +10,16 @@ export const usePropertiesStore = defineStore('properties', () => {
   const file = ref(null);
   const metadata = ref(null);
   const loading = ref(false);
+  // 'note' | 'rename' | null:打开时的初始聚焦目标(PropertiesPanel 读一次后消费)。
+  // 每次 open 重置,确保重复打开同一文件仍能再次触发聚焦。
+  const initialFocus = ref(null);
 
-  async function open(f) {
+  async function open(f, { focusNote = false, focusRename = false } = {}) {
     file.value = f;
     visible.value = true;
     loading.value = true;
     metadata.value = null;
+    initialFocus.value = focusNote ? 'note' : focusRename ? 'rename' : null;
     try {
       const ext = f.name.split('.').pop().toLowerCase();
       const strategy = getMetadataStrategy(ext);
@@ -32,7 +38,8 @@ export const usePropertiesStore = defineStore('properties', () => {
     visible.value = false;
     file.value = null;
     metadata.value = null;
+    initialFocus.value = null;
   }
 
-  return { visible, file, metadata, loading, open, close };
+  return { visible, file, metadata, loading, initialFocus, open, close };
 });

@@ -1,5 +1,6 @@
 <script setup>
-import { computed, nextTick, ref } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
+import { useOverlay } from '../composables/useOverlay';
 import { buildGpsLinks, FormatDMS } from '../services/gps';
 import { formatDuration } from '../services/metadata';
 import { useNotesStore } from '../stores/notes';
@@ -9,6 +10,16 @@ import RenameInput from './RenameInput.vue';
 
 const props2 = usePropertiesStore();
 const notes = useNotesStore();
+
+// R16-b:Esc 关闭属性面板(优先于 modal 的 Esc)+ 焦点陷阱(a11y)。
+// useModal 的 onKeydown 会先判 properties.visible 让出 Esc(见 useModal),此处负责实际关闭。
+const propsRootEl = ref(null);
+useOverlay({
+  isVisible: () => props2.visible,
+  overlayEl: propsRootEl,
+  onClose: () => props2.close(),
+  trapFocus: true,
+});
 
 const EXIF_MAP = {
   Make: '制造商',
@@ -89,6 +100,22 @@ function cancelNote() {
   noteEditing.value = false;
 }
 
+// R16-b:打开时的初始聚焦('note' → 进备注编辑并聚焦 textarea;'rename' → 进文件名重命名,
+// RenameInput 挂载即 autofocus)。元数据加载完成(loading=false)后再触发,确保 DOM 已渲染。
+// loading 每次 open 重走 true→false,故重复打开同一文件仍能再次聚焦。
+watch(
+  () => props2.loading,
+  (isLoading) => {
+    if (isLoading)
+      return;
+    const focus = props2.initialFocus;
+    if (focus === 'note')
+      startNoteEdit();
+    else if (focus === 'rename')
+      startRename();
+  },
+);
+
 function fmtExifVal(key, val, tags) {
   if (key === 'ExposureTime' && val < 1 && val > 0)
     return `1/${Math.round(1 / val)}`;
@@ -143,7 +170,7 @@ const exifGroups = computed(() => {
 
 <template>
   <Teleport to="body">
-    <div v-if="props2.visible" class="modal" @click.self="props2.close">
+    <div v-if="props2.visible" ref="propsRootEl" class="modal" @click.self="props2.close">
       <div class="modal-content properties-content">
         <div class="props-header">
           <h3>属性</h3>
@@ -283,7 +310,7 @@ const exifGroups = computed(() => {
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: var(--z-modal);
+    z-index: var(--z-properties);
 }
 
 .properties-content {

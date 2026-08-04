@@ -212,6 +212,7 @@
     --z-sidebar: 900;     /* 侧栏 */
     --z-modal: 1000;      /* 模态框(MediaModal)*/
     --z-toast: 1100;      /* toast(> modal:modal 开时 toast 可见)*/
+    --z-properties: 1500; /* 属性面板(> modal:在 modal 之上叠开,如 modal 内 N/F2/属性按钮)*/
     --z-popover: 2000;    /* 右键菜单(context-menu)*/
     --z-confirm: 3000;    /* 确认框(confirm-dialog,最高)*/
 

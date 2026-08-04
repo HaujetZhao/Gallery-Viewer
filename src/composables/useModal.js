@@ -8,6 +8,7 @@ import { FileTypes } from '../config/file-types';
 import { CONFIG } from '../config/index';
 import { peek } from '../services/fileResource';
 import { useModalStore } from '../stores/modal';
+import { usePropertiesStore } from '../stores/properties';
 import { convertToPngBlob } from '../utils/file';
 
 const { MIN_SCALE, MAX_SCALE, ZOOM_STEP } = CONFIG.UI.MODAL;
@@ -25,6 +26,7 @@ function getMediaKind(type) {
 
 export function useModal(modalElRef, contentElRef, mediaElRef) {
   const modal = useModalStore();
+  const properties = usePropertiesStore();
 
   const scale = ref(1);
   const pointX = ref(0);
@@ -281,6 +283,10 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
 
     switch (e.key) {
       case 'Escape':
+        // R16-b:属性面板打开时 Esc 先关属性面板、不关 modal(由 PropertiesPanel 的 useOverlay 处理关闭,
+        // 这里仅让出——不调 modal.close)。再按一次 Esc(属性面板已关)才关 modal。
+        if (properties.visible)
+          return;
         modal.close();
         break;
       case 'ArrowRight':

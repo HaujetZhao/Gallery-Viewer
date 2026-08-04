@@ -2,7 +2,7 @@
 // R12:从 MediaModal 抽出的媒体渲染子组件。按 mediaKind 渲染 image/video/svg/audio。
 // 被 MediaModal 的 <KeepAlive :max="10"> 缓存:切走再切回同图瞬开(DOM 复用)、视频 currentTime 隐式保留。
 // 激活时通过注入的 mediaApi 注册当前媒体元素 + 触发图片 fit;R5 视频自动播放/时长回填在此。
-import { computed, inject, onActivated, onDeactivated, onMounted, ref, watch } from 'vue';
+import { computed, inject, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue';
 import { triggerRedraw } from '../composables/useThumbnail';
 import { FileTypes } from '../config/file-types';
 import { detectFileChange, ensureBlobUrl } from '../models/SmartFile';
@@ -10,6 +10,7 @@ import { peek } from '../services/fileResource';
 import { afterTreeMutation } from '../services/persistence';
 import { useModalStore } from '../stores/modal';
 import { useRootStore } from '../stores/root';
+import { ensureMediaSession } from '../utils/mediaSession';
 import AudioPlayer from './AudioPlayer.vue';
 
 const props = defineProps({ file: { type: Object, default: null } });
@@ -36,6 +37,18 @@ const loading = ref(false);
 const fitted = ref(false); // T17:fit 完成前隐藏 img,避免巨大原图闪一下
 const videoReady = ref(false); // 视频:loadeddata(首帧)前隐藏,避免"小空框→大框→有画面"闪烁
 let changeDetected = false; // R3:detectFileChange 检出内容变 → 离开时重挂卡片重生缩略图
+
+// R17:视频的 MediaSession 绑定(音频在 AudioPlayer 内自行绑,因其 <audio> 元素在子组件)。
+let msCleanup = null;
+function bindMs() {
+  unbindMs();
+  if (mediaKind.value === 'video' && mediaEl.value)
+    msCleanup = ensureMediaSession(mediaEl.value, props.file, { onPrev: () => modal.prev(), onNext: () => modal.next() });
+}
+function unbindMs() {
+  msCleanup?.();
+  msCleanup = null;
+}
 
 // SVG:读 File 文本 → innerHTML(与缩略图 svg 策略同机制)。peek 池里 File ?? handle.getFile() 兜底,绕开 blobUrl。
 async function loadSvg() {
@@ -116,6 +129,8 @@ function activate() {
     }
     tryAutoplay(mediaEl.value);
   }
+  // R17:视频激活时绑系统媒体键(切回重绑,与 KeepAlive 生命周期联动)。
+  bindMs();
 }
 onMounted(activate);
 onActivated(activate);
@@ -125,11 +140,16 @@ onDeactivated(() => {
   const el = mediaEl.value;
   if (el && (el.tagName === 'VIDEO' || el.tagName === 'AUDIO'))
     el.pause();
+  // R17:切走解绑媒体键,避免后台/关闭后仍被耳机控制。
+  unbindMs();
   if (changeDetected) {
     triggerRedraw();
     changeDetected = false;
   }
 });
+
+// R17:卸载兜底解绑(组件被 KeepAlive 淘汰彻底销毁时)。
+onBeforeUnmount(unbindMs);
 
 // ensureBlobUrl + detectFileChange + 按需 svg(搬自 MediaModal)。
 watch(

@@ -3,6 +3,7 @@
 // 空串视为无备注(userData.setNote 内部转 undefined + 写空删条目)。
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
+import { useGallerySearch } from '../composables/useGallerySearch';
 import { ensureUserDataLoaded, setNote } from '../services/userData';
 
 export const useNotesStore = defineStore('notes', () => {
@@ -42,6 +43,8 @@ export const useNotesStore = defineStore('notes', () => {
       next.delete(md5);
     notesMap.value = next;
     await setNote(md5, text);
+    // R16-a:备注变更后失效全局筛选集合(若筛选开启则重拉,使新备注项即时可见)。
+    useGallerySearch().invalidateFilterSets();
   }
 
   return { notesMap, ensureLoaded, getNote, has, setNote: setNoteWrapper };

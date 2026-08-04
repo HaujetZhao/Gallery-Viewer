@@ -20,6 +20,7 @@ import { useFavoritesStore } from './stores/favorites';
 import { useFsStore } from './stores/fs';
 import { useHistoryStore } from './stores/history';
 import { useModalStore } from './stores/modal';
+import { usePropertiesStore } from './stores/properties';
 import { useRootStore } from './stores/root';
 import { useThemeStore } from './stores/theme';
 import { useToastStore } from './stores/uiToast';
@@ -34,8 +35,9 @@ const settings = useUserSettingsStore();
 const toast = useToastStore();
 const history = useHistoryStore();
 const favorites = useFavoritesStore();
+const properties = usePropertiesStore();
 const modal = useModalStore();
-const { searchTerm, filteredCount, totalCount } = useGallerySearch();
+const { searchTerm, filteredCount, totalCount, filterFavorite, filterNote } = useGallerySearch();
 
 const sidebarPinned = computed(() => !!settings.settings.sidebarPinned);
 
@@ -135,9 +137,22 @@ function onKeydown(e) {
     }
     return;
   }
-  // F2:重命名。modal 未开 → 重命名 hover 的卡片(modal 打开时此分支不接,留给 modal 内处理)。
+  // R16-b:modal 内 N → 打开属性面板并直达备注栏(备注入口)。
+  if (!isCtrl && key === 'n') {
+    if (modal.isOpen && modal.currentFile) {
+      e.preventDefault();
+      properties.open(modal.currentFile, { focusNote: true });
+    }
+    return;
+  }
+  // F2:重命名。modal 打开 → 打开属性面板直达文件名 inline 编辑(方案 A);
+  // modal 未开 → 重命名 hover 的卡片。输入框聚焦已在上方 return。
   if (!isCtrl && key === 'f2') {
-    if (!modal.isOpen && hoveredFile.value) {
+    if (modal.isOpen && modal.currentFile) {
+      e.preventDefault();
+      properties.open(modal.currentFile, { focusRename: true });
+    }
+    else if (hoveredFile.value) {
       e.preventDefault();
       requestRename();
     }
@@ -257,9 +272,30 @@ function onVisibilityChange() {
     </button>
 
     <div v-if="fsStore.currentFolder" ref="filterEl" class="filter-container">
-      <input ref="searchInputEl" v-model="searchTerm" type="text" placeholder="搜索文件名...">
-      <div class="filter-count">
-        {{ filteredCount }}/{{ totalCount }}
+      <div class="filter-row">
+        <input ref="searchInputEl" v-model="searchTerm" type="text" placeholder="搜索文件名...">
+        <!-- R16-a:收藏/备注筛选内嵌搜索框右侧、数量左边(图标 toggle,激活高亮) -->
+        <div class="filter-inline">
+          <button
+            class="filter-icon"
+            :class="{ active: filterFavorite }"
+            title="仅显示收藏的文件"
+            @click="filterFavorite = !filterFavorite"
+          >
+            <i :class="filterFavorite ? 'fas fa-heart' : 'far fa-heart'" />
+          </button>
+          <button
+            class="filter-icon fav-note"
+            :class="{ active: filterNote }"
+            title="仅显示有备注的文件"
+            @click="filterNote = !filterNote"
+          >
+            <i class="fas fa-edit" />
+          </button>
+          <div class="filter-count">
+            {{ filteredCount }}/{{ totalCount }}
+          </div>
+        </div>
       </div>
     </div>
 
@@ -495,6 +531,10 @@ body.sidebar-pinned .settings-btn {
     z-index: 100;
 }
 
+.filter-row {
+    position: relative;
+}
+
 .filter-container input[type="text"] {
     padding: 12px 20px;
     border: 1px solid var(--color-gray-300);
@@ -505,7 +545,8 @@ body.sidebar-pinned .settings-btn {
     color: var(--text-primary);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
     transition: all 0.3s ease;
-    padding-right: 80px;
+    /* 右侧留出筛选图标 + 数量的空间(♡ ✎ 各 26 + count ~40 + 间距 + 边距) */
+    padding-right: 108px;
 }
 
 .filter-container input[type="text"]:focus {
@@ -515,11 +556,47 @@ body.sidebar-pinned .settings-btn {
     width: 300px;
 }
 
-.filter-count {
+/* R16-a 筛选图标 + 数量,内嵌输入框右侧(图标在数量左边) */
+.filter-inline {
     position: absolute;
-    right: 15px;
+    right: 10px;
     top: 50%;
     transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    z-index: 1;
+}
+
+.filter-icon {
+    width: 26px;
+    height: 26px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.filter-icon:hover {
+    background: var(--bg-secondary);
+}
+
+/* 收藏激活=实心红心;备注激活=主题蓝 */
+.filter-icon.active {
+    color: #ff4d6d;
+}
+
+.filter-icon.fav-note.active {
+    color: var(--color-primary, #2C3E50);
+}
+
+.filter-count {
     background-color: #2C3E50;
     color: white;
     padding: 4px 8px;
@@ -527,7 +604,7 @@ body.sidebar-pinned .settings-btn {
     font-size: 11px;
     font-weight: 600;
     pointer-events: none;
-    z-index: 1;
+    margin-left: 4px;
 }
 
 /* ===== 布局(原 layout.css) ===== */

@@ -93,8 +93,8 @@ const sortFieldOptions = [
   { value: 'date', label: '时间' },
 ];
 const sortDirOptions = [
-  { value: 'desc', icon: 'fas fa-arrow-up-wide-short', title: '降序' },
   { value: 'asc', icon: 'fas fa-arrow-down-short-wide', title: '升序' },
+  { value: 'desc', icon: 'fas fa-arrow-up-wide-short', title: '降序' },
 ];
 const sortDir = computed(() => (sortAsc.value ? 'asc' : 'desc'));
 function setSortField(v) {

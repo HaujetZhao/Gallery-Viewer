@@ -1,16 +1,25 @@
-import { del, get, set } from 'idb-keyval';
-
 import { describe, expect, it, vi } from 'vitest';
+import { CONFIG } from '../config/index';
+import { kvDel, kvGet, kvSet } from './db';
 import { clearScan, loadScan, saveScan } from './scanCache';
 
-vi.mock('idb-keyval', () => {
+// mock GalleryDB 的 KV 函数(取代原 idb-keyval);按 key 存值,忽略 storeName 参数。
+vi.mock('./db', () => {
   const store = new Map();
   return {
-    get: vi.fn(k => store.get(k)),
-    set: vi.fn((k, v) => { store.set(k, v); }),
-    del: vi.fn((k) => { store.delete(k); }),
+    kvGet: vi.fn((_storeName, k) => Promise.resolve(store.get(k))),
+    kvSet: vi.fn((_storeName, k, v) => {
+      store.set(k, v);
+      return Promise.resolve();
+    }),
+    kvDel: vi.fn((_storeName, k) => {
+      store.delete(k);
+      return Promise.resolve();
+    }),
   };
 });
+
+const SCANS_STORE = CONFIG.DATABASE.STORES.SCANS;
 
 describe('scanCache', () => {
   it('save → load 往返', async () => {
@@ -25,12 +34,12 @@ describe('scanCache', () => {
     expect(await loadScan('id2')).toBeUndefined();
   });
 
-  it('key 带 scan- 前缀', async () => {
+  it('用 scans store + key 带 scan- 前缀', async () => {
     await saveScan('id3', {});
     await loadScan('id3');
     await clearScan('id3');
-    expect(set).toHaveBeenCalledWith('scan-id3', {});
-    expect(get).toHaveBeenCalledWith('scan-id3');
-    expect(del).toHaveBeenCalledWith('scan-id3');
+    expect(kvSet).toHaveBeenCalledWith(SCANS_STORE, 'scan-id3', {});
+    expect(kvGet).toHaveBeenCalledWith(SCANS_STORE, 'scan-id3');
+    expect(kvDel).toHaveBeenCalledWith(SCANS_STORE, 'scan-id3');
   });
 });

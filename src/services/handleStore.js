@@ -1,37 +1,24 @@
-// 多根文件夹句柄持久化。IDB 'roots' = [{id, handle, name, fileCount, lastUsed}]。
+// 多根文件夹句柄持久化。GalleryDB 'roots' store(KV,单 key 'roots' 存整个数组)。
 // 内存缓存(避免每次 IO,与 IDB 同步)。handle 可结构化克隆进 IDB。
-// 启动迁移:旧单 handle(root-directory-handle)→ roots 列表首项。
-import { del, get, set } from 'idb-keyval';
+import { CONFIG } from '../config/index';
+import { kvGet, kvSet } from './db';
 
+const ROOTS_STORE = CONFIG.DATABASE.STORES.ROOTS;
 const ROOTS_KEY = 'roots';
-const LEGACY_KEY = 'root-directory-handle'; // 旧单 handle,启动迁移用
 
 let cache = null; // 记录数组(含 handle) | null(未加载)
 
 async function loadRaw() {
   if (cache)
     return cache;
-  let list = await get(ROOTS_KEY);
-  if ((!list || list.length === 0) && await get(LEGACY_KEY)) {
-    // 迁移旧单 handle
-    const handle = await get(LEGACY_KEY);
-    list = [{
-      id: crypto.randomUUID(),
-      handle,
-      name: handle.name,
-      fileCount: 0,
-      lastUsed: Date.now(),
-    }];
-    await set(ROOTS_KEY, list);
-    await del(LEGACY_KEY);
-  }
+  const list = await kvGet(ROOTS_STORE, ROOTS_KEY);
   cache = list || [];
   return cache;
 }
 
 async function persist() {
   if (cache)
-    await set(ROOTS_KEY, cache);
+    await kvSet(ROOTS_STORE, ROOTS_KEY, cache);
 }
 
 export async function loadAll() {

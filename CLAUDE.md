@@ -9,7 +9,7 @@
 - **Vite 5** + 双 build：`vite.config.js`（单 HTML）/ `vite.config.pwa.js`（PWA）
 - **Pinia**（setup store 风格）
 - **资源全内化**（零 CDN）：`@fortawesome/fontawesome-free` / `spark-md5` / `exifr` 均 npm 装 + ES import
-- **idb-keyval**：轻量 KV over IndexedDB（多文件夹句柄 + 扫描快照持久化）
+- **GalleryDB**（自建 IndexedDB，五 store，无第三方 KV 依赖）：`thumbnails`/`file-meta`/`user-data` 按 md5 三分类 + `roots`(多根句柄)/`scans`(扫描快照) 按 rootId KV。见 [db.js](src/services/db.js)
 - **@tanstack/vue-virtual**：Gallery 按行虚拟化（万图不卡，整页滚动 + 实测行高）
 - **质量基建**：`@antfu/eslint-config`（ESLint flat config）+ Vitest + `@vue/test-utils` + jsdom
 
@@ -54,7 +54,7 @@ docs/superpowers/        # specs(设计 + 实现记录)+ plans(实施计划)
 3. **资源走 fileResource 池**（[fileResource.js](src/services/fileResource.js)）：blobUrl/File 集中管理（`acquire`/`destroy`/`peek`，带 in-flight 去重 + inflight cancel）。SmartFile 是池的门面（`blobUrl`/`size`/`lastModified` 是 getter）。**不要直接 `URL.createObjectURL`/`revokeObjectURL`**；size/mtime 单源在 `SmartFile._meta`（响应式），不进池。
 4. **持久化走 schedulePersist**：改树（scan 命中增删 / rename / delete / move）由 `integrateScanResult` 或 `history` 置 `fs.rootDirty=true` + `schedulePersist(id)`（1s debounce 合并写，不阻塞点击）。**不要直接 `saveScan`**。切根前 `flushPendingPersist` 落盘旧根（reload 用 `cancelPendingPersist`——重扫从盘重建）；`persistIfDirty` 仅 dirty 时 `folderToSnapshot`+`countAllFiles`。关浏览器/切后台由 `visibilitychange:hidden` 触发 `flushPendingPersist` 兜底（P0-3）。
 5. **CSS 全局复用**：`src/styles/` 的全局 CSS（`main.js` 全局 import）。组件**不重写这些 CSS**，模板直接用其 class（如 `.photo-card` / `.gallery-row` / `.tree-node` / `.modal-audio-player`）。组件 scoped 样式只补 CSS 里没有的。
-6. **核心算法稳定**：scan 纯列表差集 + 信任名字集合短路、enrich 并发 getFile 补 size/mtime、GPS（魔数）、ID3、`.trash` 镜像回收站、calculateMD5（前 2MB 缓存键——**内容寻址：跨文件夹/复制副本的同图共享一份缩略图缓存（size+mtime 做不到，mtime 随复制变）；md5 随快照持久化 → 秒切零重算；按需计算（视窗触发）非万张预扫。chunkSize 锁定保旧 IDB key 兼容，不动**）。**md5 索引数据三分**:`thumbnails`(blob 缓存,LRU)/ `file-meta`(文件固有 duration/宽高/bitrate)/ `user-data`(用户附加 favorites+notes 聚合,写空删条目)三个 IDB store(keyPath `md5`),均懒加载(视窗与缩略图同流程,`generateThumbnail` 内 md5 就绪后 `ensureFileMetaLoaded` + `favorites/notes.ensureLoaded`);favorites/notes 不再用 idb-keyval;duration 不再随快照持久化(`SmartFile._meta.duration` 作运行时缓存)。后续改动配测试。
+6. **核心算法稳定**：scan 纯列表差集 + 信任名字集合短路、enrich 并发 getFile 补 size/mtime、GPS（魔数）、ID3、`.trash` 镜像回收站、calculateMD5（前 2MB 缓存键——**内容寻址：跨文件夹/复制副本的同图共享一份缩略图缓存（size+mtime 做不到，mtime 随复制变）；md5 随快照持久化 → 秒切零重算；按需计算（视窗触发）非万张预扫。chunkSize 锁定保旧 IDB key 兼容，不动**）。**md5 索引数据三分**:`thumbnails`(blob 缓存,LRU)/ `file-meta`(文件固有 duration/宽高/bitrate)/ `user-data`(用户附加 favorites+notes 聚合,写空删条目)三个 IDB store(keyPath `md5`),均懒加载(视窗与缩略图同流程,`generateThumbnail` 内 md5 就绪后 `ensureFileMetaLoaded` + `favorites/notes.ensureLoaded`);duration 不再随快照持久化(`SmartFile._meta.duration` 作运行时缓存)。**rootId 索引两 store**:`roots`(多根句柄,单 key `'roots'` 存整个数组)/ `scans`(扫描快照,key `scan-<rootId>`),KV 风格 out-of-line key,经 `db.js` 的 `kvGet/kvSet/kvDel` 读写([handleStore](src/services/handleStore.js)/[scanCache](src/services/scanCache.js))。**全部五个 store 收口在 GalleryDB**,不再用 idb-keyval。后续改动配测试。
 7. **跨组件状态进 Pinia store；组件私有状态用 `ref`/`reactive`**。
 8. **主题切换**：`useThemeStore.applyTheme` 用 `document.documentElement.style.setProperty` 注入 CSS 变量（切主题先清残留再设新值，见 [theme.js](src/stores/theme.js)）。
 

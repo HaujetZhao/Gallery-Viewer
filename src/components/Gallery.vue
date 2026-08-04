@@ -13,7 +13,7 @@ import PhotoCard from './PhotoCard.vue';
 const fsStore = useFsStore();
 const settings = useUserSettingsStore();
 const modal = useModalStore();
-const { searchTerm, debouncedTerm, filteredCount, totalCount } = useGallerySearch();
+const { searchTerm, debouncedTerm, filteredCount, totalCount, filterFavorite, filterNote, filterSets } = useGallerySearch();
 
 const sortField = computed(() => settings.settings.sortField);
 const sortAsc = computed(() => settings.settings.sortDirection === 'asc');
@@ -54,12 +54,19 @@ const allEnriched = computed(() => {
 });
 
 // 过滤 + 按 frozenOrder 稳定排序(用 debouncedTerm;过滤只隐藏、不改相对序)。
+// R16-a:搜索词 + 收藏/备注筛选叠加(AND)。收藏/备注筛选用全量 md5 集合(filterSets,开关开启时由
+// useGallerySearch 懒拉 getAllUserData 填充);md5 未算(未进视窗)的文件在筛选下按"不通过"处理(保守,避免假命中)。
 const displayFiles = computed(() => {
   const files = fsStore.currentFolder?.files || [];
   const term = debouncedTerm.value.toLowerCase();
   const order = frozenOrder.value;
+  const favOn = filterFavorite.value;
+  const noteOn = filterNote.value;
+  const favSet = filterSets.value.fav;
+  const noteSet = filterSets.value.note;
   return files
     .filter(f => f.path.toLowerCase().includes(term))
+    .filter(f => (!favOn || favSet.has(f.md5)) && (!noteOn || noteSet.has(f.md5)))
     .sort((a, b) => (order.get(a) ?? Infinity) - (order.get(b) ?? Infinity));
 });
 
