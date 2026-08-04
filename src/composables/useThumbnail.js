@@ -64,11 +64,17 @@ async function schedule() {
     return;
 
   queue.activeCount++;
-  try {
-    await generateThumbnail(task.file, task.el, task.targetSize);
+  // onDrawn:缩略图画到 canvas(可见)即刻翻 loaded + 移遮罩,不等 toBlob 编码/IDB 存盘
+  // (见 thumbnail.js generateThumbnail docstring)。三行赋值皆幂等:loaded 单向翻转、unobserve 重复 no-op,
+  // 故无需额外幂等标志。兜底调用覆盖 gif/svg 等 generateThumbnail 未在可见点调 onDrawn 的路径。
+  const onDrawn = () => {
     task.loaded.value = true;
     task.loading.value = false;
     observer.unobserve(task.el);
+  };
+  try {
+    await generateThumbnail(task.file, task.el, task.targetSize, onDrawn);
+    onDrawn();
   }
   catch (e) {
     console.warn('缩略图生成失败:', task.file.name, e);

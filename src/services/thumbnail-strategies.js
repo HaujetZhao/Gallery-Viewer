@@ -20,7 +20,7 @@ export const ThumbnailStrategies = {
       return canvas;
     },
 
-    generateThumbnail: async (element, fileData, targetSize) => {
+    generateThumbnail: async (element, fileData, targetSize, onDrawn) => {
       // R3-1:createImageBitmap 解码(off-main-thread,比 Image+onload 快)。
       // File 来源:复用池里 ensureBlobUrl/peek 已 acquire 的 File(thumbnail.js md5 计算也这么复用),
       // peek 未命中才 fallback handle.getFile()——不二次 IO。
@@ -48,6 +48,9 @@ export const ThumbnailStrategies = {
           bitmap.width * ratio,
           bitmap.height * ratio,
         );
+
+        // 画完即翻 loaded(见 generateThumbnail docstring),不等 toBlob 编码。
+        onDrawn?.();
 
         return new Promise((resolve) => {
           canvas.toBlob(blob => resolve(blob), 'image/jpeg', 0.85);
@@ -152,7 +155,7 @@ export const ThumbnailStrategies = {
       ctx.fillText('▶', targetSize / 2, targetSize / 2);
     },
 
-    generateThumbnail: async (element, fileData, targetSize) => {
+    generateThumbnail: async (element, fileData, targetSize, onDrawn) => {
       return new Promise((resolve) => {
         const video = document.createElement('video');
         video.preload = 'metadata';
@@ -174,6 +177,7 @@ export const ThumbnailStrategies = {
         function finishWithDefault() {
           cleanup();
           ThumbnailStrategies.video.drawDefaultThumbnail(element, targetSize);
+          onDrawn?.(); // 默认图也可见 → 翻 loaded
           element.toBlob(blob => resolve(blob), 'image/jpeg', 0.85);
         }
 
@@ -190,6 +194,7 @@ export const ThumbnailStrategies = {
           captured = true;
           try {
             ThumbnailStrategies.video.drawVideoFrame(element, video, targetSize);
+            onDrawn?.(); // 抽帧画完 → 翻 loaded(不等 toBlob 编码)
             element.toBlob((blob) => {
               cleanup();
               resolve(blob);
@@ -234,7 +239,7 @@ export const ThumbnailStrategies = {
       return canvas;
     },
 
-    generateThumbnail: async (element, fileData, targetSize) => {
+    generateThumbnail: async (element, fileData, targetSize, onDrawn) => {
       // 注:音频 duration 不在此抽——缩略图缓存命中时不进 generateThumbnail → 拿不到。
       // 改由 thumbnail.js ensureFileMetaLoaded 之后独立抽(与缩略图缓存解耦)。
       try {
@@ -268,6 +273,7 @@ export const ThumbnailStrategies = {
           );
 
           URL.revokeObjectURL(img.src);
+          onDrawn?.(); // 封面画完 → 翻 loaded
 
           return new Promise((resolve) => {
             canvas.toBlob(blob => resolve(blob), 'image/jpeg', 0.85);
@@ -295,6 +301,7 @@ export const ThumbnailStrategies = {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('🎵', targetSize / 2, targetSize / 2);
+      onDrawn?.(); // 默认图 → 翻 loaded
 
       return new Promise((resolve) => {
         canvas.toBlob(blob => resolve(blob), 'image/jpeg', 0.85);

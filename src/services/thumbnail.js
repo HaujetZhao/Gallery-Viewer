@@ -34,7 +34,9 @@ async function drawBlobToCanvas(canvas, blob) {
 
 // 生成缩略图并画到 canvas。返回 { cached, strategyName }。
 // GIF/SVG 不缓存,直接渲染;image/video/audio 走 IndexedDB 缓存(md5 + targetSize 为键)。
-export async function generateThumbnail(file, canvas, targetSize = 400) {
+// onDrawn:缩略图「已画到 canvas(可见)」时调,useThumbnail 据此即刻翻 loaded(移除转场遮罩),
+// 不等 toBlob 编码/IDB 存盘——否则一批卡的编码集中完成 → loaded 集中翻 → 遮罩整批消失。
+export async function generateThumbnail(file, canvas, targetSize = 400, onDrawn) {
   const strategy = getThumbnailStrategy(file.type);
 
   // GIF/SVG 快路径:不缓存
@@ -77,14 +79,15 @@ export async function generateThumbnail(file, canvas, targetSize = 400) {
 
   if (cached) {
     await drawBlobToCanvas(canvas, cached.blob);
+    onDrawn?.();
     touchThumbnailInDB(`${file.md5}_${targetSize}`); // 异步刷新 lastAccessed(不阻塞,修源码陷阱)
     return { cached: true, strategyName: strategy.name };
   }
 
-  // 未命中:策略生成(已画到 canvas)→ 存 DB
-  const blob = await strategy.generateThumbnail(canvas, file, targetSize);
+  // 未命中:策略生成(strategy 画完即调 onDrawn,再 toBlob 编码)→ 存 DB(fire-and-forget)。
+  const blob = await strategy.generateThumbnail(canvas, file, targetSize, onDrawn);
   if (blob) {
-    await saveThumbnailToDB({
+    saveThumbnailToDB({
       id: `${file.md5}_${targetSize}`,
       md5: file.md5,
       size: file.size,
