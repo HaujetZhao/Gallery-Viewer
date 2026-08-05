@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chunkRows, computeRowHeight, computeVideoExpand, DETAIL_INFO_HEIGHT } from './gallery-layout';
+import { buildSlots, chunkRows, computeRowHeight, computeVideoExpand, dateSortValue, DETAIL_INFO_HEIGHT } from './gallery-layout';
 
 describe('chunkRows', () => {
   it('空数组返回空', () => {
@@ -40,6 +40,53 @@ describe('computeRowHeight', () => {
   it('detail 样式:行高 = 列宽 + DETAIL_INFO_HEIGHT + gap', () => {
     // 列宽 = 238.75;行高 = 238.75 + 46 + 15 = 299.75
     expect(computeRowHeight(1000, 4, 15, DETAIL_INFO_HEIGHT)).toBeCloseTo(238.75 + DETAIL_INFO_HEIGHT + 15, 5);
+  });
+});
+
+describe('dateSortValue', () => {
+  it('拍摄时间优先于文件时间', () => {
+    expect(dateSortValue({ capturedAt: 100, lastModified: 200 })).toBe(100);
+  });
+  it('无 EXIF 时间 → 文件修改时间', () => {
+    expect(dateSortValue({ lastModified: 200 })).toBe(200);
+    expect(dateSortValue({ capturedAt: null, lastModified: 300 })).toBe(300);
+  });
+  it('两者都无 → undefined(排末尾)', () => {
+    expect(dateSortValue({})).toBeUndefined();
+  });
+});
+
+describe('buildSlots', () => {
+  const mk = (name, id) => ({ name, id });
+  it('铺满:跨度=文件数,无空位', () => {
+    const files = [mk('a', 0), mk('b', 1), mk('c', 2)];
+    const order = new Map(files.map((f, i) => [f, i]));
+    expect(buildSlots(files, order, 3)).toEqual([files[0], files[1], files[2]]);
+  });
+  it('删除中间文件 → 该槽位 null,其余原位不动', () => {
+    const a = mk('a', 0);
+    const b = mk('b', 1);
+    const c = mk('c', 2);
+    const order = new Map([[a, 0], [b, 1], [c, 2]]);
+    // b 被删除(不在 files),span 保持 3
+    expect(buildSlots([a, c], order, 3)).toEqual([a, null, c]);
+  });
+  it('删除末尾文件 → 尾部空位保留(跨度不变)', () => {
+    const a = mk('a', 0);
+    const b = mk('b', 1);
+    const order = new Map([[a, 0], [b, 1]]);
+    expect(buildSlots([a], order, 2)).toEqual([a, null]);
+  });
+  it('新文件(无序号)不占槽位,等待下一轮追加', () => {
+    const a = mk('a', 0);
+    const newcomer = mk('new', 99);
+    const order = new Map([[a, 0]]);
+    expect(buildSlots([a, newcomer], order, 1)).toEqual([a]);
+  });
+  it('span 越界序号忽略(防御)', () => {
+    const a = mk('a', 0);
+    const order = new Map([[a, 5]]);
+    expect(buildSlots([a], order, 3)).toEqual([null, null, null]);
   });
 });
 

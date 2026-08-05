@@ -7,7 +7,7 @@ import { useFsStore } from '../stores/fs';
 import { useModalStore } from '../stores/modal';
 import { useUserSettingsStore } from '../stores/userSettings';
 import { windowsCompareStrings } from '../utils/format';
-import { chunkRows, computeRowHeight, DETAIL_INFO_HEIGHT } from '../utils/gallery-layout';
+import { buildSlots, chunkRows, computeRowHeight, dateSortValue, DETAIL_INFO_HEIGHT } from '../utils/gallery-layout';
 import PhotoCard from './PhotoCard.vue';
 
 const fsStore = useFsStore();
@@ -25,6 +25,13 @@ const colCount = computed(() => settings.settings.columnCount);
 const frozenOrder = ref(new Map());
 let orderCounter = 0;
 const settled = ref(false); // 当前 folder 的 size/date 是否已按 enrich 结果重冻
+// —— 冻结排序空位(fixed order + holes)——
+// slotCount:已分配最大序号 + 1(冻结跨度)。删除/移出不缩 → 空位保留;追加文件才增。
+const slotCount = ref(0);
+// 是否在筛选(搜索/收藏/备注):筛选时压缩显示(不留空位),非筛选时按冻结序号保留删除/移出的空位。
+const isFiltering = computed(() => !!(debouncedTerm.value || filterFavorite.value || filterNote.value));
+// 非筛选时的固定空位槽:ordinal → 当前仍在 folder.files 的文件,删除/移出的留 null(空位)。
+const slots = computed(() => buildSlots(fsStore.currentFolder?.files || [], frozenOrder.value, slotCount.value));
 
 // 按当前排序键算有序列表(冻结时用;size/mtime 缺失兜底排末尾)
 function sortByKey(files) {
@@ -34,17 +41,18 @@ function sortByKey(files) {
       return windowsCompareStrings(a.name, b.name) * dir;
     if (sortField.value === 'size')
       return ((a.size ?? Infinity) - (b.size ?? Infinity)) * dir;
-    return ((a.lastModified ?? Infinity) - (b.lastModified ?? Infinity)) * dir;
+    return ((dateSortValue(a) ?? Infinity) - (dateSortValue(b) ?? Infinity)) * dir; // date:EXIF 拍摄时间优先,否则文件时间
   });
 }
 
-// 重冻:按当前排序键给当前 folder 全部文件盖递增序号。
+// 重冻:按当前排序键给当前 folder 全部文件盖递增序号(铺满,无空位)。
 function freeze() {
   const files = fsStore.currentFolder?.files || [];
   const m = new Map();
   sortByKey(files).forEach((f, i) => m.set(f, i));
   frozenOrder.value = m;
   orderCounter = files.length;
+  slotCount.value = files.length;
 }
 
 // 当前 folder 是否全部 enrich 完成(size 就绪)。size/date 排序需待 enrich 后重冻一次。
@@ -80,12 +88,12 @@ watch(
   { immediate: true },
 );
 
-// 会话内新进入文件(move-in / 后台扫描新增)→ 追加末尾序号,不触发整体重冻。
+// 会话内新进入文件(move-in / 后台扫描新增 / 撤销还原)→ 追加末尾序号,不触发整体重冻。
+// 源取「内容副本」而非数组引用——addFile/removeFile 是原位 push/splice,引用不变,只看引用不会触发。
+// 撤销还原的文件已有原序号(删除不删 frozenOrder)→ 不被追加,回原位槽;仅真·新文件走追加。
 watch(
-  () => fsStore.currentFolder?.files,
+  () => [...(fsStore.currentFolder?.files || [])],
   (files) => {
-    if (!files)
-      return;
     const m = frozenOrder.value;
     let changed = false;
     for (const f of files) {
@@ -94,8 +102,10 @@ watch(
         changed = true;
       }
     }
-    if (changed)
+    if (changed) {
       frozenOrder.value = new Map(m);
+      slotCount.value = orderCounter;
+    }
   },
 );
 // 回写计数(搜索框 fixed 右上读)。computed 不应有副作用,用 watch 同步。
@@ -109,7 +119,8 @@ watch(
 );
 
 // 行优先切片:每行 colCount 张,供 virtualizer 按行窗口化。
-const rows = computed(() => chunkRows(displayFiles.value, colCount.value));
+// 非筛选:用「冻结空位槽」(删除/移出留空,其余不重排);筛选:用压缩后的 displayFiles(搜索/收藏/备注不留空位)。
+const rows = computed(() => chunkRows(isFiltering.value ? displayFiles.value : slots.value, colCount.value));
 
 // 行高 = 列宽(thumbnail aspect-ratio 1/1)+ 行间 gap。
 // 桌面 gap 15 / 移动 gap 5,与下方 scoped .gallery-row gap 一致。
@@ -229,14 +240,19 @@ onBeforeUnmount(() => {
           class="gallery-row"
           :style="{ transform: `translateY(${vi.start}px)` }"
         >
-          <PhotoCard
+          <template
             v-for="(f, c) in rows[vi.index]"
-            :key="`${f.path}-${rerunKey}-${c}`"
-            :file="f"
-            :target-size="settings.settings.thumbnailSize"
-            :col-width="colWidth"
-            @click="openPreview(f)"
-          />
+            :key="f ? `${f.path}-${rerunKey}-${c}` : `empty-${rerunKey}-${c}`"
+          >
+            <!-- 空位(null 槽):不渲染任何元素,grid 1fr 列仍保留 → 卡片位置不动、空位空白 -->
+            <PhotoCard
+              v-if="f"
+              :file="f"
+              :target-size="settings.settings.thumbnailSize"
+              :col-width="colWidth"
+              @click="openPreview(f)"
+            />
+          </template>
         </div>
       </div>
     </div>

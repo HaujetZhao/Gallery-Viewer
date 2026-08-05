@@ -22,6 +22,40 @@ export function chunkRows(list, n) {
 }
 
 /**
+ * 时间排序键:EXIF 拍摄时间优先,否则文件修改时间。缺失(未加载/非图片)→ undefined 排末尾。
+ * 供 Gallery sortByKey 的 date 分支用。
+ * @param {object} file
+ * @returns {number|undefined}
+ */
+export function dateSortValue(file) {
+  return file.capturedAt ?? file.lastModified;
+}
+
+/**
+ * 冻结排序的「空位插槽」:把当前仍在 folder.files 里的文件按其冻结序号铺进固定跨度数组,
+ * 被删除/移出的文件序号留空(null)——卡片位置不动、空位保持,其余不重排。
+ * 新文件(无冻结序号)不在此(move-in 走追加序号后进入 frozenOrder,下一轮生效)。
+ * @param {Array} files 当前 folder.files(实时)
+ * @param {Map} order frozenOrder(file → 序号)
+ * @param {number} slotCount 跨度 = 已分配最大序号 + 1(freeze 或追加后更新)
+ * @returns {Array<object|null>} 按序号索引的槽位,空位为 null
+ */
+export function buildSlots(files, order, slotCount) {
+  const byOrdinal = new Map();
+  for (const f of files) {
+    const o = order.get(f);
+    if (o != null)
+      byOrdinal.set(o, f);
+  }
+  const arr = Array.from({ length: slotCount }).fill(null);
+  for (const [o, f] of byOrdinal) {
+    if (o >= 0 && o < slotCount)
+      arr[o] = f;
+  }
+  return arr;
+}
+
+/**
  * 视频悬浮满幅等比拓展的几何(单测,不依赖 DOM)。
  * 方形卡里 `object-fit:cover` 的视频横屏裁左右、竖屏裁上下;精确匹配比例时拓展只发生在被裁那一维,
  * 另一维保持列宽(卡占位不变 → 虚拟化行高/滚动不受影响)。
