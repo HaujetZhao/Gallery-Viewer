@@ -244,7 +244,6 @@ onBeforeUnmount(() => {
             v-for="(f, c) in rows[vi.index]"
             :key="f ? `${f.path}-${rerunKey}-${c}` : `empty-${rerunKey}-${c}`"
           >
-            <!-- 空位(null 槽):不渲染任何元素,grid 1fr 列仍保留 → 卡片位置不动、空位空白 -->
             <PhotoCard
               v-if="f"
               :file="f"
@@ -252,6 +251,8 @@ onBeforeUnmount(() => {
               :col-width="colWidth"
               @click="openPreview(f)"
             />
+            <!-- 空位(null 槽):渲染占位元素占住 1fr 列——若什么都不渲染,grid 自动排布会把右侧卡片左移填补空位 -->
+            <div v-else class="gallery-empty-cell" />
           </template>
         </div>
       </div>
@@ -299,6 +300,13 @@ onBeforeUnmount(() => {
     display: grid;
     grid-template-columns: repeat(var(--col-count, 4), 1fr);
     gap: 15px;
+}
+
+/* 删除/移出后保留的空位占位:占住 1fr 列(否则 grid 自动排布把右侧卡左移填补),
+   以方形缩略图高度呈现为"空白卡位";detail 样式卡片更高,空位略矮可接受。 */
+.gallery-empty-cell {
+    width: 100%;
+    aspect-ratio: 1 / 1;
 }
 
 /* 虚拟化行有 transform:translateY(创建 z-index auto 的 stacking context,层级 0)→ 卡内任何 z-index 都被
