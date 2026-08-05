@@ -3,6 +3,8 @@
 // 让"备注"和"重命名"入口有区别于"属性"(纯查看)的直达行为(方案 A:统一走属性面板)。
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
+import { exifTagsToEssentials } from '../services/exif';
+import { saveFileMeta } from '../services/fileMeta';
 import { getMetadataStrategy } from '../services/metadata';
 
 export const usePropertiesStore = defineStore('properties', () => {
@@ -24,6 +26,14 @@ export const usePropertiesStore = defineStore('properties', () => {
       const ext = f.name.split('.').pop().toLowerCase();
       const strategy = getMetadataStrategy(ext);
       metadata.value = await strategy.getMetadata(f);
+      // 打开属性即拿到全量 exif(含拍摄时间/GPS);若可持久化字段有变化,更新 file-meta(capturedAt/gps)。
+      // 兜住"存量未抽过"的缺口——用户一打开属性就回填;变了才写(saveFileMeta 幂等),避免写放大。
+      const ess = exifTagsToEssentials(metadata.value?.exif);
+      const meta = f._meta ?? {};
+      const changed = (ess?.capturedAt ?? null) !== (meta.capturedAt ?? null)
+        || JSON.stringify(ess?.gps ?? null) !== JSON.stringify(meta.gps ?? null);
+      if (ess && changed)
+        await saveFileMeta(f, { ...ess, exifChecked: true });
     }
     catch (e) {
       console.error('获取元数据失败', e);

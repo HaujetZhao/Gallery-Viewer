@@ -10,7 +10,8 @@ import { useUserSettingsStore } from '../stores/userSettings';
 // IntersectionObserver + 并发队列留到阶段 5 gallery 的 useThumbnail composable。
 import { calculateMD5 } from '../utils/file';
 import { deleteThumbnail, getThumbnailFromDB, saveThumbnailToDB, thumbnailKey, touchThumbnailInDB } from './db';
-import { ensureFileMetaLoaded } from './fileMeta';
+import { extractExifEssentials } from './exif';
+import { ensureFileMetaLoaded, saveFileMeta } from './fileMeta';
 import { peek } from './fileResource';
 import { refreshFolder } from './folderActions';
 import { afterFolderMutation } from './persistence';
@@ -33,6 +34,13 @@ export async function loadCardMetadata(file) {
   await ensureFileMetaLoaded(file); // duration/dim 填 _meta(缓存命中分支不抽帧也能拿)
   if (file.type?.startsWith('audio/') && file._meta?.duration == null)
     await extractAudioDuration(file); // 音频时长独立抽(不依赖缩略图抽帧);extractAudioDuration 内部 saveFileMeta
+  // —— 图片 EXIF 核心字段(capturedAt 拍摄时间 + GPS)懒抽,与 md5 同属"读内容"重活,汇聚于此 ——
+  // exifChecked 哨兵(已查过,含"无 EXIF")→ 跳过,避免反复抽;存量 md5 已缓存但从未抽过的首次视窗自动回填。
+  // 非 image 策略(GIF/SVG/视频)不抽(EXIF 主要属 JPEG/PNG 等位图);saveFileMeta 内部无 md5 则跳过(此处 md5 已算)。
+  if (getThumbnailStrategy(file.type).name === 'image' && file._meta?.exifChecked !== true) {
+    const ess = await extractExifEssentials(peek(file)?.file);
+    await saveFileMeta(file, ess ? { ...ess, exifChecked: true } : { exifChecked: true }); // 无 EXIF 也打哨兵,不再重抽
+  }
   await Promise.all([
     useFavoritesStore().ensureLoaded(file.md5), // 爱心
     useNotesStore().ensureLoaded(file.md5), // 备注

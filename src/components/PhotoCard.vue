@@ -440,7 +440,7 @@ onBeforeUnmount(() => {
             <i class="fas fa-hdd" /> {{ formatFileSize(file.size) }}
           </div>
           <div class="file-date">
-            <i class="far fa-calendar" /> {{ formatDate(file.lastModified) }}
+            <i class="far fa-calendar" /> {{ formatDate(file.displayDate) }}
           </div>
         </div>
       </div>

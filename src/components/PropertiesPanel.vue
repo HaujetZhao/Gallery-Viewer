@@ -212,6 +212,7 @@ const exifGroups = computed(() => {
                     <td>估算比特率</td><td>{{ dim.estimatedBitrate }} kbps</td>
                   </tr>
                   <tr><td>大小</td><td>{{ formatFileSize(props2.file.size) }}</td></tr>
+                  <tr v-if="props2.file.capturedAt"><td>拍摄时间</td><td>{{ formatDate(props2.file.capturedAt) }}</td></tr>
                   <tr><td>修改时间</td><td>{{ formatDate(props2.file.lastModified) }}</td></tr>
                   <!-- R14:md5 备注(内联编辑 textarea;md5 缺失只读 + 提示) -->
                   <tr class="props-note-row">

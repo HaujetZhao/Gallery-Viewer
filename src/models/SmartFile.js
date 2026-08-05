@@ -39,6 +39,21 @@ export class SmartFile {
     return this._meta?.duration;
   }
 
+  // EXIF 拍摄时间(ms)。由 file-meta store(md5 索引)懒加载填入或视窗抽 EXIF 时写入。非图片/无 EXIF → undefined。
+  get capturedAt() {
+    return this._meta?.capturedAt;
+  }
+
+  // EXIF GPS { lat, lng, alt? }。与 capturedAt 同源(file-meta 懒加载)。供未来图片地图用。无 GPS → undefined。
+  get gps() {
+    return this._meta?.gps;
+  }
+
+  // 展示用时间:EXIF 拍摄时间优先,否则回退文件修改时间。
+  get displayDate() {
+    return this.capturedAt ?? this.lastModified;
+  }
+
   get type() {
     return this._extractType(this.name);
   }
