@@ -1,10 +1,10 @@
-// 屏幕边缘感应滚动。鼠标进入顶/底 150px 区域,按距边缘距离线性变速度,rAF 循环 window.scrollBy。
+// 屏幕边缘感应滚动。鼠标进入顶/底 60px 区域,按距边缘距离线性变速度,rAF 循环 window.scrollBy。
 // 排除区域(sidebar/modal/settings/topbar)用 ref 数组传入。
 import { onBeforeUnmount, onMounted, watch } from 'vue';
 import { useModalStore } from '../stores/modal';
 import { useUserSettingsStore } from '../stores/userSettings';
 
-const ZONE_HEIGHT = 150;
+const ZONE_HEIGHT = 60;
 
 export function useScrollZone(excludeRefs = []) {
   const settings = useUserSettingsStore();

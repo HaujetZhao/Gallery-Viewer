@@ -31,18 +31,18 @@ export const CONFIG = {
   },
   DEFAULTS: {
     thumbnailSize: 400,
-    columnCount: 5,
+    columnCount: 4,
     sortField: 'name',
     sortDirection: 'asc',
     scrollZoneEnabled: true,
-    scrollSpeed: 2.0,
+    scrollSpeed: 1,
     sidebarPinned: false,
     sidebarWidth: 280,
     theme: 'ocean',
-    cardStyle: 'hover', // 卡片信息显示样式:hover(悬停滑入)/always(常驻叠层)/detail(上图下信息整卡)。可扩展更多。
-    videoPreviewMode: 'thumbnail', // 视频卡片预览:thumbnail(静态缩略图)/hover(悬浮循环播放)/auto(视口内常驻循环播放)
-    videoPreviewSpeed: 1, // 视频预览播放速度倍率(0.5~4)
-    cardHoverStyle: 'lift', // 卡片 hover 样式:lift(上浮)/expand(缩略图按原始比例放大弹出)
+    cardStyle: 'detail', // 卡片信息显示样式:hover(悬停滑入)/always(常驻叠层)/detail(上图下信息整卡)。可扩展更多。
+    videoPreviewMode: 'hover', // 视频卡片预览:thumbnail(静态缩略图)/hover(悬浮循环播放)/auto(视口内常驻循环播放)
+    videoPreviewSpeed: 1.5, // 视频预览播放速度倍率(0.5~4)
+    cardHoverStyle: 'expand', // 卡片 hover 样式:lift(上浮)/expand(缩略图按原始比例放大弹出)
   },
   CACHE: { OLD_THRESHOLD_DAYS: 20, AUTO_CLEANUP_ENABLED: false },
 };

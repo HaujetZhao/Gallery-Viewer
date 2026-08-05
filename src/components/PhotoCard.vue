@@ -1,9 +1,10 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useFileActions } from '../composables/useFileActions';
 import { hoveredFile, renameTick } from '../composables/useHoveredFile';
 import { useThumbnail } from '../composables/useThumbnail';
 import { ensureBlobUrl } from '../models/SmartFile';
+import { saveFileMeta } from '../services/fileMeta';
 import { getThumbnailStrategy } from '../services/thumbnail-strategies';
 import { useContextMenuStore } from '../stores/contextMenu';
 import { useFavoritesStore } from '../stores/favorites';
@@ -125,17 +126,119 @@ watch([loaded, mediaEl], () => {
     mediaDims.value = d;
 });
 
+// —— 展开视频底部进度指示(胶囊游标条)——
+// duration 优先 video 元素实际值,否则回退 file._meta.duration(时长角标同源)。
+const videoProgress = ref(0);
+// 视频元素实际时长,由 loadedmetadata/durationchange 事件写入(ref,响应式)。
+// 不能直接读 mediaEl.value.duration——DOM 属性不可响应式,metadata 晚于首次渲染加载时若无此 ref,
+// computed 不会重算 → 部分视频(其 file-meta 未存 duration)的进度条一直不出现。
+const videoDurationState = ref(0);
+const videoDuration = computed(() => videoDurationState.value || props.file._meta?.duration || 0);
+const videoProgressPct = computed(() => {
+  const d = videoDuration.value;
+  if (!d)
+    return 0;
+  return Math.min(100, (videoProgress.value / d) * 100);
+});
+
+// —— 平滑播放跟随 + 可交互进度 ——
+// 播放中用 rAF 逐帧读 currentTime 更新进度(timeupdate 只 ~4Hz 会跳帧);拖动/点击时暂停跟随,由指针驱动。
+const scrubbing = ref(false); // 拖动/点击调整中:rAF 跟随暂停,进度由指针驱动
+const progressEl = ref(null); // 进度条容器(取 rect 算比例)
+let progressRaf = null;
+function startProgressLoop() {
+  if (progressRaf)
+    return;
+  progressRaf = requestAnimationFrame(progressTick);
+}
+function stopProgressLoop() {
+  if (progressRaf) {
+    cancelAnimationFrame(progressRaf);
+    progressRaf = null;
+  }
+}
+function progressTick() {
+  const v = mediaEl.value;
+  if (scrubbing.value || !v || v.tagName !== 'VIDEO' || v.paused) {
+    stopProgressLoop();
+    return;
+  }
+  videoProgress.value = v.currentTime || 0;
+  progressRaf = requestAnimationFrame(progressTick);
+}
+// 从指针事件算 ratio(相对进度条容器宽),写入 videoProgress(拖动/点击共用)。
+function setProgressFromEvent(e) {
+  const el = progressEl.value;
+  if (!el)
+    return;
+  const rect = el.getBoundingClientRect();
+  const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  videoProgress.value = videoDuration.value * ratio;
+}
+// 指针松开/点击结束:把当前进度提交为视频实际播放位置(seek)。
+function commitSeek() {
+  const v = mediaEl.value;
+  if (v && v.tagName === 'VIDEO' && videoDuration.value)
+    v.currentTime = videoProgress.value;
+}
+function onProgressPointerDown(e) {
+  if (!videoDuration.value)
+    return;
+  e.preventDefault();
+  scrubbing.value = true;
+  stopProgressLoop();
+  setProgressFromEvent(e);
+  document.addEventListener('pointermove', onProgressMove);
+  document.addEventListener('pointerup', onProgressUp);
+}
+function onProgressMove(e) {
+  if (!scrubbing.value)
+    return;
+  setProgressFromEvent(e);
+}
+function onProgressUp() {
+  document.removeEventListener('pointermove', onProgressMove);
+  document.removeEventListener('pointerup', onProgressUp);
+  scrubbing.value = false;
+  commitSeek();
+  // seek 后视频若仍在播放,恢复 rAF 跟随(否则拖完就停住)。
+  const v = mediaEl.value;
+  if (v && v.tagName === 'VIDEO' && !v.paused)
+    startProgressLoop();
+}
+
 // <video> 预览元素挂载时设 src;src 赋值会重置 playbackRate,故 loadedmetadata(加载完成)后重新应用。
 // src 就绪后补一次播放判定(hover 早于 src 也能开播)。
 watch(mediaEl, (el) => {
   if (!el || el.tagName !== 'VIDEO')
     return;
-  // loadedmetadata:重新应用倍速 + 记录固有尺寸(驱动悬浮拓展)。
+  videoProgress.value = 0; // 换元素/重绑清零进度
+  videoDurationState.value = 0; // 时长待 metadata 加载后写入
+  // loadedmetadata:重新应用倍速 + 记录固有尺寸(驱动悬浮拓展)+ 进度/时长归位。
   el.onloadedmetadata = () => {
     applyPlaybackRate(el);
+    videoProgress.value = 0;
+    videoDurationState.value = el.duration || 0;
     const d = readMediaDims(el);
     if (d)
       mediaDims.value = d;
+    // hover 模式不走缩略图抽帧,file-meta 常无 duration;把实时时长补写进持久化 store(幂等,仅缺失时)。
+    // 好处:时长角标(右上)有数据 + 下次 ensureFileMetaLoaded 直接读 store,无需重抽。与缩略图抽帧同款写法。
+    if (props.file._meta?.duration == null && Number.isFinite(el.duration) && el.duration > 0)
+      saveFileMeta(props.file, { duration: el.duration, width: el.videoWidth, height: el.videoHeight });
+  };
+  // durationchange:容器尺寸等变化时时长可能再次更新(兜底)。
+  el.ondurationchange = () => {
+    videoDurationState.value = el.duration || 0;
+  };
+  // 播放 rAF 跟随开始/停止;暂停/快进时对齐进度。不用 timeupdate(只 ~4Hz,跳动)。
+  el.onplay = () => startProgressLoop();
+  el.onpause = () => {
+    stopProgressLoop();
+    videoProgress.value = el.currentTime || 0;
+  };
+  el.onseeked = () => {
+    videoProgress.value = el.currentTime || 0;
   };
   ensureBlobUrl(props.file).then(() => {
     if (mediaEl.value === el) {
@@ -155,9 +258,11 @@ watch(mediaEl, (el) => {
 const isExpandStyle = computed(() => settings.settings.cardHoverStyle === 'expand');
 // 内联重命名(逻辑封装在 RenameInput,父只管显隐)。声明在此(mediaExpand 前),重命名时不展开。
 const editing = ref(false);
+// 右键菜单 store。声明在 mediaExpand 前供其引用。
+const contextMenu = useContextMenuStore();
 const mediaExpand = computed(() => {
-  // 重命名时也不展开——否则展开画面盖住重命名输入框。
-  if (!cardHovered.value || editing.value || !isExpandStyle.value || !props.colWidth)
+  // 重命名或右键菜单打开时也不展开——否则展开画面盖住重命名输入框/右键菜单。
+  if (!cardHovered.value || editing.value || contextMenu.visible || !isExpandStyle.value || !props.colWidth)
     return null;
   const w = mediaDims.value?.w;
   const h = mediaDims.value?.h;
@@ -177,8 +282,10 @@ const mediaExpandStyle = computed(() => {
     '--exp-h': `${g.height}px`,
   };
 });
-
-const contextMenu = useContextMenuStore();
+// 进度条渲染门:展开样式 + 真实 <video> 元素 + 有时长。缩略图模式的 canvas 静态帧不显示。
+// 常驻渲染(即使未展开),以便 hover 时几何从"贴容器方形底"过渡到"贴展开媒体底"——与视频拓宽/拓高同步,
+// 而不是白条先以完整展开尺寸出现再等视频长大。
+const showProgressBar = computed(() => isExpandStyle.value && mediaEl.value?.tagName === 'VIDEO' && videoDuration.value > 0);
 
 // 内联重命名:逻辑封装在 RenameInput(选区/focus/防重入/校验/history/toast),父只管显隐(editing 声明在上方)
 function startRename() {
@@ -220,6 +327,13 @@ function openPreview() {
     return;
   emit('click');
 }
+
+// 卸载清理:取消进度 rAF + 移除指针拖动监听(防拖动中卸载泄漏)。
+onBeforeUnmount(() => {
+  stopProgressLoop();
+  document.removeEventListener('pointermove', onProgressMove);
+  document.removeEventListener('pointerup', onProgressUp);
+});
 </script>
 
 <template>
@@ -290,26 +404,44 @@ function openPreview() {
       <div v-if="noteText" class="note-overlay">
         <pre>{{ noteText }}</pre>
       </div>
+
+      <!-- 展开视频底部进度指示(胶囊细条 + 游标圆点)。仅展开态且真实 video 元素时出现;
+           绝对定位以容器中心为基准,用 --exp-w/--exp-h 对齐到展开媒体底边。
+           可交互:pointerdown 起拖动/点击跳进度,拖动时(scrubbing)强制显示圆点。 -->
+      <div
+        v-if="showProgressBar"
+        ref="progressEl"
+        class="expand-progress"
+        :class="{ dragging: scrubbing }"
+        @pointerdown="onProgressPointerDown"
+        @click.stop
+      >
+        <div class="expand-progress-track" />
+        <div class="expand-progress-fill" :style="{ width: `${videoProgressPct}%` }" />
+        <div class="expand-progress-dot" :style="{ left: `${videoProgressPct}%` }" />
+      </div>
     </div>
 
-    <div class="card-info-filename">
-      <div v-if="badge && (badgeText || strategy.name === 'video' || strategy.name === 'audio')" class="media-badge" :class="badge.className">
-        <i v-if="strategy.name === 'video' || strategy.name === 'audio'" class="fas" :class="badge.icon" />
-        {{ badgeText }}
-      </div>
-      <RenameInput v-if="editing" :file="props.file" @done="editing = false" />
-      <div v-else class="file-name">
-        {{ file.name }}
-      </div>
-    </div>
-
-    <div class="card-info-meta">
-      <div class="file-meta">
-        <div class="file-size">
-          <i class="fas fa-hdd" /> {{ formatFileSize(file.size) }}
+    <div class="card-info-clip">
+      <div class="card-info-filename">
+        <div v-if="badge && (badgeText || strategy.name === 'video' || strategy.name === 'audio')" class="media-badge" :class="badge.className">
+          <i v-if="strategy.name === 'video' || strategy.name === 'audio'" class="fas" :class="badge.icon" />
+          {{ badgeText }}
         </div>
-        <div class="file-date">
-          <i class="far fa-calendar" /> {{ formatDate(file.lastModified) }}
+        <RenameInput v-if="editing" :file="props.file" @done="editing = false" />
+        <div v-else class="file-name">
+          {{ file.name }}
+        </div>
+      </div>
+
+      <div class="card-info-meta">
+        <div class="file-meta">
+          <div class="file-size">
+            <i class="fas fa-hdd" /> {{ formatFileSize(file.size) }}
+          </div>
+          <div class="file-date">
+            <i class="far fa-calendar" /> {{ formatDate(file.lastModified) }}
+          </div>
         </div>
       </div>
     </div>
@@ -344,7 +476,9 @@ function openPreview() {
     z-index: 10;
 }
 
-.photo-card:active:not(.renaming):not(.context-menu-active) {
+/* 展开模式(:not(.hover-expand))下点击不抬起——展开时媒体盖住邻卡,点按微动让整卡 2px 位移很违和。
+   重命名/右键菜单打开时也沿用旧排除(避免盖住输入框/菜单)。 */
+.photo-card:active:not(.renaming):not(.context-menu-active):not(.hover-expand) {
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
     transition-duration: 0.1s;
@@ -538,6 +672,8 @@ function openPreview() {
     width: var(--exp-w);
     height: var(--exp-h);
     z-index: 20; /* 弹出层盖过卡内 fav/badge/note/info(都在 2~5) */
+    border-radius: var(--radius-lg); /* 弹出媒体圆角与卡片一致 */
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3); /* 柔和投影:弹出图浮起、与邻卡拉开层次 */
 }
 
 /* expand 样式下不「上浮」:hover 不提卡片(仅 z-index:10 仍生效,供弹出层覆盖邻卡)。 */
@@ -545,7 +681,92 @@ function openPreview() {
     transform: none;
 }
 
-/* 卡片信息 */
+/* —— 展开视频底部进度指示(胶囊游标条)——
+   进度条常驻渲染(showProgressBar),非展开态贴「容器方形底边」(整宽、内缩圆角)且 opacity:0、不拦点击;
+   hover 展开(media-expanding)时几何过渡到「展开媒体底边」(宽 --exp-w、高 --exp-h,左右内缩圆角)。
+   width/left/bottom 用与媒体展开一致的 0.25s 过渡 → 白条随视频拓宽/拓高同步动画,不先以完整尺寸出现。
+   track/fill 是 2px 圆角细线,filled 段随进度撑宽;游标圆点跟进度平移(hover/拖动时显示)。
+   z-index 高于媒体(20)。可点击/拖动调进度(cursor + 接收 pointer 事件;拖动时 .dragging 强制显示圆点)。 */
+.expand-progress {
+    position: absolute;
+    left: var(--radius-lg); /* 非展开:贴容器方形底边,整宽(仅内缩圆角) */
+    width: calc(100% - 2 * var(--radius-lg));
+    bottom: 0;
+    height: 8px;
+    cursor: pointer;
+    z-index: 21;
+    touch-action: none; /* 触摸拖动不被页面滚动劫持 */
+    opacity: 0;
+    pointer-events: none;
+    transition: width 0.25s ease, left 0.25s ease, bottom 0.25s ease, opacity 0.25s ease;
+}
+
+/* 展开态:进度条移到展开媒体底边、内缩圆角,随媒体同步显现、可交互。 */
+.photo-card.media-expanding .expand-progress {
+    left: calc(50% - var(--exp-w, 0) / 2 + var(--radius-lg));
+    width: calc(var(--exp-w, 0) - 2 * var(--radius-lg));
+    bottom: calc(50% - var(--exp-h, 0) / 2);
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.expand-progress-track,
+.expand-progress-fill {
+    position: absolute;
+    bottom: 0; /* 2px 线贴容器(即媒体)底边,紧贴下边缘;容器高 8px 只给圆点留活动空间 */
+    left: 0;
+    height: 2px;
+    border-radius: 999px;
+}
+
+.expand-progress-track {
+    width: 100%;
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.expand-progress-fill {
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 0 3px rgba(0, 0, 0, 0.35);
+}
+
+.expand-progress-dot {
+    position: absolute;
+    top: 7px; /* 圆点中心对齐贴底细线的中心(8px 容器内,线占 y6..8,中心 y7) */
+    left: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
+    transform: translate(-50%, -50%);
+    opacity: 0; /* 默认隐藏,低调;hover 或拖动时显示 */
+    transition: opacity 0.15s ease;
+}
+
+/* hover 或拖动调整进度时亮出圆点 */
+.expand-progress:hover .expand-progress-dot,
+.expand-progress.dragging .expand-progress-dot {
+    opacity: 1;
+}
+
+/* 拖动调整时略微提亮细条已播段,提示可交互 */
+.expand-progress:hover .expand-progress-track {
+    background: rgba(255, 255, 255, 0.4);
+}
+
+/* 卡片信息条剪辑容器:上下两条信息条(文件名/元信息)都包在这一层,overflow:hidden 把滑动隐藏时的
+   translateY(±100%) 裁到卡片内。此前靠 .photo-card 的 overflow:hidden 裁,但 expand 样式下卡片要
+   overflow:visible 才能露出弹出媒体,信息条滑入的瞬间会在卡片外现形——改为独立裁剪层,与卡片自身
+   overflow 解耦。detail 样式下信息区走正常流,override 回 static(见下)。pointer-events:none 防整层
+   挡缩略图点击;文件名条自身 re-enable(重命名输入框需交互)。 */
+.card-info-clip {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 2;
+}
+
 .card-info-filename {
     position: absolute;
     bottom: 0;
@@ -562,6 +783,7 @@ function openPreview() {
     display: flex;
     align-items: center;
     justify-content: center;
+    pointer-events: auto; /* 盖过 clip 层 pointer-events:none,文件名/重命名框可交互 */
 }
 
 .photo-card:hover .card-info-filename,
@@ -610,6 +832,15 @@ function openPreview() {
 /* 信息块从绝对叠层重排为图下方正常流(relative 仍占流,兼作 badge 的定位锚点);去渐变背景
    (继承卡 bg-primary),整卡一个圆角块。关掉 transform 过渡——hover/always 靠它做滑入,但 detail
    信息区常驻,留着会在切换样式时播一段从 translateY(±100%) 归位的交错位移动画,违和。 */
+/* 剪辑容器在 detail 下还原为正常流:信息区在图下方独立可见、无裁切(absolute inset:0 会把信息区
+   钉死在卡内盖图,破坏上图下信息布局;overflow:hidden 也会裁掉图下信息)。 */
+.photo-card.card-style-detail .card-info-clip {
+    position: static;
+    inset: auto;
+    overflow: visible;
+    z-index: auto;
+}
+
 .photo-card.card-style-detail .card-info-filename,
 .photo-card.card-style-detail .card-info-meta {
     position: relative;

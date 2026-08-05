@@ -41,14 +41,16 @@ function handleIntersect(entries) {
   for (const entry of entries) {
     const el = entry.target;
     const t = el.__thumb;
-    if (!t || t.loaded.value) {
+    // 已「媒体加载且元数据就绪」才跳过。⚠️ hover 预览视频的 loaded 由 loadeddata 驱动(metadata 预载即触发),
+    // 早于 loadCardMetadata 完成;若只看 loaded 会误跳过 md5/爱心/备注的加载(备注栏一直显示"需先加载文件")。
+    if (!t || (t.loaded.value && t.metaDone.value)) {
       observer.unobserve(el);
       continue;
     }
     if (entry.isIntersecting) {
       if (!t.loading.value) {
         t.loading.value = true;
-        queue.waiting.push({ el, file: t.file, targetSize: t.targetSize, loaded: t.loaded, loading: t.loading, isVideo: t.isVideo });
+        queue.waiting.push({ el, file: t.file, targetSize: t.targetSize, loaded: t.loaded, loading: t.loading, isVideo: t.isVideo, metaDone: t.metaDone });
         schedule();
       }
     }
@@ -95,6 +97,7 @@ async function schedule() {
   };
   try {
     await loadCardMetadata(task.file);
+    task.metaDone.value = true; // 元数据(md5/时长/爱心/备注)就绪;loaded 由 onDrawn(非视频)/loadeddata(视频)另驱动
     if (task.isVideo) {
       // 预览视频:只载元数据(爱心/时长),不渲染静态帧;loaded 由视频首帧(loadeddata)驱动。
       task.loading.value = false;
@@ -164,7 +167,9 @@ export function useThumbnail(mediaElRef, file, targetSize = 400, cardElRef = nul
     loaded.value = false;
     loading.value = false;
     // 状态绑到元素,observer 回调读
-    el.__thumb = { file, targetSize, loaded, loading, isVisible, isVideo: el.tagName === 'VIDEO' };
+    // metaDone:loadCardMetadata(算 md5/载时长/爱心/备注)完成标记,与 loaded(媒体渲染/播放就绪)解耦——
+    // hover 视频的 loaded 可能早于元数据就绪,跳过判定须二者兼有(见 handleIntersect)。
+    el.__thumb = { file, targetSize, loaded, loading, isVisible, isVideo: el.tagName === 'VIDEO', metaDone: ref(false) };
     // 所有卡片:负载观察器(100px)载元数据;非预览卡片顺带渲染缩略图。
     ensureObserver().observe(el);
     // 播放观察器观察卡片根(threshold 1.0,整卡完全进入才 isVisible)。所有媒体都挂(图片也用于展开 gate)。

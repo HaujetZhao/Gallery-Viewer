@@ -125,28 +125,28 @@ function commitThumb() {
 }
 // 卡片样式选项(分段按钮组,互斥;后续加新样式只需往这里加一项)。
 const cardStyleOptions = [
-  { value: 'hover', label: '悬停显示' },
-  { value: 'always', label: '常驻显示' },
-  { value: 'detail', label: '信息卡片' },
+  { value: 'hover', label: '纯净' },
+  { value: 'always', label: '信息' },
+  { value: 'detail', label: '卡片' },
 ];
 function setCardStyle(v) {
   cardStyle.value = v;
   settings.set('cardStyle', v);
 }
-// 卡片 hover 样式:lift(上浮)/expand(放大弹出)。分段按钮。
+// 卡片 hover 样式:lift(浮起)/expand(展开)。分段按钮。
 const cardHoverStyleOptions = [
-  { value: 'lift', label: '上浮' },
-  { value: 'expand', label: '放大' },
+  { value: 'lift', label: '浮起' },
+  { value: 'expand', label: '展开' },
 ];
 function setCardHoverStyle(v) {
   cardHoverStyle.value = v;
   settings.set('cardHoverStyle', v);
 }
-// 视频预览:三态分段(缩略图/悬浮/自动)+ 播放速度(缩略图模式禁用)。
+// 视频预览:三态分段(缩略图/悬停播/自动播)+ 播放速度(缩略图模式禁用)。
 const videoPreviewOptions = [
   { value: 'thumbnail', label: '缩略图' },
-  { value: 'hover', label: '悬浮' },
-  { value: 'auto', label: '自动' },
+  { value: 'hover', label: '悬停播' },
+  { value: 'auto', label: '自动播' },
 ];
 function setVideoPreviewMode(v) {
   videoPreviewMode.value = v;
@@ -265,31 +265,29 @@ async function onClearAll() {
 
         <div class="setting-item">
           <label>卡片样式</label>
-          <div class="seg-group">
-            <button
-              v-for="opt in cardStyleOptions"
-              :key="opt.value"
-              class="seg-btn"
-              :class="{ active: cardStyle === opt.value }"
-              @click="setCardStyle(opt.value)"
-            >
-              {{ opt.label }}
-            </button>
-          </div>
-        </div>
-
-        <div class="setting-item">
-          <label>卡片 Hover</label>
-          <div class="seg-group">
-            <button
-              v-for="opt in cardHoverStyleOptions"
-              :key="opt.value"
-              class="seg-btn"
-              :class="{ active: cardHoverStyle === opt.value }"
-              @click="setCardHoverStyle(opt.value)"
-            >
-              {{ opt.label }}
-            </button>
+          <div class="card-style-seg-row">
+            <div class="seg-group card-style-group">
+              <button
+                v-for="opt in cardStyleOptions"
+                :key="opt.value"
+                class="seg-btn"
+                :class="{ active: cardStyle === opt.value }"
+                @click="setCardStyle(opt.value)"
+              >
+                {{ opt.label }}
+              </button>
+            </div>
+            <div class="seg-group card-hover-group">
+              <button
+                v-for="opt in cardHoverStyleOptions"
+                :key="opt.value"
+                class="seg-btn"
+                :class="{ active: cardHoverStyle === opt.value }"
+                @click="setCardHoverStyle(opt.value)"
+              >
+                {{ opt.label }}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -337,8 +335,8 @@ async function onClearAll() {
           <input
             v-model.number="scrollSpeed"
             type="range"
-            min="0.5"
-            max="5"
+            min="0.1"
+            max="2"
             step="0.1"
             :disabled="!scrollZoneEnabled"
             @change="commitSpeed"
@@ -584,6 +582,25 @@ async function onClearAll() {
 .seg-group.sort-dir-group .seg-btn {
     padding: 7px 9px;
     min-width: 30px;
+}
+
+/* 卡片样式:两段并排——卡片样式段(3 档:悬停/常驻/信息,占宽多)+ hover 样式段(2 档:浮起/展开,内容宽)。 */
+.card-style-seg-row {
+    display: flex;
+    gap: 8px;
+    flex: 1;
+}
+
+.seg-group.card-style-group {
+    flex: 1; /* 卡片样式段占剩余空间(三档文字需要宽度) */
+}
+
+.seg-group.card-hover-group {
+    flex: 0 0 auto; /* hover 段按内容宽度(两档短文字) */
+}
+
+.seg-group.card-hover-group .seg-btn {
+    padding: 7px 4px;
 }
 
 .seg-group {
