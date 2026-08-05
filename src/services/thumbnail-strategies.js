@@ -53,12 +53,6 @@ export const ThumbnailStrategies = {
   image: {
     types: FileTypes.image.standard,
 
-    createThumbnailElement: () => {
-      const canvas = document.createElement('canvas');
-      canvas.className = 'thumbnail-canvas';
-      return canvas;
-    },
-
     generateThumbnail: async (element, fileData, targetSize, onDrawn) => {
       // File 来源:复用池里 ensureBlobUrl/peek 已 acquire 的 File(thumbnail.js md5 计算也这么复用),
       // peek 未命中才 fallback handle.getFile()——不二次 IO。
@@ -85,12 +79,6 @@ export const ThumbnailStrategies = {
   gif: {
     types: FileTypes.image.gif,
 
-    createThumbnailElement: () => {
-      const img = document.createElement('img');
-      img.className = 'thumbnail-img';
-      return img;
-    },
-
     generateThumbnail: async (element, fileData) => {
       // GIF 靠 <img src=blobUrl> 显示动画(不能像 image 解码进 canvas,否则只剩首帧)。
       // 必须先 ensureBlobUrl:切根走 fileFromSnapshot 秒重建后池空、blobUrl=null,
@@ -109,12 +97,6 @@ export const ThumbnailStrategies = {
   svg: {
     types: FileTypes.image.svg,
 
-    createThumbnailElement: () => {
-      const div = document.createElement('div');
-      div.className = 'thumbnail-svg';
-      return div;
-    },
-
     generateThumbnail: async (element, fileData) => {
       // 与 image 策略一致:peek 池里 File ?? handle.getFile() 兜底,不依赖 blobUrl。
       // 切根走 fileFromSnapshot 秒重建后池空、blobUrl=null,fetch(null) 会静默注入空/非 SVG
@@ -129,12 +111,6 @@ export const ThumbnailStrategies = {
   // 视频策略
   video: {
     types: FileTypes.video.all,
-
-    createThumbnailElement: () => {
-      const canvas = document.createElement('canvas');
-      canvas.className = 'thumbnail-canvas';
-      return canvas;
-    },
 
     drawVideoFrame: (canvas, video, targetSize) => {
       canvas.width = targetSize;
@@ -254,12 +230,6 @@ export const ThumbnailStrategies = {
   // 音频策略
   audio: {
     types: FileTypes.audio.all,
-
-    createThumbnailElement: () => {
-      const canvas = document.createElement('canvas');
-      canvas.className = 'thumbnail-canvas';
-      return canvas;
-    },
 
     generateThumbnail: async (element, fileData, targetSize, onDrawn) => {
       // 注:音频 duration 不在此抽——缩略图缓存命中时不进 generateThumbnail → 拿不到。
