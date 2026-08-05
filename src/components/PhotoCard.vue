@@ -4,7 +4,6 @@ import { useFileActions } from '../composables/useFileActions';
 import { hoveredFile, renameTick } from '../composables/useHoveredFile';
 import { useThumbnail } from '../composables/useThumbnail';
 import { ensureBlobUrl } from '../models/SmartFile';
-import { ensureVideoPreviewMeta } from '../services/thumbnail';
 import { getThumbnailStrategy } from '../services/thumbnail-strategies';
 import { useContextMenuStore } from '../stores/contextMenu';
 import { useFavoritesStore } from '../stores/favorites';
@@ -86,15 +85,6 @@ function updatePlayback() {
 watch([isVisible, cardHovered, videoPreviewMode], updatePlayback);
 // modal 开/关会让卡片预览暂停/恢复。
 watch(() => modalStore.isOpen, updatePlayback);
-// 预览模式不跑 generateThumbnail,md5/favorites/notes 不会自动加载 → 爱心/时长角标显示不出。
-// 卡片可见时补跑 ensureVideoPreviewMeta(幂等)。previewMetaLoaded 防重复(已加载过不再触发)。
-const previewMetaLoaded = ref(false);
-watch(isVisible, (vis) => {
-  if (vis && !previewMetaLoaded.value && isVideo.value && videoPreviewMode.value !== 'thumbnail') {
-    previewMetaLoaded.value = true;
-    ensureVideoPreviewMeta(props.file);
-  }
-});
 // 应用预览播放速度。⚠️ 设 video.src 会让浏览器把 playbackRate 重置为默认 1,
 // 故除"速度变化即时生效"外,还须在每次媒体加载完成(loadedmetadata)后重新应用,否则新开文件夹又回到 1。
 function applyPlaybackRate(v) {
