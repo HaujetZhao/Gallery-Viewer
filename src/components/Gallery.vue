@@ -3,6 +3,7 @@ import { useWindowVirtualizer } from '@tanstack/vue-virtual';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useGallerySearch } from '../composables/useGallerySearch';
 import { redrawSignal, unobserveAll } from '../composables/useThumbnail';
+import { loadCapturedAtForFiles } from '../services/fileMeta';
 import { useFsStore } from '../stores/fs';
 import { useModalStore } from '../stores/modal';
 import { useUserSettingsStore } from '../stores/userSettings';
@@ -53,6 +54,19 @@ function freeze() {
   frozenOrder.value = m;
   orderCounter = files.length;
   slotCount.value = files.length;
+}
+
+// date 排序:先把持久化的 EXIF 拍摄时间(md5→file-meta)读进各文件 _meta,再重冻。
+// 否则冻结在视窗懒加载前跑,dateSortValue 回退文件时间——重进文件夹/切 date 排序后 EXIF 时间不生效。
+// 只读 store、不重抽 EXIF(快);非 date 不处理(调用方已 sync freeze)。期间切走则放弃。
+async function refineDateOrder() {
+  const folder = fsStore.currentFolder;
+  if (sortField.value !== 'date' || !folder?.files)
+    return;
+  await loadCapturedAtForFiles(folder.files);
+  if (fsStore.currentFolder !== folder)
+    return;
+  freeze();
 }
 
 // 当前 folder 是否全部 enrich 完成(size 就绪)。size/date 排序需待 enrich 后重冻一次。
@@ -197,7 +211,8 @@ watch(
     debouncedTerm.value = ''; // 立即清,不等 debounce
     // R8:切走切回 / 点侧栏 → 重冻顺序(reset settled,等 enrich 完再沉一次 size/date)。
     settled.value = false;
-    freeze();
+    freeze(); // 立即初步冻结(首屏渲染)
+    refineDateOrder(); // date:后台补 EXIF 时间后重冻(异步,不阻塞首屏)
     // 整页滚动:切换文件夹必须回顶。useWindowVirtualizer 按当前 scrollY 渲染可视行,
     // 不归零会停在旧文件夹的滚动位置 → 渲染新文件夹中间行(错位 + 转圈)。
     window.scrollTo(0, 0);
@@ -208,12 +223,15 @@ watch(
 watch([sortField, sortAsc], () => {
   settled.value = false;
   freeze();
+  refineDateOrder(); // date:补 EXIF 时间后重冻
 });
 
 // R8:size/date 排序:enrich 完成后(_meta 补齐)重冻一次,之后冻结直到下一触发点。
-watch(allEnriched, (ok) => {
+watch(allEnriched, async (ok) => {
   if (ok && !settled.value) {
-    freeze();
+    await refineDateOrder(); // date:补 EXIF 时间后 freeze;非 date:no-op
+    if (sortField.value !== 'date')
+      freeze(); // 非 date 由这里冻(原行为)
     settled.value = true;
   }
 });
