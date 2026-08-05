@@ -1,10 +1,15 @@
 // IndexedDB 缩略图缓存。搬自源码 js/db.js,纯逻辑(UI 副作用剥离到调用方)。
-// 缓存键 id = `${md5}_${width}`。修两个陷阱:save 返回 Promise;新增 touch 刷新 lastAccessed。
+// 缓存键 id = `${md5}_${width}_r`。`_r` 后缀 = 原比例缩略图形态(自 2026-08 改为最短边=targetSize,
+// 露全图);旧方形缓存 key 不带 `_r`,自动失效不再命中。修两个陷阱:save 返回 Promise;新增 touch 刷新 lastAccessed。
 import { CONFIG } from '../config/index';
 
 const DB_NAME = CONFIG.DATABASE.NAME;
 const DB_VERSION = CONFIG.DATABASE.VERSION;
 const STORE_NAME = CONFIG.DATABASE.STORES.THUMBNAILS;
+// 缩略图缓存 key。`_r` 后缀标识原比例形态;改形状时换后缀即整体失效旧缓存(零迁移)。
+export function thumbnailKey(md5, width) {
+  return `${md5}_${width}_r`;
+}
 let db = null;
 
 export function initDB() {
@@ -62,7 +67,7 @@ export function getThumbnailFromDB(md5, width) {
     const req = db
       .transaction([STORE_NAME], 'readonly')
       .objectStore(STORE_NAME)
-      .get(`${md5}_${width}`);
+      .get(thumbnailKey(md5, width));
     req.onsuccess = e => resolve(e.target.result);
     req.onerror = () => resolve(null);
   });

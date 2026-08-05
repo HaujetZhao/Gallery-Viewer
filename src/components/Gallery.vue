@@ -121,6 +121,7 @@ function currentGap() {
 
 const gridRef = ref(null);
 const rowHeight = ref(300); // 初值;ResizeObserver 实测后覆盖(弃旧 estHeight 公式)
+const colWidth = ref(0); // 列宽 px;作 prop 传 PhotoCard,供视频悬浮拓展算尺寸
 
 // 整页滚动:用 useWindowVirtualizer(window 版,observe window 的 resize/scroll 事件,
 // 而非 ResizeObserver.observe(window)——后者因 window 非 Element 会抛错)。固定行高,无需 measureElement。
@@ -141,6 +142,8 @@ function measureRowHeight() {
   const cardStyle = settings.settings.cardStyle;
   const extraPerCard = cardStyle === 'detail' ? DETAIL_INFO_HEIGHT : 0;
   rowHeight.value = computeRowHeight(el.clientWidth, colCount.value, currentGap(), extraPerCard);
+  // 列宽 = 行高 - 额外高度 - gap(供卡片悬浮拓展读 --col-width)。
+  colWidth.value = rowHeight.value - extraPerCard - currentGap();
 }
 
 let ro = null;
@@ -231,6 +234,7 @@ onBeforeUnmount(() => {
             :key="`${f.path}-${rerunKey}-${c}`"
             :file="f"
             :target-size="settings.settings.thumbnailSize"
+            :col-width="colWidth"
             @click="openPreview(f)"
           />
         </div>
@@ -279,6 +283,13 @@ onBeforeUnmount(() => {
     display: grid;
     grid-template-columns: repeat(var(--col-count, 4), 1fr);
     gap: 15px;
+}
+
+/* 虚拟化行有 transform:translateY(创建 z-index auto 的 stacking context,层级 0)→ 卡内任何 z-index 都被
+   封在 0,盖不过侧栏(#sidebar z-index:900)。含展开卡(media-expanding)的行提 z-index 到 950,让弹出的
+   媒体能横向盖过侧栏。:has() Chrome/Edge 支持(本应用仅 Chrome/Edge/Opera)。 */
+.gallery-row:has(.photo-card.media-expanding) {
+    z-index: 950;
 }
 
 @media (max-width: 768px) {

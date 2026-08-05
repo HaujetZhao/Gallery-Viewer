@@ -21,6 +21,8 @@ const toast = useToastStore();
 const { text: storageText, refresh: refreshStorage } = useStorageEstimate();
 
 const panelEl = ref(null);
+// 暴露面板根元素,供 App 把设置面板纳入 useScrollZone 排除区(hover 面板时不触发边缘感应滚动)。
+defineExpose({ panelEl });
 const left = ref(80);
 const top = ref(80);
 
@@ -109,6 +111,7 @@ function setSortDir(v) {
 const colCount = ref(settings.settings.columnCount);
 const thumbnailSize = ref(settings.settings.thumbnailSize);
 const cardStyle = ref(settings.settings.cardStyle);
+const cardHoverStyle = ref(settings.settings.cardHoverStyle);
 const scrollZoneEnabled = ref(settings.settings.scrollZoneEnabled);
 const scrollSpeed = ref(settings.settings.scrollSpeed);
 const videoPreviewMode = ref(settings.settings.videoPreviewMode);
@@ -129,6 +132,15 @@ const cardStyleOptions = [
 function setCardStyle(v) {
   cardStyle.value = v;
   settings.set('cardStyle', v);
+}
+// 卡片 hover 样式:lift(上浮)/expand(放大弹出)。分段按钮。
+const cardHoverStyleOptions = [
+  { value: 'lift', label: '上浮' },
+  { value: 'expand', label: '放大' },
+];
+function setCardHoverStyle(v) {
+  cardHoverStyle.value = v;
+  settings.set('cardHoverStyle', v);
 }
 // 视频预览:三态分段(缩略图/悬浮/自动)+ 播放速度(缩略图模式禁用)。
 const videoPreviewOptions = [
@@ -267,6 +279,21 @@ async function onClearAll() {
         </div>
 
         <div class="setting-item">
+          <label>卡片 Hover</label>
+          <div class="seg-group">
+            <button
+              v-for="opt in cardHoverStyleOptions"
+              :key="opt.value"
+              class="seg-btn"
+              :class="{ active: cardHoverStyle === opt.value }"
+              @click="setCardHoverStyle(opt.value)"
+            >
+              {{ opt.label }}
+            </button>
+          </div>
+        </div>
+
+        <div class="setting-item">
           <label>视频预览</label>
           <div class="seg-group">
             <button
@@ -372,7 +399,7 @@ async function onClearAll() {
     background-color: var(--bg-primary);
     border-radius: 10px;
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
-    z-index: 200;
+    z-index: 1001; /* 高于展开媒体(950)/侧栏(900),面板始终在最上层 */
     display: none;
     overflow: hidden;
 }

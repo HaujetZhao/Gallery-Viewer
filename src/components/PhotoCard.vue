@@ -11,11 +11,14 @@ import { useModalStore } from '../stores/modal';
 import { useNotesStore } from '../stores/notes';
 import { useUserSettingsStore } from '../stores/userSettings';
 import { formatDate, formatDuration, formatFileSize } from '../utils/format';
+import { computeVideoExpand } from '../utils/gallery-layout';
 import RenameInput from './RenameInput.vue';
 
 const props = defineProps({
   file: { type: Object, required: true },
   targetSize: { type: Number, default: 400 },
+  // 列宽 px(来自 Gallery 实测):视频悬浮等比拓展用。无(0)时拓展几何拿不到 → 保持方形。
+  colWidth: { type: Number, default: 0 },
 });
 const emit = defineEmits(['click']);
 
@@ -59,9 +62,11 @@ const notes = useNotesStore();
 const noteText = computed(() => notes.getNote(props.file.md5));
 
 const mediaEl = ref(null);
-const { loaded, loading, isVisible } = useThumbnail(mediaEl, props.file, props.targetSize);
+const cardEl = ref(null); // 卡片根元素;传给 useThumbnail 供播放观察器观察(见下)。
+const { loaded, loading, isVisible } = useThumbnail(mediaEl, props.file, props.targetSize, cardEl);
 
-// 视频预览播/停:只在视口内播放(isVisible 由 useThumbnail 追踪);悬浮模式额外要求卡片 hover,auto 视口内即播。
+// 视频预览播/停:只在卡片整卡在视口内播放(isVisible 基于「卡片」——useThumbnail 播放观察器观察卡片而非视频
+// 元素);悬浮模式额外要求卡片 hover,auto 视口内即播。媒体展开后出视口不会让 isVisible 翻转(卡片稳定)。
 const cardHovered = ref(false);
 function updatePlayback() {
   const v = mediaEl.value;
@@ -97,12 +102,41 @@ watch(videoPreviewSpeed, () => {
   if (v && v.tagName === 'VIDEO')
     applyPlaybackRate(v);
 });
+// 读取媒体固有尺寸(原始比例)。返回 {w,h} 或 null。
+// VIDEO→videoWidth/Height;CANVAS→canvas.width/height(缩略图原比例 blob 画上后);IMG(GIF)→naturalWidth/Height;
+// 其余(svg 的 div)→null(不拓展)。尺寸是 DOM 属性不可响应式,故读后落 ref(mediaDims)触发重算。
+function readMediaDims(el) {
+  if (!el)
+    return null;
+  if (el.tagName === 'VIDEO')
+    return el.videoWidth ? { w: el.videoWidth, h: el.videoHeight } : null;
+  if (el.tagName === 'CANVAS')
+    return el.width ? { w: el.width, h: el.height } : null;
+  if (el.tagName === 'IMG')
+    return el.naturalWidth ? { w: el.naturalWidth, h: el.naturalHeight } : null;
+  return null;
+}
+// mediaDims:媒体固有尺寸(loaded 后由 readMediaDims 填,驱动悬浮拓展)。声明在 watch 前,供 onloadedmetadata 闭包引用。
+const mediaDims = ref(null);
+// loaded 就绪 / mediaEl 切换(canvas↔video)时刷新尺寸。视频 loadeddata、图片 drawBlob 后 loaded 即真。
+watch([loaded, mediaEl], () => {
+  const d = readMediaDims(mediaEl.value);
+  if (d)
+    mediaDims.value = d;
+});
+
 // <video> 预览元素挂载时设 src;src 赋值会重置 playbackRate,故 loadedmetadata(加载完成)后重新应用。
 // src 就绪后补一次播放判定(hover 早于 src 也能开播)。
 watch(mediaEl, (el) => {
   if (!el || el.tagName !== 'VIDEO')
     return;
-  el.onloadedmetadata = () => applyPlaybackRate(el);
+  // loadedmetadata:重新应用倍速 + 记录固有尺寸(驱动悬浮拓展)。
+  el.onloadedmetadata = () => {
+    applyPlaybackRate(el);
+    const d = readMediaDims(el);
+    if (d)
+      mediaDims.value = d;
+  };
   ensureBlobUrl(props.file).then(() => {
     if (mediaEl.value === el) {
       el.src = props.file.blobUrl;
@@ -112,10 +146,41 @@ watch(mediaEl, (el) => {
   });
 });
 
+// —— 媒体悬浮满幅等比拓展(cardHoverStyle='expand' 时生效,图片/GIF/视频通用)——
+// hover 时把方形缩略图拓成媒体原始比例,露出被 object-fit:cover 裁掉的部分。
+// mediaDims 由 readMediaDims 在媒体加载后填入;colWidth 来自 Gallery 实测(prop)。
+// 拿不到比例(未加载/解码失败/svg)→ 不拓展,保持方形,优雅降级。
+//
+// 所有媒体统一:开启 expand 样式 + hover + 尺寸齐即展开。不设「整卡在视口」限制(能悬停即视为可展开)。
+const isExpandStyle = computed(() => settings.settings.cardHoverStyle === 'expand');
+// 内联重命名(逻辑封装在 RenameInput,父只管显隐)。声明在此(mediaExpand 前),重命名时不展开。
+const editing = ref(false);
+const mediaExpand = computed(() => {
+  // 重命名时也不展开——否则展开画面盖住重命名输入框。
+  if (!cardHovered.value || editing.value || !isExpandStyle.value || !props.colWidth)
+    return null;
+  const w = mediaDims.value?.w;
+  const h = mediaDims.value?.h;
+  if (!w || !h)
+    return null;
+  const g = computeVideoExpand(props.colWidth, w, h);
+  return g.expanded ? g : null;
+});
+// 拓展几何 → CSS 变量挂到卡片根,scoped CSS 据此设媒体宽高。
+// 媒体绝对定位 + 居中,变大后自动保持中心不动(无需手动平移)。
+const mediaExpandStyle = computed(() => {
+  const g = mediaExpand.value;
+  if (!g)
+    return null;
+  return {
+    '--exp-w': `${g.width}px`,
+    '--exp-h': `${g.height}px`,
+  };
+});
+
 const contextMenu = useContextMenuStore();
 
-// 内联重命名:逻辑封装在 RenameInput(选区/focus/防重入/校验/history/toast),父只管显隐
-const editing = ref(false);
+// 内联重命名:逻辑封装在 RenameInput(选区/focus/防重入/校验/history/toast),父只管显隐(editing 声明在上方)
 function startRename() {
   editing.value = true;
 }
@@ -159,8 +224,10 @@ function openPreview() {
 
 <template>
   <div
+    ref="cardEl"
     class="photo-card"
-    :class="[cardStyleClass, { renaming: editing }]"
+    :class="[cardStyleClass, { 'renaming': editing, 'media-expanding': !!mediaExpand, 'hover-expand': isExpandStyle }]"
+    :style="mediaExpandStyle"
     tabindex="0"
     role="button"
     :aria-label="`查看 ${file.name}`"
@@ -314,6 +381,23 @@ function openPreview() {
     pointer-events: none;
 }
 
+/* 媒体悬浮弹出预览的定位:绝对定位 + 居中(translate -50%,-50%)。
+   脱离文档流 → 不参与布局,不会撑高卡片/所在行(否则 grid 行高被拉伸,整行卡片都变高)。
+   任何尺寸都以容器中心为基准,中心天然不动。
+   max-width:none:Tailwind preflight 的 img,video{max-width:100%} 会把悬浮拓宽的媒体钳到容器宽,
+   横向溢出被裁;显式关掉让弹出的媒体能横向溢出覆盖邻卡。
+   canvas/img(图片/GIF/静态帧)与 video 同机制,都可按原始比例弹出。 */
+.thumbnail-canvas,
+.thumbnail-img,
+.thumbnail-video {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    max-width: none;
+    transition: opacity var(--transition-base) ease, width 0.25s ease, height 0.25s ease;
+}
+
 .thumbnail-canvas[data-loading="true"],
 .thumbnail-img[data-loading="true"],
 .thumbnail-video[data-loading="true"] {
@@ -428,6 +512,37 @@ function openPreview() {
     width: auto;
     height: auto;
     display: block;
+}
+
+/* —— 媒体悬浮弹出预览(cardHoverStyle='expand')——
+   悬浮时媒体(canvas/img/video)自身变大到原始比例(横屏拓宽/竖屏拓高,由 computeVideoExpand 算 --exp-w/--exp-h),
+   绝对定位 + 居中,中心不动,弹出覆盖邻卡与卡内信息条。卡片/容器本身尺寸不变(卡片不动)。
+   需卡片与容器 overflow:visible 才能露出弹出的媒体;卡片 hover 已有 z-index:10,弹出层在其 stacking context 内。 */
+.photo-card.media-expanding,
+.photo-card.media-expanding .thumbnail-container {
+    overflow: visible;
+    /* overflow:visible 会让 grid 项的自动最小尺寸从 0 变回 min-content(如 nowrap 文件名/aspect-ratio 容器),
+       把所在 grid 列撑爆(其余列挤成 0、卡片变得巨大);显式归零,防横向/纵向撑爆。 */
+    min-width: 0;
+    min-height: 0;
+}
+
+/* 展开的卡片提 z-index 高于侧栏(#sidebar z-index:900),让弹出的媒体能盖过侧栏(横向溢出到侧栏区时)。 */
+.photo-card.media-expanding {
+    z-index: 950;
+}
+
+.photo-card.media-expanding .thumbnail-canvas,
+.photo-card.media-expanding .thumbnail-img,
+.photo-card.media-expanding .thumbnail-video {
+    width: var(--exp-w);
+    height: var(--exp-h);
+    z-index: 20; /* 弹出层盖过卡内 fav/badge/note/info(都在 2~5) */
+}
+
+/* expand 样式下不「上浮」:hover 不提卡片(仅 z-index:10 仍生效,供弹出层覆盖邻卡)。 */
+.photo-card.hover-expand:hover {
+    transform: none;
 }
 
 /* 卡片信息 */

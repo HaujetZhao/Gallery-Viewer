@@ -22,6 +22,34 @@ export function chunkRows(list, n) {
 }
 
 /**
+ * 视频悬浮满幅等比拓展的几何(单测,不依赖 DOM)。
+ * 方形卡里 `object-fit:cover` 的视频横屏裁左右、竖屏裁上下;精确匹配比例时拓展只发生在被裁那一维,
+ * 另一维保持列宽(卡占位不变 → 虚拟化行高/滚动不受影响)。
+ * @param {number} colWidth 列宽 px
+ * @param {number} videoW videoWidth(0/undefined → 不拓展)
+ * @param {number} videoH videoHeight
+ * @returns {{width:number,height:number,translateX:number,translateY:number,expanded:boolean}}
+ *   - r>=1(横屏):宽=colWidth*r,高=colWidth,仅水平居中平移(默认向左溢出)
+ *   - r<1(竖屏):高=colWidth/r,宽=colWidth,仅垂直居中平移(默认向下溢出)
+ *   - 无效尺寸 / 近似方形(r≈1,无被裁部分)→ expanded=false,各尺寸取列宽默认。
+ */
+export function computeVideoExpand(colWidth, videoW, videoH) {
+  if (colWidth <= 0 || !videoW || !videoH) {
+    return { width: colWidth, height: colWidth, translateX: 0, translateY: 0, expanded: false };
+  }
+  const r = videoW / videoH;
+  if (Math.abs(r - 1) < 0.05) {
+    return { width: colWidth, height: colWidth, translateX: 0, translateY: 0, expanded: false };
+  }
+  if (r >= 1) {
+    const width = colWidth * r;
+    return { width, height: colWidth, translateX: -(width - colWidth) / 2, translateY: 0, expanded: true };
+  }
+  const height = colWidth / r;
+  return { width: colWidth, height, translateX: 0, translateY: -(height - colWidth) / 2, expanded: true };
+}
+
+/**
  * 由容器宽度计算固定行高。行高 = 列宽(=方形卡高)+ 每卡额外高度 + gap。
  * @param {number} containerWidth gallery-grid 实际宽度(clientWidth)
  * @param {number} colCount 列数

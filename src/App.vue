@@ -68,7 +68,10 @@ const filterEl = ref(null);
 const searchInputEl = ref(null);
 // 待恢复:{ id, name } 权限需用户手势重新授权时,启动页显示"打开上次"按钮
 const restorableHandle = ref(null);
-useScrollZone([sidebarEl, settingsBtnEl, filterEl]);
+const settingsPanelEl = ref(null); // SettingsPanel 组件 ref;面板根经 defineExpose 暴露
+// 设置面板根元素(面板 v-if 关闭时为 null → computed 返回 null,排除区跳过)。hover 面板时不触发边缘感应滚动。
+const settingsPanelRoot = computed(() => settingsPanelEl.value?.panelEl);
+useScrollZone([sidebarEl, settingsBtnEl, filterEl, settingsPanelRoot]);
 
 onMounted(async () => {
   themeStore.init();
@@ -299,7 +302,7 @@ function onVisibilityChange() {
       </div>
     </div>
 
-    <SettingsPanel v-model="settingsOpen" />
+    <SettingsPanel ref="settingsPanelEl" v-model="settingsOpen" />
     <MediaModal />
     <Toast />
     <ConfirmDialog />
@@ -503,7 +506,7 @@ function onVisibilityChange() {
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    z-index: 100;
+    z-index: 1000; /* 高于展开媒体(950)/侧栏(900),设置按钮始终可见可点 */
     transition: all 0.3s ease;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     border: none;
@@ -528,7 +531,7 @@ body.sidebar-pinned .settings-btn {
     position: fixed;
     top: 20px;
     right: 20px;
-    z-index: 100;
+    z-index: 1000; /* 高于展开媒体(950),搜索框不被盖住 */
 }
 
 .filter-row {

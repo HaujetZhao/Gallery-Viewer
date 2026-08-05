@@ -131,12 +131,16 @@ export function triggerRedraw() {
   redrawSignal.value++;
 }
 
-// 每卡片 composable。mediaElRef 指向 canvas/img/video/object 元素。
-export function useThumbnail(mediaElRef, file, targetSize = 400) {
+// 每卡片 composable。mediaElRef 指向 canvas/img/video/object 元素;cardElRef 指向卡片根(供播放观察器)。
+// 播放观察器观察「卡片」(稳定元素)而非媒体元素——媒体(视频/缩略图)拓展后出视口不会让 isVisible 翻转:
+// 视频播放与媒体展开统一由「卡片是否整卡在视口」驱动,避免媒体元素拓展的边界问题。所有媒体都挂(图片也
+// 需 isVisible 做展开 gate)。mediaElRef 只用于负载观察器(载元数据/缩略图)。
+export function useThumbnail(mediaElRef, file, targetSize = 400, cardElRef = null) {
   const loaded = ref(false);
   const loading = ref(false);
   const isVisible = ref(false);
   let boundEl = null;
+  let boundCard = null;
 
   function onVideoReady() {
     loaded.value = true; // 视频首帧就绪或加载失败都翻 loaded,loading 指示不再卡
@@ -148,22 +152,30 @@ export function useThumbnail(mediaElRef, file, targetSize = 400) {
       return;
     if (boundEl) {
       observer?.unobserve(boundEl);
-      playObserver?.unobserve(boundEl);
       if (boundEl.tagName === 'VIDEO') {
         boundEl.removeEventListener('loadeddata', onVideoReady);
         boundEl.removeEventListener('error', onVideoReady);
       }
     }
+    if (boundCard)
+      playObserver?.unobserve(boundCard);
     boundEl = el;
+    boundCard = null;
     loaded.value = false;
     loading.value = false;
     // 状态绑到元素,observer 回调读
     el.__thumb = { file, targetSize, loaded, loading, isVisible, isVideo: el.tagName === 'VIDEO' };
     // 所有卡片:负载观察器(100px)载元数据;非预览卡片顺带渲染缩略图。
     ensureObserver().observe(el);
+    // 播放观察器观察卡片根(threshold 1.0,整卡完全进入才 isVisible)。所有媒体都挂(图片也用于展开 gate)。
+    const card = cardElRef?.value;
+    if (card) {
+      card.__thumb = { isVisible };
+      ensurePlayObserver().observe(card);
+      boundCard = card;
+    }
     if (el.tagName === 'VIDEO') {
-      // 预览视频:额外播放观察器(整卡进入才可见) + loaded 由首帧就绪驱动。
-      ensurePlayObserver().observe(el);
+      // 预览视频:loaded 由首帧就绪驱动(播/停由卡片可见性 isVisible 控制,见 PhotoCard.updatePlayback)。
       el.addEventListener('loadeddata', onVideoReady);
       el.addEventListener('error', onVideoReady);
     }
@@ -172,10 +184,10 @@ export function useThumbnail(mediaElRef, file, targetSize = 400) {
   watch(mediaElRef, bind, { flush: 'post' });
 
   onBeforeUnmount(() => {
-    if (boundEl) {
+    if (boundEl)
       observer?.unobserve(boundEl);
-      playObserver?.unobserve(boundEl);
-    }
+    if (boundCard)
+      playObserver?.unobserve(boundCard);
   });
 
   return { loaded, loading, isVisible };

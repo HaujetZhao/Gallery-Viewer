@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chunkRows, computeRowHeight, DETAIL_INFO_HEIGHT } from './gallery-layout';
+import { chunkRows, computeRowHeight, computeVideoExpand, DETAIL_INFO_HEIGHT } from './gallery-layout';
 
 describe('chunkRows', () => {
   it('空数组返回空', () => {
@@ -40,5 +40,38 @@ describe('computeRowHeight', () => {
   it('detail 样式:行高 = 列宽 + DETAIL_INFO_HEIGHT + gap', () => {
     // 列宽 = 238.75;行高 = 238.75 + 46 + 15 = 299.75
     expect(computeRowHeight(1000, 4, 15, DETAIL_INFO_HEIGHT)).toBeCloseTo(238.75 + DETAIL_INFO_HEIGHT + 15, 5);
+  });
+});
+
+describe('computeVideoExpand', () => {
+  const W = 200; // 列宽
+  it('横屏 16:9 → 宽=colWidth*16/9,高保持 colWidth,仅水平平移', () => {
+    const { width, height, translateX, translateY, expanded } = computeVideoExpand(W, 1920, 1080);
+    expect(expanded).toBe(true);
+    expect(width).toBeCloseTo(W * 16 / 9, 5);
+    expect(height).toBe(W);
+    expect(translateX).toBeCloseTo(-(width - W) / 2, 5);
+    expect(translateY).toBe(0);
+  });
+  it('竖屏 9:16 → 高=colWidth*16/9,宽保持 colWidth,仅垂直平移', () => {
+    const { width, height, translateX, translateY, expanded } = computeVideoExpand(W, 1080, 1920);
+    expect(expanded).toBe(true);
+    expect(width).toBe(W);
+    expect(height).toBeCloseTo(W * 16 / 9, 5);
+    expect(translateX).toBe(0);
+    expect(translateY).toBeCloseTo(-(height - W) / 2, 5);
+  });
+  it('近似方形(±5%)→ 不拓展,各尺寸取列宽', () => {
+    const r = computeVideoExpand(W, 1000, 1010); // r≈0.99
+    expect(r.expanded).toBe(false);
+    expect(r.width).toBe(W);
+    expect(r.height).toBe(W);
+    expect(r.translateX).toBe(0);
+    expect(r.translateY).toBe(0);
+  });
+  it('无效尺寸(videoW=0 / 未定义)→ 不拓展', () => {
+    expect(computeVideoExpand(W, 0, 1080).expanded).toBe(false);
+    expect(computeVideoExpand(W, undefined, 1080).expanded).toBe(false);
+    expect(computeVideoExpand(0, 1920, 1080).expanded).toBe(false);
   });
 });

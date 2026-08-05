@@ -11,7 +11,7 @@
 // 全分辨率 bitmap 只在 worker 堆存活,主线程零参与(不实例化/不 GC),治感应滚动卡顿。
 import { FileTypes } from '../config/file-types';
 import { ensureBlobUrl } from '../models/SmartFile';
-import { coverFitParams } from '../utils/coverFit';
+import { fitOriginalRatioParams } from '../utils/coverFit';
 import { saveFileMeta } from './fileMeta';
 import { peek } from './fileResource';
 import { isPoolAvailable, renderBitmapInWorker, renderInWorker } from './thumbnail-worker-pool';
@@ -35,12 +35,13 @@ export async function drawBlobToCanvas(canvas, blob) {
 async function drawCoverToBlobMain(file, targetSize) {
   const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
   try {
+    // 主线程兜底与 worker 一致:原比例画布(最短边=targetSize),满幅无裁,保留宽高比。
+    const { dw, dh } = fitOriginalRatioParams(bitmap.width, bitmap.height, targetSize);
     const tmp = document.createElement('canvas');
-    tmp.width = targetSize;
-    tmp.height = targetSize;
+    tmp.width = dw;
+    tmp.height = dh;
     const ctx = tmp.getContext('2d');
-    const { dx, dy, dw, dh } = coverFitParams(bitmap.width, bitmap.height, targetSize);
-    ctx.drawImage(bitmap, 0, 0, bitmap.width, bitmap.height, dx, dy, dw, dh);
+    ctx.drawImage(bitmap, 0, 0, bitmap.width, bitmap.height, 0, 0, dw, dh);
     return await new Promise(resolve => tmp.toBlob(resolve, 'image/jpeg', 0.85));
   }
   finally {
@@ -113,11 +114,12 @@ export const ThumbnailStrategies = {
     types: FileTypes.video.all,
 
     drawVideoFrame: (canvas, video, targetSize) => {
-      canvas.width = targetSize;
-      canvas.height = targetSize;
+      // 原比例(最短边=targetSize):静态帧保留视频宽高比,供悬浮「放大」露全图(方形卡片 cover 裁切显示)。
+      const { dw, dh } = fitOriginalRatioParams(video.videoWidth, video.videoHeight, targetSize);
+      canvas.width = dw;
+      canvas.height = dh;
       const ctx = canvas.getContext('2d');
-      const { dx, dy, dw, dh } = coverFitParams(video.videoWidth, video.videoHeight, targetSize);
-      ctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, dx, dy, dw, dh);
+      ctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, 0, 0, dw, dh);
     },
 
     drawDefaultThumbnail: (canvas, targetSize) => {
@@ -245,12 +247,11 @@ export const ThumbnailStrategies = {
           });
 
           const canvas = element;
-          canvas.width = targetSize;
-          canvas.height = targetSize;
+          const { dw, dh } = fitOriginalRatioParams(img.width, img.height, targetSize);
+          canvas.width = dw;
+          canvas.height = dh;
           const ctx = canvas.getContext('2d');
-          const { dx, dy, dw, dh } = coverFitParams(img.width, img.height, targetSize);
-
-          ctx.drawImage(img, 0, 0, img.width, img.height, dx, dy, dw, dh);
+          ctx.drawImage(img, 0, 0, img.width, img.height, 0, 0, dw, dh);
 
           URL.revokeObjectURL(img.src);
           onDrawn?.(); // 封面画完 → 翻 loaded

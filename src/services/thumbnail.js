@@ -9,7 +9,7 @@ import { useUserSettingsStore } from '../stores/userSettings';
 // 接收 (file: SmartFile, canvas: HTMLCanvasElement, targetSize) → 查缓存→命中画/未命中生成存→画到 canvas。
 // IntersectionObserver + 并发队列留到阶段 5 gallery 的 useThumbnail composable。
 import { calculateMD5 } from '../utils/file';
-import { deleteThumbnail, getThumbnailFromDB, saveThumbnailToDB, touchThumbnailInDB } from './db';
+import { deleteThumbnail, getThumbnailFromDB, saveThumbnailToDB, thumbnailKey, touchThumbnailInDB } from './db';
 import { ensureFileMetaLoaded } from './fileMeta';
 import { peek } from './fileResource';
 import { refreshFolder } from './folderActions';
@@ -56,7 +56,7 @@ export async function renderThumbnail(file, element, targetSize = 400, onDrawn) 
   if (cached) {
     await drawBlobToCanvas(element, cached.blob);
     onDrawn?.();
-    touchThumbnailInDB(`${file.md5}_${targetSize}`); // 异步刷新 lastAccessed(不阻塞,修源码陷阱)
+    touchThumbnailInDB(thumbnailKey(file.md5, targetSize)); // 异步刷新 lastAccessed(不阻塞,修源码陷阱)
     return { cached: true, strategyName: strategy.name };
   }
 
@@ -64,7 +64,7 @@ export async function renderThumbnail(file, element, targetSize = 400, onDrawn) 
   const blob = await strategy.generateThumbnail(element, file, targetSize, onDrawn);
   if (blob) {
     saveThumbnailToDB({
-      id: `${file.md5}_${targetSize}`,
+      id: thumbnailKey(file.md5, targetSize),
       md5: file.md5,
       size: file.size,
       width: targetSize,
@@ -101,7 +101,7 @@ export async function forceRegenerateCurrentThumbnails() {
   let deleteCount = 0;
   for (const file of files) {
     if (file.md5)
-      deleteThumbnail(`${file.md5}_${targetSize}`);
+      deleteThumbnail(thumbnailKey(file.md5, targetSize));
     deleteCount++;
   }
   toast.success(`已清除 ${deleteCount} 个缩略图缓存,正在重新生成...`);
