@@ -54,7 +54,7 @@ docs/superpowers/        # specs(设计 + 实现记录)+ plans(实施计划)
 3. **资源走 fileResource 池**（[fileResource.js](src/services/fileResource.js)）：blobUrl/File 集中管理（`acquire`/`destroy`/`peek`，in-flight 去重+cancel）。SmartFile 是其门面。**不要直接 `URL.createObjectURL`/`revokeObjectURL`**；size/mtime 单源在 `SmartFile._meta`（响应式），不进池。
 4. **持久化走 schedulePersist(per-folder,治写放大)**:改树(增删/改名/移动/md5/duration)由 `integrateScanResult`(`markFolderDirty`)或 `afterFolderMutation(folder)` 标**该文件夹**脏 → `fs.dirtyFolders`(Set<rootId::path>) + `schedulePersist()`(1s debounce)。`persistIfDirty` 只遍历 dirty 集合、**每夹写一条 record**(`saveFolderRecord(rootId,folder)`→`scans`,非递归),`fileCount` 变才写 `roots`。**不要直接 `saveFolderRecord`/`folderToRecord`**。切根前 `flushPendingPersist` 落盘旧根(reload 用 `cancelPendingPersist` 重扫);重建走 `foldersFromRecordMap`(`loadScan` 前缀拉全 record→Map,秒切)。`visibilitychange:hidden` 触发 `flushPendingPersist` 兜底(P0-3)。
 5. **CSS 全局复用**：`src/styles/` 的全局 CSS（`main.js` 全局 import）。组件**不重写这些 CSS**，模板直接用其 class（如 `.photo-card` / `.gallery-row` / `.tree-node` / `.modal-audio-player`）。组件 scoped 样式只补 CSS 里没有的。
-6. **核心算法稳定**：scan 纯列表差集 + 信任名字集合短路、enrich 并发 getFile、GPS/ID3/.trash、calculateMD5（前 2MB 内容寻址缓存键——跨文件夹同图共享缩略图、md5 随快照持久化→秒切零重算；**chunkSize 锁死不动**）。**数据五分收口 GalleryDB，不再用 idb-keyval**：按 md5 的 `thumbnails`(blob LRU)/`file-meta`(duration/宽高/bitrate)/`user-data`(favorites+notes 聚合) + 按 rootId 的 `roots`(多根句柄)/`scans`(per-folder record)，均懒加载、经 `db.js` kv 接口读写。duration 作 `SmartFile._meta` 运行时缓存，不随快照持久化。改动配测试。
+6. **核心算法稳定**：scan 纯列表差集 + 信任名字集合短路、enrich 并发 getFile、GPS/ID3/.trash、calculateMD5（前 2MB 内容寻址缓存键——跨文件夹同图共享缩略图、md5 随快照持久化→秒切零重算；**chunkSize 锁死不动**）。**数据五分收口 GalleryDB，不再用 idb-keyval**：按 md5 的 `thumbnails`(blob LRU)/`file-meta`(duration/宽高/bitrate/capturedAt/gps/exifChecked)/`user-data`(favorites+notes 聚合) + 按 rootId 的 `roots`(多根句柄)/`scans`(per-folder record)，均懒加载、经 `db.js` kv 接口读写。duration 作 `SmartFile._meta` 运行时缓存，不随快照持久化。**EXIF 拍摄时间/GPS** 走 file-meta(md5 索引)：`loadCardMetadata` 图片懒抽一次(`exifChecked` 哨兵防反复、存量首次视窗自动回填),属性面板打开重抽**变了才更新**。改动配测试。
 7. **跨组件状态进 Pinia store；组件私有状态用 `ref`/`reactive`**。
 8. **主题切换**：`useThemeStore.applyTheme` 用 `document.documentElement.style.setProperty` 注入 CSS 变量（切主题先清残留再设新值，见 [theme.js](src/stores/theme.js)）。
 9. **Web Worker 统一用 `?worker&inline` 导入**：`import W from './x.worker.js?worker&inline'` + `new W()` → Vite 打包并内联进单 HTML，真·自包含。⚠️ 勿用 `new Worker(new URL(...))`（外置 .js 破坏单 HTML），更**勿把 URL 提成变量**——Vite 靠 `new Worker(new URL())` 的 AST 形态识别 worker，提变量就不识别 → 退化成普通 asset 被 singlefile 内联成 data URL，**worker 内相对 import 不解析 → 加载即死、缩略图永远转圈**。现役:`thumbnail-worker.js`(pool)/`md5.worker.js`。
@@ -87,6 +87,7 @@ docs/superpowers/        # specs(设计 + 实现记录)+ plans(实施计划)
 - 多文件夹管理设计：`docs/superpowers/specs/2026-07-28-多文件夹管理-design.md`
 - 架构重构（资源层分离 + 纯 model + 纯列表 scan）：`docs/superpowers/specs/2026-07-28-架构重构-资源层分离与纯model-design.md` + 进度记录 + round2（虚拟化 / 扫描优化）+ round3（性能 polish）+ [round4 第一性原理审查](docs/superpowers/specs/2026-07-29-架构重构-round4-第一性原理审查与model函数化.md) 及各实现记录
 - 存储三分（md5 三分 + rootId 收口）：`docs/superpowers/specs/2026-08-02-批次3实现总结-卡片样式与存储三分.md` + 交互批次3 `2026-08-03-批次3实现总结-R16-R17-R19.md`
+- EXIF 拍摄时间 + GPS 落盘（图片优先拍摄时间）：`docs/superpowers/specs/2026-08-05-EXIF拍摄时间与GPS落盘-design.md`
 - 改造路线图：`docs/改造路线图.md`
 - 各阶段实施计划：`docs/superpowers/plans/`
 - 源工程（只读参考）：`D:\repos\相册浏览器`（原生 JS 原版）
