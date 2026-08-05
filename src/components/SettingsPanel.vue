@@ -96,8 +96,8 @@ const sortFieldOptions = [
   { value: 'date', label: '时间' },
 ];
 const sortDirOptions = [
-  { value: 'asc', icon: 'fas fa-arrow-down-short-wide', title: '升序' },
-  { value: 'desc', icon: 'fas fa-arrow-up-wide-short', title: '降序' },
+  { value: 'asc', label: '升序' },
+  { value: 'desc', label: '降序' },
 ];
 const sortDir = computed(() => (sortAsc.value ? 'asc' : 'desc'));
 function setSortField(v) {
@@ -254,10 +254,9 @@ async function onClearAll() {
                 :key="opt.value"
                 class="seg-btn"
                 :class="{ active: sortDir === opt.value }"
-                :title="opt.title"
                 @click="setSortDir(opt.value)"
               >
-                <i :class="opt.icon" />
+                {{ opt.label }}
               </button>
             </div>
           </div>
@@ -576,12 +575,8 @@ async function onClearAll() {
 }
 
 .seg-group.sort-dir-group {
-    flex: 0 0 auto; /* 升降序段按内容宽度(图标,不需要多宽);组合选择器提特异性,盖过 .seg-group{flex:1} */
-}
-
-.seg-group.sort-dir-group .seg-btn {
-    padding: 7px 9px;
-    min-width: 30px;
+    flex: 0 0 auto; /* 升降序段按内容宽度(文字,与卡片样式 hover 段同参);组合选择器提特异性,盖过 .seg-group{flex:1} */
+    /* padding 等走基础 .seg-btn(7px 4px),与 card-hover-group 一致 */
 }
 
 /* 卡片样式:两段并排——卡片样式段(3 档:悬停/常驻/信息,占宽多)+ hover 样式段(2 档:浮起/展开,内容宽)。 */

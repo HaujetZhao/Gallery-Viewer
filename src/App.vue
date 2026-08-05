@@ -141,11 +141,21 @@ function onKeydown(e) {
     }
     return;
   }
-  // R16-b:modal 内 N → 打开属性面板并直达备注栏(备注入口)。
+  // N:备注。modal 打开 → 当前大图;否则 hover 的卡片。打开属性面板并直达备注栏。
   if (!isCtrl && key === 'n') {
-    if (modal.isOpen && modal.currentFile) {
+    const f = modal.isOpen ? modal.currentFile : hoveredFile.value;
+    if (f) {
       e.preventDefault();
-      properties.open(modal.currentFile, { focusNote: true });
+      properties.open(f, { focusNote: true });
+    }
+    return;
+  }
+  // P:属性。modal 打开 → 当前大图;否则 hover 的卡片。打开属性面板(普通视图)。
+  if (!isCtrl && key === 'p') {
+    const f = modal.isOpen ? modal.currentFile : hoveredFile.value;
+    if (f) {
+      e.preventDefault();
+      properties.open(f);
     }
     return;
   }
@@ -273,7 +283,7 @@ function onVisibilityChange() {
           </div>
         </div>
         <div class="footer">
-          <p>使用提示:拖动卡片到左侧文件夹可移动,右键菜单可重命名/删除,Ctrl+Z 撤销。</p>
+          <p>使用提示：F2 重命名、P 属性、N 备注、L 收藏、Delete 删除、Ctrl+Z 撤销。</p>
         </div>
       </div>
     </div>
@@ -286,7 +296,7 @@ function onVisibilityChange() {
         </header>
         <Gallery />
         <div class="footer">
-          <p>使用提示:拖动卡片到左侧文件夹可移动,右键菜单可重命名/删除,Ctrl+Z 撤销。</p>
+          <p>使用提示：F2 重命名、P 属性、N 备注、L 收藏、Delete 删除、Ctrl+Z 撤销。</p>
         </div>
       </div>
     </div>
