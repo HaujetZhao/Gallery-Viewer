@@ -320,11 +320,11 @@ onBeforeUnmount(() => {
     gap: 15px;
 }
 
-/* 删除/移出后保留的空位占位:占住 1fr 列(否则 grid 自动排布把右侧卡左移填补),
-   以方形缩略图高度呈现为"空白卡位";detail 样式卡片更高,空位略矮可接受。 */
+/* 删除/移出后保留的空位占位:占住 1fr 列(否则 grid 自动排布把右侧卡左移填补)。
+   ⚠️ 勿设 width:100%; aspect-ratio:1/1 —— grid 项默认 align-self:stretch 竖向往行高拉伸
+   (如 216px),此时 aspect-ratio 1/1 会把列宽反推成=高(216 宽),撑爆该 1fr 轨道,
+   挤缩同排其余卡片(大小/位置都变)。留空即可,靠默认 stretch 填满 grid 区域(=正常卡片 box)。 */
 .gallery-empty-cell {
-    width: 100%;
-    aspect-ratio: 1 / 1;
 }
 
 /* 虚拟化行有 transform:translateY(创建 z-index auto 的 stacking context,层级 0)→ 卡内任何 z-index 都被
