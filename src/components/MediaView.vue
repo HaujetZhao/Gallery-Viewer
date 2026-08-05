@@ -6,8 +6,8 @@ import { computed, inject, onActivated, onBeforeUnmount, onDeactivated, onMounte
 import { triggerRedraw } from '../composables/useThumbnail';
 import { FileTypes } from '../config/file-types';
 import { detectFileChange, ensureBlobUrl } from '../models/SmartFile';
+import { saveFileMeta } from '../services/fileMeta';
 import { peek } from '../services/fileResource';
-import { afterFolderMutation } from '../services/persistence';
 import { useModalStore } from '../stores/modal';
 import { ensureMediaSession } from '../utils/mediaSession';
 import AudioPlayer from './AudioPlayer.vue';
@@ -76,17 +76,17 @@ function tryAutoplay(video) {
   });
 }
 
-function onLoadedMetadata(e) {
+async function onLoadedMetadata(e) {
   const video = e.target;
   // loading/videoReady 在 onLoadedData(首帧)再清,避免 metadata 后、首帧前露出大空框。
   const f = props.file;
   if (!f)
     return;
-  // R5:时长回填(解决 R11 老缓存视频时长为空的边界)
+  // R5:时长回填(解决 R11 老缓存视频时长为空的边界)。
+  // 与 thumbnail-strategies video 策略同一通道:saveFileMeta 填 _meta 运行时缓存 + 落 file-meta store(md5 索引),
+  // 跨副本共享、持久化。原直接写 _meta + afterFolderMutation 不走 file-meta store,已统一于此。
   if (f.duration == null && Number.isFinite(video.duration)) {
-    f._meta = { ...(f._meta || { size: f.size, lastModified: f.lastModified }), duration: video.duration };
-    // per-folder:duration 走 file-meta store(md5 索引)独立持久化;此处只标该夹脏(路径等可能变)。
-    afterFolderMutation(f.parent);
+    await saveFileMeta(f, { duration: video.duration, width: video.videoWidth, height: video.videoHeight });
   }
   tryAutoplay(video);
 }
