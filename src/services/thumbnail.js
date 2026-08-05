@@ -26,8 +26,19 @@ import { drawBlobToCanvas, extractAudioDuration, getThumbnailStrategy } from './
 export async function generateThumbnail(file, canvas, targetSize = 400, onDrawn) {
   const strategy = getThumbnailStrategy(file.type);
 
-  // GIF/SVG 快路径:不缓存
+  // GIF/SVG 快路径:不缓存,但也要算 md5 + 加载 favorites/notes,否则爱心/备注显示不出。
+  // (原现状不支持 GIF/SVG 收藏备注;现补上,与 image/video/audio 一致。仍不缓存缩略图。)
   if (strategy.name === 'gif' || strategy.name === 'svg') {
+    await ensureBlobUrl(file);
+    if (!file.md5) {
+      const raw = peek(file)?.file ?? await file.handle.getFile();
+      file.md5 = await calculateMD5(raw);
+      afterFolderMutation(file.parent);
+    }
+    await Promise.all([
+      useFavoritesStore().ensureLoaded(file.md5),
+      useNotesStore().ensureLoaded(file.md5),
+    ]);
     await strategy.generateThumbnail(canvas, file, targetSize);
     return { cached: false, strategyName: strategy.name };
   }
@@ -85,6 +96,23 @@ export async function generateThumbnail(file, canvas, targetSize = 400, onDrawn)
     });
   }
   return { cached: false, strategyName: strategy.name };
+}
+
+// 视频预览(悬浮/自动)模式的元数据补载:预览模式不跑 generateThumbnail(不生成静态帧/缓存),
+// 故 md5 + file-meta + favorites/notes 不会自动加载 → 爱心与时长角标显示不出。这里补跑同一段元数据逻辑。
+// 幂等:md5 已有则跳过,ensureLoaded 重复调用无害。由 PhotoCard 在视频预览卡片可见时调。
+export async function ensureVideoPreviewMeta(file) {
+  await ensureBlobUrl(file);
+  if (!file.md5) {
+    const raw = peek(file)?.file ?? await file.handle.getFile();
+    file.md5 = await calculateMD5(raw);
+    afterFolderMutation(file.parent); // md5 随文件夹 record 持久化(与 generateThumbnail 首次算 md5 一致)
+  }
+  await ensureFileMetaLoaded(file); // 时长角标(_meta.duration)
+  await Promise.all([
+    useFavoritesStore().ensureLoaded(file.md5), // 爱心
+    useNotesStore().ensureLoaded(file.md5), // 备注
+  ]);
 }
 
 // 强制重绘当前视图缩略图:先 refreshFolder(读全部元数据 + 清变 md5)→ 删当前 folder 各文件缓存 → triggerRedraw 重挂卡片重生成。
