@@ -391,18 +391,24 @@ const exifGroups = computed(() => {
 .props-table {
     width: 100%;
     border-collapse: collapse;
+    /* fixed: 让首列 width 真正生效,否则长值列会反向把标签列压到竖排换行 */
+    table-layout: fixed;
 }
 
 .props-table td {
     padding: 8px;
     border-bottom: 1px solid #f0f0f0;
     font-size: 14px;
+    /* 超长文件名/路径在值列内换行,不再撑爆表格或反向挤压标签列 */
+    word-break: break-all;
+    overflow-wrap: anywhere;
 }
 
 .props-table td:first-child {
     width: 100px;
     color: #888;
     font-weight: 500;
+    white-space: nowrap;
 }
 
 /* EXIF 分组样式 */
