@@ -9,6 +9,7 @@ import PropertiesPanel from './components/PropertiesPanel.vue';
 import SettingsPanel from './components/SettingsPanel.vue';
 import Sidebar from './components/Sidebar.vue';
 import Toast from './components/Toast.vue';
+import { deleteFileWithToast } from './composables/useFileActions';
 import { useGallerySearch } from './composables/useGallerySearch';
 import { hoveredFile, requestRename } from './composables/useHoveredFile';
 import { useScrollZone } from './composables/useScrollZone';
@@ -158,6 +159,27 @@ function onKeydown(e) {
     else if (hoveredFile.value) {
       e.preventDefault();
       requestRename();
+    }
+    return;
+  }
+  // Delete:删除。modal 打开 → 删当前大图并推进(末张则关闭);否则删 hover 的卡片。
+  // 与右键删除同走 deleteFileWithToast → .trash,可 Ctrl+Z 撤销。输入框聚焦已在上方 return。
+  if (!isCtrl && key === 'delete') {
+    const f = modal.isOpen ? modal.currentFile : hoveredFile.value;
+    if (f) {
+      e.preventDefault();
+      deleteFileWithToast(f);
+      if (modal.isOpen) {
+        // 删除后推进到下一张;末张无下一张 → 关闭。文件已从 gallery 移除,fileList 快照仍含被删项,
+        // 直接 close 避免 currentFile 停在已删文件。
+        if (modal.currentIndex >= modal.fileList.length - 1)
+          modal.close();
+        else
+          modal.next();
+      }
+      else {
+        hoveredFile.value = null; // 清 hover,防连按 Delete 对已删文件二次操作
+      }
     }
     return;
   }
