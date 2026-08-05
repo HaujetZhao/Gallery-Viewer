@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, ref } from 'vue';
 import { useOverlay } from '../composables/useOverlay';
-import { openDirectory, switchToRoot } from '../services/folderActions';
+import { openDirectory, openDirectoryReadOnly, switchToRoot } from '../services/folderActions';
 import * as handleStore from '../services/handleStore';
 import { flushPendingPersist } from '../services/persistence';
 import { clearScan } from '../services/scanCache';
@@ -34,6 +34,10 @@ async function onOpenNew() {
   close();
   await openDirectory();
 }
+async function onOpenReadOnly() {
+  close();
+  await openDirectoryReadOnly();
+}
 async function onRemove(id) {
   await handleStore.remove(id);
   await clearScan(id);
@@ -45,14 +49,15 @@ async function onRemove(id) {
   }
 }
 
-// R9:右键 header 按钮弹菜单(只"打开新文件夹"一项),免下拉滚底。右键不展开下拉。
+// 右键 header 按钮弹菜单:打开 / 打开(只读) / 关闭。免下拉滚底。右键不展开下拉。
 // stopPropagation:阻止冒泡到 #sidebar 的 contextmenu(否则 sidebar 会把刚 show 的菜单关掉)。
 function onHeaderContextmenu(e) {
   e.stopPropagation();
   contextMenu.show(e.clientX, e.clientY, [
-    { label: '打开新文件夹', icon: 'fas fa-folder-plus', action: onOpenNew },
+    { label: '打开', icon: 'fas fa-folder-open', action: onOpenNew },
+    { label: '打开(只读)', icon: 'fas fa-lock', action: onOpenReadOnly },
     { divider: true },
-    { label: '关闭当前文件夹', icon: 'fas fa-times', action: closeCurrent },
+    { label: '关闭', icon: 'fas fa-times', action: closeCurrent },
   ]);
 }
 
@@ -179,12 +184,21 @@ onBeforeUnmount(() => {
             </div>
           </div>
           <button class="root-remove" title="移除记录" @click.stop="onRemove(r.id)">
-            <i class="fas fa-times" />
+            <i class="fas fa-trash-alt" />
           </button>
         </div>
       </TransitionGroup>
-      <div class="root-item root-add" @click="onOpenNew">
-        <i class="fas fa-plus" /> 打开新文件夹
+      <div class="root-actions">
+        <div class="root-item root-add root-action" @click="onOpenNew">
+          <i class="fas fa-plus" /> 打开
+        </div>
+        <div
+          class="root-item root-add root-action root-close-current"
+          :class="{ disabled: !fsStore.currentFolder }"
+          @click="fsStore.currentFolder && closeCurrent()"
+        >
+          <i class="fas fa-times" /> 关闭
+        </div>
       </div>
     </div>
   </div>
@@ -195,10 +209,14 @@ onBeforeUnmount(() => {
   position: relative;
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 /* 像标题(folder-open 图标 + 名 + 小 caret),但可点:hover 淡白背景提示 */
 .root-current {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -232,6 +250,26 @@ onBeforeUnmount(() => {
 .root-caret.open {
   transform: rotate(180deg);
   opacity: 1;
+}
+/* 底部操作行(打开/关闭 各占半行):顶部分隔线 + 两项间竖分隔 */
+.root-actions {
+  display: flex;
+  border-top: 1px solid var(--color-gray-100, #e9ecef);
+}
+.root-actions .root-action {
+  flex: 1;
+}
+.root-action + .root-action {
+  border-left: 1px solid var(--color-gray-100, #e9ecef);
+}
+/* 关闭当前文件夹:未打开文件夹时置灰不可点 */
+.root-close-current.disabled {
+  opacity: 0.4;
+  pointer-events: none;
+  cursor: not-allowed;
+}
+.root-close-current .fa-times {
+  font-size: 12px;
 }
 /* 下拉:白底浮动面板(在深色 sidebar 上对比) */
 .root-dropdown {

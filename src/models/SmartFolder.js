@@ -32,19 +32,13 @@ export class SmartFolder {
       this.isVirtual = true;
       this.virtualConfig = virtualConfig || {};
     }
-    else if (handle) {
-      this.name = handle.name;
-      this.isVirtual = false;
-      this.virtualConfig = null;
-    }
-    else if (name) {
-      // 降级只读模式:webkitdirectory 无句柄,传 name 建真实目录夹(非虚拟)
-      this.name = name;
-      this.isVirtual = false;
-      this.virtualConfig = null;
-    }
     else {
-      throw new Error('必须提供 handle、name 或 virtualName');
+      // 真实目录夹:handle(FSA)或 name(降级只读 webkitdirectory 无句柄)二选一。
+      this.name = handle?.name ?? name;
+      if (!this.name)
+        throw new Error('必须提供 handle、name 或 virtualName');
+      this.isVirtual = false;
+      this.virtualConfig = null;
     }
 
     this.files = [];

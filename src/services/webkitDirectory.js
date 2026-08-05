@@ -8,6 +8,7 @@ import SparkMD5 from 'spark-md5';
 import { FileTypes } from '../config/file-types';
 import { SmartFile } from '../models/SmartFile';
 import { diffEntries, SmartFolder } from '../models/SmartFolder';
+import { windowsCompareStrings } from '../utils/format';
 import { kvGet, kvSet } from './db';
 
 // 当前降级根的文件快照(File[] 单例)。select 成功后由 openDegradedDirectoryPicker 灌入,供 scanDegradedFolder 过滤。
@@ -18,9 +19,6 @@ export function setDegradedSnapshot(files) {
 }
 export function getDegradedSnapshot() {
   return degradedSnapshot;
-}
-export function clearDegradedSnapshot() {
-  degradedSnapshot = null;
 }
 
 // 复用的隐藏 <input type="file" webkitdirectory>。调用方 click() 触发原生目录选择(用户手势)。
@@ -36,7 +34,7 @@ export function isMediaName(name) {
   const dot = name.lastIndexOf('.');
   if (dot < 0)
     return false;
-  return FileTypes.allMedia.includes(name.slice(dot + 1).toLowerCase());
+  return FileTypes.isSupported(name.slice(dot + 1).toLowerCase());
 }
 
 // 目录指纹:哈希全部文件的 `path|size|lastModified`(含根名)。同目录重选 → 相同指纹;任一文件增删/改 → 指纹变。
@@ -83,8 +81,8 @@ async function persistDegradedSnapshot() {
 
 // 递归排序树(文件/子夹均按 Windows 风格名字序,与 scanFolder 差集后的排序一致)。
 function sortFolderTree(folder) {
-  folder.files.sort((a, b) => a.name.localeCompare(b.name, 'zh'));
-  folder.subFolders.sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+  folder.files.sort((a, b) => windowsCompareStrings(a.name, b.name));
+  folder.subFolders.sort((a, b) => windowsCompareStrings(a.name, b.name));
   for (const sub of folder.subFolders)
     sortFolderTree(sub);
 }
@@ -95,6 +93,9 @@ export function createDegradedRootFromFileList(files, md5Map = null) {
     return null;
   const rootName = files[0].webkitRelativePath?.split('/')[0] || '文件夹';
   const root = new SmartFolder({ handle: null, name: rootName });
+  // 相对路径 → 子夹 索引,建树时 O(F×depth) 找/建,避免每层对兄弟子夹线性 find(O(F×S))。
+  const dirIndex = new Map();
+  dirIndex.set('', root);
   for (const file of files) {
     const rel = file.webkitRelativePath || '';
     if (!rel || !isMediaName(file.name))
@@ -102,27 +103,30 @@ export function createDegradedRootFromFileList(files, md5Map = null) {
     const segs = rel.split('/');
     segs.shift(); // 去掉根名
     segs.pop(); // 去掉文件名段(文件名从 file.name 取)
-    // 沿父目录链找/建子夹;遇到隐藏目录(. 开头)则丢弃该文件
-    let cur = root;
+    // 沿父目录链用 dirIndex 找/建子夹(键 = 累积相对路径);遇到隐藏目录(. 开头)则丢弃该文件
+    let dirPath = '';
+    let parent = root;
     let skip = false;
     for (const dirName of segs) {
       if (!dirName || dirName.startsWith('.')) {
         skip = true;
         break;
       }
-      let sub = cur.subFolders.find(f => f.name === dirName);
+      dirPath = dirPath ? `${dirPath}/${dirName}` : dirName;
+      let sub = dirIndex.get(dirPath);
       if (!sub) {
-        sub = new SmartFolder({ handle: null, name: dirName, parent: cur });
-        cur.subFolders.push(sub);
+        sub = new SmartFolder({ handle: null, name: dirName, parent });
+        parent.subFolders.push(sub);
+        dirIndex.set(dirPath, sub);
       }
-      cur = sub;
+      parent = sub;
     }
     if (skip)
       continue;
-    const smart = new SmartFile({ handle: null, parent: cur, file });
+    const smart = new SmartFile({ handle: null, parent, file });
     smart._meta = { size: file.size, lastModified: file.lastModified };
     smart.md5 = md5Map?.get(rel) ?? null; // 指纹命中预填 md5
-    cur.files.push(smart);
+    parent.files.push(smart);
   }
   sortFolderTree(root);
   return root;

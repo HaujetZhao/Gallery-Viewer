@@ -74,6 +74,12 @@ export async function openDirectory() {
   return openFolderPicker();
 }
 
+// 只读打开(强制降级 webkitdirectory):右键菜单「打开(只读)」用。与 openDirectory 自动分流不同——
+// 即使浏览器支持 FSA 也强制只读(无句柄、不落盘、写回禁用),用于用户主动选择只读浏览。
+export async function openDirectoryReadOnly() {
+  return openDegradedDirectoryPicker();
+}
+
 // 打开新文件夹(picker)。已保存(handleStore 命中)→ 复用 switchToRoot 秒显+toast,不重建;否则新建扫+记录+切换。
 // 仅 FSA 路径;降级由 openDirectory 分流走 openDegradedDirectoryPicker。
 export async function openFolderPicker() {
