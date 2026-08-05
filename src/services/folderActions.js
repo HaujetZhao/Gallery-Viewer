@@ -234,6 +234,48 @@ export async function refreshFolder(folder) {
   }
 }
 
+// 侧栏右键"刷新":递归重扫该文件夹及其下所有子文件夹,更新各层文件数(增删/改名)。
+// 与 startBackgroundScan 同策略(子夹信任名字集合短路零 getFile,仍抓文件数变化),只是从任意文件夹
+// 起步、且入口夹自身也非信任重扫(抓该层增删改名)。每层 integrateScanResult 写回代理 → 文件数响应式
+// 更新 + markFolderDirty;收口 persistIfDirty 一次把全树 dirty 落盘(治写放大)。
+export async function refreshFolderTree(folder) {
+  const token = makeCancelToken();
+  await refreshSubtree(folder, token);
+  if (!token.cancelled)
+    await persistIfDirty();
+}
+
+// 递归刷新一棵子树的单层。入口夹(folder.parent 为 null)非信任全扫,其余子夹信任短路。
+async function refreshSubtree(folder, token) {
+  if (!folder || token.cancelled)
+    return;
+  try {
+    const result = await scanFolder(folder, { trust: folder.parent != null });
+    integrateScanResult(folder, result); // 写回代理 → 文件数/增删更新
+    await enrichFolder(folder); // 新文件补 size/mtime
+  }
+  catch (err) {
+    if (err.name === 'NotFoundError') {
+      // 该夹已被外部删除:从父节点移除,不再下钻。
+      if (folder.parent) {
+        const idx = folder.parent.subFolders.indexOf(folder);
+        if (idx > -1)
+          folder.parent.subFolders.splice(idx, 1);
+      }
+      return;
+    }
+    console.warn('刷新子文件夹失败:', folder.name, err);
+    return;
+  }
+  if (!folder.subFolders?.length)
+    return;
+  await runConcurrent(
+    [...folder.subFolders],
+    sub => refreshSubtree(sub, token),
+    { concurrency: CONFIG.PERFORMANCE.SCAN_FOLDER_CONCURRENCY, token },
+  );
+}
+
 // 加载并显示指定文件夹。Vue 后只需设 currentFolder(Gallery 自动响应)。
 export async function loadFolder(folder) {
   const fs = useFsStore();

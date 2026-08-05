@@ -267,12 +267,6 @@ async function onClearAll() {
         </div>
 
         <div class="setting-item">
-          <label>显示列数</label>
-          <input v-model.number="colCount" type="range" min="1" max="10" step="1" @change="commitCol">
-          <span>{{ colCount }}列</span>
-        </div>
-
-        <div class="setting-item">
           <label>视频预览</label>
           <div class="seg-group">
             <button
@@ -295,6 +289,12 @@ async function onClearAll() {
             class="preview-speed-scrub"
             title="预览播放速度"
           />
+        </div>
+
+        <div class="setting-item">
+          <label>显示列数</label>
+          <input v-model.number="colCount" type="range" min="1" max="10" step="1" @change="commitCol">
+          <span>{{ colCount }}列</span>
         </div>
 
         <div class="setting-item">
@@ -321,19 +321,18 @@ async function onClearAll() {
 
         <div class="separator" />
 
-        <div class="settings-section">
-          <h3><i class="fas fa-palette" /> 主题</h3>
-          <div class="theme-selector">
-            <div
+        <div class="setting-item">
+          <label>主题</label>
+          <div class="seg-group theme-seg">
+            <button
               v-for="t in themeStore.getThemes()"
               :key="t.id"
-              class="theme-option"
+              class="seg-btn"
               :class="{ active: themeStore.currentTheme === t.id }"
               @click="themeStore.applyTheme(t.id)"
             >
-              <div class="theme-preview" :class="t.id" />
-              <span class="theme-name">{{ t.icon }} {{ t.name }}</span>
-            </div>
+              {{ t.icon }} {{ t.name }}
+            </button>
           </div>
         </div>
 
@@ -619,108 +618,4 @@ async function onClearAll() {
 /* ========================================
    主题选择器样式
    ======================================== */
-.settings-section {
-    margin-top: var(--spacing-5);
-    padding-top: var(--spacing-5);
-    border-top: 1px solid var(--color-gray-200);
-}
-
-.settings-section h3 {
-    font-size: var(--font-size-base);
-    font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
-    margin-bottom: var(--spacing-4);
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-2);
-}
-
-.settings-section h3 i {
-    color: var(--color-primary);
-}
-
-.theme-selector {
-    display: flex;
-    gap: var(--spacing-4);
-    flex-wrap: wrap;
-}
-
-.theme-option {
-    cursor: pointer;
-    text-align: center;
-    padding: var(--spacing-3);
-    border-radius: var(--radius-base);
-    transition: all var(--transition-fast);
-    border: 2px solid transparent;
-    min-width: 80px;
-    position: relative;
-}
-
-.theme-option:hover {
-    background: var(--color-gray-50);
-    transform: translateY(-2px);
-}
-
-.theme-option.active {
-    border-color: var(--color-primary);
-    background: var(--color-primary-light);
-    background: rgba(52, 152, 219, 0.1);
-}
-
-.theme-option.active::after {
-    content: '✓';
-    position: absolute;
-    top: var(--spacing-1);
-    right: var(--spacing-1);
-    width: 18px;
-    height: 18px;
-    background: var(--color-primary);
-    color: white;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 12px;
-    font-weight: bold;
-}
-
-.theme-preview {
-    width: 60px;
-    height: 40px;
-    border-radius: var(--radius-sm);
-    margin: 0 auto var(--spacing-2);
-    border: 2px solid var(--color-gray-300);
-    box-shadow: var(--shadow-sm);
-    transition: all var(--transition-fast);
-}
-
-.theme-option:hover .theme-preview {
-    box-shadow: var(--shadow-md);
-    transform: scale(1.05);
-}
-
-/* 主题预览颜色 */
-.theme-preview.ocean {
-    background: linear-gradient(135deg, #3498db 0%, #2c3e50 100%);
-}
-
-.theme-preview.dark {
-    background: linear-gradient(135deg, #4a9eff 0%, #1a1d23 100%);
-}
-
-.theme-preview.forest {
-    background: linear-gradient(135deg, #27ae60 0%, #1e5128 100%);
-}
-
-.theme-name {
-    font-size: var(--font-size-sm);
-    color: var(--text-secondary);
-    display: block;
-    font-weight: var(--font-weight-medium);
-}
-
-.theme-option.active .theme-name {
-    color: var(--color-primary);
-    font-weight: var(--font-weight-semibold);
-}
 </style>

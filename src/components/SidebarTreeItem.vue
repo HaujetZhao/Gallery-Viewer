@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue';
 import { collectAllFiles, getExpandState } from '../models/SmartFolder';
 import { handleDeleteFolder } from '../services/fileOps';
-import { handleFolderClick } from '../services/folderActions';
+import { handleFolderClick, refreshFolderTree } from '../services/folderActions';
 import { afterFolderMutation } from '../services/persistence';
 import { useContextMenuStore } from '../stores/contextMenu';
 import { useFsStore } from '../stores/fs';
@@ -46,6 +46,15 @@ function onContextmenu(e) {
   e.preventDefault();
   e.stopPropagation();
   contextMenu.show(e.clientX, e.clientY, [
+    {
+      label: '刷新',
+      icon: 'fas fa-sync-alt',
+      action: async () => {
+        toast.info(`正在刷新 ${props.folder.name}...`);
+        await refreshFolderTree(props.folder);
+        toast.success(`已刷新 ${props.folder.name}`);
+      },
+    },
     { label: '删除文件夹', icon: 'fas fa-trash-alt', danger: true, disabled: props.isRoot, action: () => handleDeleteFolder(props.folder) },
   ]);
 }
