@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { acquire } from '../services/fileResource';
+import { _setDegraded } from '../utils/browser';
 import { SmartFile } from './SmartFile';
-import { detectMetaChanges, enrichFolder, findFolderByPath, foldersFromRecordMap, folderToRecord, scanFolder, SmartFolder } from './SmartFolder';
+import { detectMetaChanges, enrichFolder, findFolderByPath, foldersFromRecordMap, folderToRecord, scanFolder, SmartFolder, validateFolder } from './SmartFolder';
 
 // integrateScanResult(service)走 markFolderDirty → 用 root store;model 测试不关心 dirty,mock 掉避免 Pinia 耦合。
 vi.mock('../services/persistence', () => ({ markFolderDirty: vi.fn(), afterFolderMutation: vi.fn() }));
@@ -457,5 +458,21 @@ describe('smartFolder detectMetaChanges', () => {
 
     expect(file._meta).toEqual({ size: 100, lastModified: 1 });
     expect(file.md5).toBe('keepmd5'); // 新补 _meta 不清 md5(首次 enrich 场景)
+  });
+});
+
+describe('validateFolder 降级短路', () => {
+  afterEach(() => _setDegraded(false));
+
+  it('降级只读:无真实句柄也恒合法', async () => {
+    _setDegraded(true);
+    const folder = new SmartFolder({ handle: null, name: 'root' });
+    await expect(validateFolder(folder)).resolves.toBe(true);
+  });
+
+  it('fSA:无 handle → 非法', async () => {
+    _setDegraded(false);
+    const folder = new SmartFolder({ handle: null, name: 'root' });
+    await expect(validateFolder(folder)).resolves.toBe(false);
   });
 });

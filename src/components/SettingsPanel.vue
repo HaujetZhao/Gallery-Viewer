@@ -9,6 +9,7 @@ import { useFsStore } from '../stores/fs';
 import { useThemeStore } from '../stores/theme';
 import { useToastStore } from '../stores/uiToast';
 import { useUserSettingsStore } from '../stores/userSettings';
+import { isDegradedFSA } from '../utils/browser';
 import NumberScrubInput from './NumberScrubInput.vue';
 
 const props = defineProps({ modelValue: Boolean });
@@ -368,7 +369,7 @@ async function onClearAll() {
         </div>
 
         <div class="setting-item button-group">
-          <button class="btn-block warning" @click="onRefreshCurrent">
+          <button class="btn-block warning" :disabled="isDegradedFSA()" @click="onRefreshCurrent">
             刷新目录
           </button>
           <button class="btn-block warning" @click="onRedrawCurrent">
@@ -496,6 +497,12 @@ async function onClearAll() {
 
 .btn-block.danger:hover {
     background-color: var(--color-danger-dark);
+}
+
+/* 降级只读模式:写回类按钮置灰不可点 */
+.btn-block:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 .separator {

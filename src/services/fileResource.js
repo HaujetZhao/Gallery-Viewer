@@ -36,7 +36,8 @@ export async function acquire(file, preloaded = null) {
     return entry;
   }
   const p = (async () => {
-    const f = preloaded ?? await file.handle.getFile();
+    // 降级只读:SmartFile.handle 为 null,直接从 file._file 取(不 import getFile 防 fileResource↔SmartFile 循环依赖)。
+    const f = preloaded ?? file._file ?? await file.handle.getFile();
     return makeEntry(f);
   })();
   inflight.set(file, p);

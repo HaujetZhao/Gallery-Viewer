@@ -1,9 +1,10 @@
 import { FileTypes } from '../config/file-types';
 import { CONFIG } from '../config/index';
 import { acquire, peek } from '../services/fileResource';
+import { isDegradedFSA } from '../utils/browser';
 import { runConcurrent } from '../utils/concurrency';
 import { windowsCompareStrings } from '../utils/format';
-import { disposeFile, fileFromSnapshot, fileToSnapshot, SmartFile } from './SmartFile';
+import { disposeFile, fileFromSnapshot, fileToSnapshot, getFile, SmartFile } from './SmartFile';
 
 // SmartFolder:纯数据(handle/parent/name/isVirtual/virtualConfig/files/subFolders/expanded)+ 派生 getter(path/isEmpty)。
 // P3:行为方法函数化(消灭 God Object)。模板读 folder.path/isEmpty/files/subFolders 等——
@@ -22,7 +23,7 @@ function sameNameSet(existingMap, currentEntries) {
 }
 
 export class SmartFolder {
-  constructor({ handle, parent = null, virtualName = null, virtualConfig = null }) {
+  constructor({ handle, parent = null, name = null, virtualName = null, virtualConfig = null }) {
     this.handle = handle;
     this.parent = parent;
 
@@ -36,8 +37,14 @@ export class SmartFolder {
       this.isVirtual = false;
       this.virtualConfig = null;
     }
+    else if (name) {
+      // 降级只读模式:webkitdirectory 无句柄,传 name 建真实目录夹(非虚拟)
+      this.name = name;
+      this.isVirtual = false;
+      this.virtualConfig = null;
+    }
     else {
-      throw new Error('必须提供 handle 或 virtualName');
+      throw new Error('必须提供 handle、name 或 virtualName');
     }
 
     this.files = [];
@@ -226,7 +233,7 @@ export async function enrichFolder(folder, { token } = {}) {
       if (token?.cancelled)
         return null;
       try {
-        const file = await f.handle.getFile();
+        const file = await getFile(f);
         await acquire(f, file); // 建 url(池,不响应式);size/mtime 由 _meta 单源(收齐后批量写)
         return { f, size: file.size, lastModified: file.lastModified };
       }
@@ -257,7 +264,7 @@ export async function detectMetaChanges(folder, { token } = {}) {
       if (token?.cancelled)
         return;
       try {
-        const file = await f.handle.getFile();
+        const file = await getFile(f);
         if (!f._meta) {
           f._meta = { size: file.size, lastModified: file.lastModified };
         }
@@ -275,6 +282,8 @@ export async function detectMetaChanges(folder, { token } = {}) {
 }
 
 export async function validateFolder(folder) {
+  if (isDegradedFSA())
+    return true; // 降级只读:webkitdirectory 无真实句柄权威,恒合法
   if (!folder.handle)
     return false;
   try {
@@ -322,11 +331,11 @@ export async function scanFolder(folder, { trust = false } = {}) {
     throw new Error('scanFolder 需要有效的 handle');
   const dirHandle = folder.handle;
 
-  // ① 现有 files/subFolders 的 name→obj 映射(用于差集)
+  // 现有 files/subFolders 的 name→obj 映射(用于差集)
   const existingFilesMap = new Map(folder.files.map(f => [f.name, f]));
   const existingFoldersMap = new Map(folder.subFolders.map(f => [f.name, f]));
 
-  // ② 单次遍历目录,收齐当前条目(不 IO)
+  // 单次遍历目录,收齐当前条目(不 IO)
   const currentFileEntries = [];
   const currentDirEntries = [];
   for await (const entry of dirHandle.values()) {
@@ -343,7 +352,32 @@ export async function scanFolder(folder, { trust = false } = {}) {
     }
   }
 
-  // ③ 信任短路:文件名 + 目录名集合都与缓存一致 → 零 IO,result.files 直接引用 folder.files
+  return diffEntries({
+    folder,
+    existingFilesMap,
+    existingFoldersMap,
+    currentFileEntries,
+    currentDirEntries,
+    trust,
+    makeFile: e => new SmartFile({ handle: e, parent: folder }),
+    makeFolder: e => new SmartFolder({ handle: e, parent: folder }),
+  });
+}
+
+// 差集核心(③-⑦):纯名字比对 + 信任短路 + 排序。与数据源无关——
+// FSA 的 currentEntries 是 FileSystemHandle(scanFolder 用),降级只读是 File(scanDegradedFolder 用)。
+// 入参 currentFileEntries/currentDirEntries 需有 .name(智能对象/File 都有)。纯函数,不改 folder 入参。
+export function diffEntries({
+  folder,
+  existingFilesMap,
+  existingFoldersMap,
+  currentFileEntries,
+  currentDirEntries,
+  trust,
+  makeFile,
+  makeFolder,
+}) {
+  // 信任短路:文件名 + 目录名集合都与缓存一致 → 零 IO,result.files 直接引用 folder.files
   if (trust && sameNameSet(existingFilesMap, currentFileEntries) && sameNameSet(existingFoldersMap, currentDirEntries)) {
     return {
       files: folder.files,
@@ -360,7 +394,7 @@ export async function scanFolder(folder, { trust = false } = {}) {
   const newFiles = [];
   const newSubFolders = [];
 
-  // ④ 文件差集(纯名字比对,零 IO):既有信任保留,新建 SmartFile 不 acquire/getFile
+  // 文件差集(纯名字比对,零 IO):既有信任保留,新建 SmartFile 不 acquire/getFile
   for (const entry of currentFileEntries) {
     const existing = existingFilesMap.get(entry.name);
     if (existing) {
@@ -368,13 +402,13 @@ export async function scanFolder(folder, { trust = false } = {}) {
       existingFilesMap.delete(entry.name);
     }
     else {
-      const fileObj = new SmartFile({ handle: entry, parent: folder });
+      const fileObj = makeFile(entry);
       filesToKeep.push(fileObj);
       newFiles.push(fileObj);
     }
   }
 
-  // ⑤ 目录差集(无 IO):既有信任保留;新建 SmartFolder(纯函数,不写外部状态)
+  // 目录差集(无 IO):既有信任保留;新建 SmartFolder(纯函数,不写外部状态)
   for (const entry of currentDirEntries) {
     const existing = existingFoldersMap.get(entry.name);
     if (existing) {
@@ -382,17 +416,17 @@ export async function scanFolder(folder, { trust = false } = {}) {
       existingFoldersMap.delete(entry.name);
     }
     else {
-      const subFolderData = new SmartFolder({ handle: entry, parent: folder });
+      const subFolderData = makeFolder(entry);
       foldersToKeep.push(subFolderData);
       newSubFolders.push(subFolderData);
     }
   }
 
-  // ⑥ 删除项 = 差集后还在 Map 里的(目录已不存在)。不 dispose,交给 integrateScanResult。
+  // 删除项 = 差集后还在 Map 里的(目录已不存在)。不 dispose,交给 integrateScanResult。
   const removedFiles = [...existingFilesMap.values()];
   const removedFolders = [...existingFoldersMap.values()];
 
-  // ⑦ 排序(Windows 风格)
+  // 排序(Windows 风格)
   filesToKeep.sort((a, b) => windowsCompareStrings(a.name, b.name));
   foldersToKeep.sort((a, b) => windowsCompareStrings(a.name, b.name));
 

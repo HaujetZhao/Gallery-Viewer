@@ -19,3 +19,13 @@ export function getBrowserName() {
 export function isFileSystemAccessSupported() {
   return typeof window.showDirectoryPicker === 'function';
 }
+
+// 降级只读模式标志(webkitdirectory 建树,无持久句柄)。模块级单例,sync 可读。
+// 由 folderActions 的降级入口在会话开/关时设/清。UI 置灰、history 总闸、model 短路都读它。
+let _degraded = false;
+export function isDegradedFSA() {
+  return _degraded;
+}
+export function _setDegraded(v) {
+  _degraded = v;
+}

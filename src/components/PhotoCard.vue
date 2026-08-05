@@ -11,6 +11,7 @@ import { useFavoritesStore } from '../stores/favorites';
 import { useModalStore } from '../stores/modal';
 import { useNotesStore } from '../stores/notes';
 import { useUserSettingsStore } from '../stores/userSettings';
+import { isDegradedFSA } from '../utils/browser';
 import { formatDate, formatDuration, formatFileSize } from '../utils/format';
 import { computeVideoExpand } from '../utils/gallery-layout';
 import RenameInput from './RenameInput.vue';
@@ -306,6 +307,10 @@ function onContextmenu(e) {
 }
 
 function onDragstart(e) {
+  if (isDegradedFSA()) {
+    e.preventDefault();
+    return;
+  }
   // x-photo-path 供内部移动;uri-list/plain/DownloadURL 供拖到外部。
   // blobUrl 可能 null(fromSnapshot 重建懒建);dragstart 同步不能 await,此时仅内部移动可用,外部 MIME 跳过。
   const dt = e.dataTransfer;
@@ -345,7 +350,7 @@ onBeforeUnmount(() => {
     tabindex="0"
     role="button"
     :aria-label="`查看 ${file.name}`"
-    :draggable="!editing"
+    :draggable="!editing && !isDegradedFSA()"
     @click="openPreview"
     @keydown.enter="openPreview"
     @keydown.space.prevent="openPreview"

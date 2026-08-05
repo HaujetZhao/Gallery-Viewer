@@ -6,8 +6,9 @@
 import { acquire, destroy, peek } from '../services/fileResource';
 
 export class SmartFile {
-  constructor({ handle, parent = null }) {
-    this.handle = handle;
+  constructor({ handle, parent = null, file = null }) {
+    this.handle = handle; // FSA 下为 FileSystemFileHandle;降级只读下为 null
+    this._file = file; // 降级只读模式直接持 File(webkitdirectory);FSA 下恒 null
     this.parent = parent;
     this._meta = null; // 快照槽 { size, lastModified }(fromSnapshot 用)
     this.md5 = null; // 懒加载,外部计算后赋值
@@ -21,7 +22,7 @@ export class SmartFile {
   }
 
   get name() {
-    return this.handle.name;
+    return this.handle?.name ?? this._file?.name ?? '';
   }
 
   // _meta 是 size/mtime 单一数据源(只读 _meta,响应式字段)。
@@ -128,6 +129,16 @@ export class SmartFile {
 
 // ===== 模块级纯算法(序列化/快照/懒建/释放)=====
 
+// 读 File 的唯一落点。FSA:handle.getFile();降级只读:直接返 _file。peek 命中复用池 File(不二次 IO)。
+export async function getFile(file) {
+  const entry = peek(file);
+  if (entry?.file)
+    return entry.file;
+  if (file._file)
+    return file._file; // 降级只读模式(FSA 下恒 null)
+  return file.handle.getFile();
+}
+
 // 懒建 blobUrl(池里无 → getFile + 建 url)。enrich 正常路径已 acquire,listFolder 新建/fromSnapshot 重建需懒。
 // peek 短路:enrich 已 acquire 则直接复用。acquire 处统一写 _meta(单源)。
 export async function ensureBlobUrl(file) {
@@ -172,7 +183,7 @@ export async function detectFileChange(file) {
   if (!file?.handle)
     return false;
   try {
-    const raw = peek(file)?.file ?? await file.handle.getFile();
+    const raw = await getFile(file);
     if (!file._meta) {
       file._meta = { size: raw.size, lastModified: raw.lastModified };
       return false;

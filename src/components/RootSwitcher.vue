@@ -1,8 +1,9 @@
 <script setup>
 import { computed, onBeforeUnmount, ref } from 'vue';
 import { useOverlay } from '../composables/useOverlay';
-import { openFolderPicker, switchToRoot } from '../services/folderActions';
+import { openDirectory, switchToRoot } from '../services/folderActions';
 import * as handleStore from '../services/handleStore';
+import { flushPendingPersist } from '../services/persistence';
 import { clearScan } from '../services/scanCache';
 import { useContextMenuStore } from '../stores/contextMenu';
 import { useFsStore } from '../stores/fs';
@@ -31,7 +32,7 @@ async function onSwitch(id) {
 }
 async function onOpenNew() {
   close();
-  await openFolderPicker();
+  await openDirectory();
 }
 async function onRemove(id) {
   await handleStore.remove(id);
@@ -50,7 +51,21 @@ function onHeaderContextmenu(e) {
   e.stopPropagation();
   contextMenu.show(e.clientX, e.clientY, [
     { label: '打开新文件夹', icon: 'fas fa-folder-plus', action: onOpenNew },
+    { divider: true },
+    { label: '关闭当前文件夹', icon: 'fas fa-times', action: closeCurrent },
   ]);
+}
+
+// 关闭当前文件夹:清 fs 运行时状态回启动页,**不删 roots/scan 记录**(下次打开同目录仍秒切)。
+// 与 onRemove(handleStore.remove + clearScan + rootStore.remove 彻底移除)不同,关闭仅停止显示。
+async function closeCurrent() {
+  await flushPendingPersist(); // 保未落盘改动(不删 scan 记录)
+  fsStore.rootHandle = null;
+  fsStore.rootFolder = null;
+  fsStore.currentFolder = null; // → App v-if="!fsStore.currentFolder" 回启动页
+  fsStore.allMediaFolder.files = [];
+  rootStore.currentRootId = null; // 根选择器回到"未选择"(roots 记录仍在,可再打开)
+  close();
 }
 
 const dropdownEl = ref(null);

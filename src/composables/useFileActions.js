@@ -2,6 +2,7 @@ import { useFavoritesStore } from '../stores/favorites';
 import { useHistoryStore } from '../stores/history';
 import { usePropertiesStore } from '../stores/properties';
 import { useToastStore } from '../stores/uiToast';
+import { isDegradedFSA } from '../utils/browser';
 
 // 统一删除入口(右键菜单 / Delete 键共用):移入 .trash 回收站,可 Ctrl+Z 撤销。
 // 与右键删除一致的 toast 文案,键盘(见 App.vue Delete 分支)复用避免重复。
@@ -43,9 +44,9 @@ export function useFileActions(onRename) {
       // R16-b:备注(打开属性面板并直达备注栏)。
       { label: '备注', icon: 'fas fa-edit', action: () => properties.open(file, { focusNote: true }) },
       { label: '属性', icon: 'fas fa-info-circle', action: () => properties.open(file) },
-      { label: '重命名', icon: 'fas fa-i-cursor', action: () => onRename(file) },
+      { label: '重命名', icon: 'fas fa-i-cursor', disabled: isDegradedFSA(), action: () => onRename(file) },
       { divider: true },
-      { label: '删除', icon: 'fas fa-trash-alt', danger: true, action: () => onDelete(file) },
+      { label: '删除', icon: 'fas fa-trash-alt', danger: true, disabled: isDegradedFSA(), action: () => onDelete(file) },
     ];
   }
 

@@ -1,10 +1,11 @@
 import { triggerRedraw } from '../composables/useThumbnail';
-import { ensureBlobUrl } from '../models/SmartFile';
+import { ensureBlobUrl, getFile } from '../models/SmartFile';
 import { useFavoritesStore } from '../stores/favorites';
 import { useFsStore } from '../stores/fs';
 import { useNotesStore } from '../stores/notes';
 import { useToastStore } from '../stores/uiToast';
 import { useUserSettingsStore } from '../stores/userSettings';
+import { isDegradedFSA } from '../utils/browser';
 // 缩略图生成主体。搬自源码 js/thumbnails.js 的 generateAndShowThumbnail,去 observer/队列/DOM 耦合。
 // 接收 (file: SmartFile, canvas: HTMLCanvasElement, targetSize) → 查缓存→命中画/未命中生成存→画到 canvas。
 // IntersectionObserver + 并发队列留到阶段 5 gallery 的 useThumbnail composable。
@@ -16,6 +17,7 @@ import { peek } from './fileResource';
 import { refreshFolder } from './folderActions';
 import { afterFolderMutation } from './persistence';
 import { drawBlobToCanvas, extractAudioDuration, getThumbnailStrategy } from './thumbnail-strategies';
+import { collectDegradedMd5 } from './webkitDirectory';
 
 // drawBlobToCanvas(缓存命中 + worker 回传 blob 共用)从 thumbnail-strategies.js 导入。
 
@@ -26,8 +28,10 @@ export async function loadCardMetadata(file) {
   await ensureBlobUrl(file); // listFolder 零 getFile 后 blobUrl=null,懒 acquire(复用 enrich 池)
   if (!file.md5) {
     // 内容寻址缓存键 + favorites/notes 索引键。前 2MB,chunkSize 锁死(旧 IDB key 兼容)。
-    const raw = peek(file)?.file ?? await file.handle.getFile();
+    const raw = await getFile(file);
     file.md5 = await calculateMD5(raw);
+    if (isDegradedFSA())
+      collectDegradedMd5(file.path, file.md5); // 降级:增量收集 → 目录指纹快照(免下次重算)
     // md5 随快照持久化 → 切根/重载零重算;全局收藏/备注筛选也覆盖未进视窗的文件。幂等(null→有值)。
     afterFolderMutation(file.parent);
   }

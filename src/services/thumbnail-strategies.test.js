@@ -21,10 +21,15 @@ vi.mock('./fileResource', () => ({
 }));
 
 // gif 策略靠 ensureBlobUrl 取得动画 blobUrl;桩掉,每测试改返回值。
+// getFile 用 importOriginal 保留真实实现(内部 peek→holder 控制命中,与旧 handle.getFile fallback 等价)。
 const ensureBlobUrlHolder = vi.hoisted(() => ({ returns: null }));
-vi.mock('../models/SmartFile', () => ({
-  ensureBlobUrl: vi.fn(() => ensureBlobUrlHolder.returns),
-}));
+vi.mock('../models/SmartFile', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    ensureBlobUrl: vi.fn(() => ensureBlobUrlHolder.returns),
+  };
+});
 
 // worker 池:桩 isPoolAvailable/renderInWorker/renderBitmapInWorker。
 // renderInWorker 收 File(image 路径),renderBitmapInWorker 收 ImageBitmap(video 抓帧路径),都回 jpeg blob。

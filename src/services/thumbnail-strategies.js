@@ -10,10 +10,9 @@
 // → cover-fit drawImage + convertToBlob → 小 jpeg blob 回传 → 主线程把 blob 画上可见 canvas(~ms)。
 // 全分辨率 bitmap 只在 worker 堆存活,主线程零参与(不实例化/不 GC),治感应滚动卡顿。
 import { FileTypes } from '../config/file-types';
-import { ensureBlobUrl } from '../models/SmartFile';
+import { ensureBlobUrl, getFile } from '../models/SmartFile';
 import { fitOriginalRatioParams } from '../utils/coverFit';
 import { saveFileMeta } from './fileMeta';
-import { peek } from './fileResource';
 import { isPoolAvailable, renderBitmapInWorker, renderInWorker } from './thumbnail-worker-pool';
 
 // 把小 jpeg blob 画到 canvas(缓存命中 + worker 回传 blob 共用)。1:1 不缩放,blob 本就是 targetSize 方图。
@@ -57,7 +56,7 @@ export const ThumbnailStrategies = {
     generateThumbnail: async (element, fileData, targetSize, onDrawn) => {
       // File 来源:复用池里 ensureBlobUrl/peek 已 acquire 的 File(thumbnail.js md5 计算也这么复用),
       // peek 未命中才 fallback handle.getFile()——不二次 IO。
-      const file = peek(fileData)?.file ?? await fileData.handle.getFile();
+      const file = await getFile(fileData);
 
       // 整条(createImageBitmap 解码 + cover-fit drawImage + convertToBlob)丢进 worker 池,主线程零参与。
       // 全分辨率 bitmap 只在 worker 堆存活,主线程不实例化/不 GC → 治感应滚动卡顿(50MP 图主线程降采样)。
@@ -102,7 +101,7 @@ export const ThumbnailStrategies = {
       // 与 image 策略一致:peek 池里 File ?? handle.getFile() 兜底,不依赖 blobUrl。
       // 切根走 fileFromSnapshot 秒重建后池空、blobUrl=null,fetch(null) 会静默注入空/非 SVG
       // 内容 → 空白缩略图(浏览器无报错)。用 File.text() 直接读,无需 blobUrl,也不污染池。
-      const file = peek(fileData)?.file ?? await fileData.handle.getFile();
+      const file = await getFile(fileData);
       element.innerHTML = await file.text();
     },
 
@@ -344,7 +343,7 @@ export function extractAudioDuration(fileData) {
 // 从音频文件(MP3 ID3v2 APIC 帧)提取封面图片。
 export async function extractAudioCover(fileData) {
   try {
-    const file = await fileData.handle.getFile();
+    const file = await getFile(fileData);
     const maxSize = Math.min(file.size, 5 * 1024 * 1024); // 只读前 5MB
     const arrayBuffer = await file.slice(0, maxSize).arrayBuffer();
     const uint8Array = new Uint8Array(arrayBuffer);

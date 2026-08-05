@@ -38,6 +38,9 @@ useOverlay({
   outsideClick: true,
   closeOnScroll: true,
 });
+
+// 暴露菜单根元素,供 App 排除区(鼠标在右键菜单上不触发感应滚动)。
+defineExpose({ menuEl });
 </script>
 
 <template>

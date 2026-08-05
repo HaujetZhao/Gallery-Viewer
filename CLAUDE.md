@@ -34,7 +34,7 @@ src/
 ├── App.vue              # 根布局(启动页/主界面 + 全局浮层 + 启动恢复多根)
 ├── config/              # CONFIG + UserSettings、FileTypes(纯数据)
 ├── models/              # SmartFile/SmartFolder(纯数据类+派生 getter)+ 同文件模块函数(scanFolder/enrichFolder/record/CRUD/validate,P3 函数化)
-├── services/            # fileResource(资源池) / persistence+scanIntegration+folderActions(T03 拆自 filesystem) / handleStore(多根句柄) / scanCache(快照) / thumbnail+thumbnail-strategies+thumbnail-worker-pool(createImageBitmap) / fileMeta+userData(md5 索引门面) / metadata / db / recovery / operations(.trash) / fileOps / exif / gps / id3-parser
+├── services/            # fileResource(资源池) / persistence+scanIntegration+folderActions(T03 拆自 filesystem) / handleStore(多根句柄) / scanCache(快照) / webkitDirectory(降级只读建树/扫描/指纹) / thumbnail+thumbnail-strategies+thumbnail-worker-pool(createImageBitmap) / fileMeta+userData(md5 索引门面) / metadata / db / recovery / operations(.trash) / fileOps / exif / gps / id3-parser
 ├── stores/              # Pinia: fs(含 dirtyFolders) / root(多根元数据) / favorites+notes(md5 聚合) / modal / theme / userSettings / history / contextMenu / confirm / properties / uiToast
 ├── composables/         # useThumbnail / useModal / useSidebar(边缘拖拽调宽) / useScrollZone / useGallerySearch / useOverlay(浮层 dismiss) / useFileActions / useMediaActions / useHoveredFile / useStorageEstimate
 ├── utils/               # concurrency(runConcurrent+cancelToken) / gallery-layout(虚拟化布局纯函数) / format / file(calculateMD5+md5.worker) / browser / coverFit / mediaSession
@@ -76,6 +76,17 @@ docs/superpowers/        # specs(设计 + 实现记录)+ plans(实施计划)
 
 打开过的根文件夹记录在 IDB，可在 Sidebar 顶部 RootSwitcher 切换 / 移除 / 打开新。切换用 `scanCache` 缓存的扫描快照（`foldersFromRecordMap` 秒重建，零 IO）显示；后台 `rootEagerScan` 只扫 root 一层（顶层增删即时），深层 `handleFolderClick` 按需 trust 校验（名字集合一致零 IO）；变更（`dirtyFolders`）才 `schedulePersist` 落盘，切根前 `flushPendingPersist` 保旧根。运行时仍单根（一次一个 currentRoot）。详见 [多文件夹设计](docs/superpowers/specs/2026-07-28-多文件夹管理-design.md) + [round2 扫描优化](docs/superpowers/specs/2026-07-28-架构重构-round2-精修与扫描优化.md)。
 
+## 降级只读模式（非 Chromium 浏览器）
+
+不支持 File System Access API 的浏览器（Safari/Firefox，`isFileSystemAccessSupported()` 假）走降级只读：入口分流 `openDirectory()`（[folderActions.js](src/services/folderActions.js)）→ `<input webkitdirectory>` 一次选目录 → [webkitDirectory.js](src/services/webkitDirectory.js) 用 `File.webkitRelativePath` 纯内存重建整棵树（零 IO）。**能力退化为只读**：写回类（重命名/移动/删除/回收站/刷新落盘/多根切换）全部禁用置灰；缩略图/EXIF/收藏/备注仍按 md5 内容寻址复用。
+
+- **标志**：`isDegradedFSA()`（[browser.js](src/utils/browser.js) 模块级单例，`_setDegraded` 由降级入口设）。UI 置灰、`history.executeOperation` 总闸、`validateFolder` 短路都读它。
+- **读 File 统一入口**：`getFile(file)`（[SmartFile.js](src/models/SmartFile.js)）= `peek(file)?.file ?? file._file ?? file.handle.getFile()`，全库收敛（降级 SmartFile 直接持 `_file`）。fileResource 池仍以 SmartFile 为 key。
+- **差集复用**：`scanFolder` 提取公共 `diffEntries`（[SmartFolder.js](src/models/SmartFolder.js)），`scanDegradedFolder` 以 FileList 前缀过滤复用，核心算法不动。
+- **目录指纹秒开**：`computeDirectoryFingerprint`（spark-md5 哈希 `path|size|lastModified`）→ 存「指纹→md5快照」到 `scans`(key `degraded:<fp>`)；重选同目录命中 → 建树预填 md5 免重算；`loadCardMetadata` 降级增量收集落快照。
+- **零落盘天然成立**：降级不写 roots/handleStore → `currentRootId` 恒 null → `markFolderDirty` 短路（[persistence.js](src/services/persistence.js)）→ `dirtyFolders` 恒空。**不改 persistence.js**。
+- 降级不持久化多根（每次会话重选单目录）；刷新 = 重选目录；启动不恢复历史根（[App.vue](src/App.vue) `tryRestoreFolder` 短路）。
+
 ## 后续待办
 
 见 [后续待办.md](后续待办.md) + [改造路线图.md](改造路线图.md)。每轮验收后追加。
@@ -88,6 +99,7 @@ docs/superpowers/        # specs(设计 + 实现记录)+ plans(实施计划)
 - 架构重构（资源层分离 + 纯 model + 纯列表 scan）：`docs/superpowers/specs/2026-07-28-架构重构-资源层分离与纯model-design.md` + 进度记录 + round2（虚拟化 / 扫描优化）+ round3（性能 polish）+ [round4 第一性原理审查](docs/superpowers/specs/2026-07-29-架构重构-round4-第一性原理审查与model函数化.md) 及各实现记录
 - 存储三分（md5 三分 + rootId 收口）：`docs/superpowers/specs/2026-08-02-批次3实现总结-卡片样式与存储三分.md` + 交互批次3 `2026-08-03-批次3实现总结-R16-R17-R19.md`
 - EXIF 拍摄时间 + GPS 落盘（图片优先拍摄时间）：`docs/superpowers/specs/2026-08-05-EXIF拍摄时间与GPS落盘-design.md`
+- 降级只读模式（非 Chromium 浏览器 webkitdirectory）：见上方「降级只读模式」节 + 实施计划 `docs/superpowers/plans/`
 - 改造路线图：`docs/改造路线图.md`
 - 各阶段实施计划：`docs/superpowers/plans/`
 - 源工程（只读参考）：`D:\repos\相册浏览器`（原生 JS 原版）

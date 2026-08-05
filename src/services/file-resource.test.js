@@ -50,6 +50,14 @@ describe('fileResource acquire', () => {
     destroy(f);
     expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1); // 一个 url → 一次 revoke(无泄漏)
   });
+
+  it('降级只读(handle null):从 file._file 取,不崩(修 acquire 撞 null handle)', async () => {
+    const rawFile = new File(['x'], 'a.jpg');
+    const f = { handle: null, _file: rawFile }; // 降级 SmartFile:无 handle,持 _file
+    const entry = await acquire(f);
+    expect(entry.file).toBe(rawFile);
+    expect(entry.url).toBe('blob:fake');
+  });
 });
 
 describe('fileResource peek / destroy', () => {

@@ -14,7 +14,7 @@ import { useGallerySearch } from './composables/useGallerySearch';
 import { hoveredFile, requestRename } from './composables/useHoveredFile';
 import { useScrollZone } from './composables/useScrollZone';
 import { initDB } from './services/db';
-import { openFolderPicker, switchToRoot } from './services/folderActions';
+import { openDirectory, switchToRoot } from './services/folderActions';
 import * as handleStore from './services/handleStore';
 import { flushPendingPersist } from './services/persistence';
 import { useFavoritesStore } from './stores/favorites';
@@ -26,8 +26,7 @@ import { useRootStore } from './stores/root';
 import { useThemeStore } from './stores/theme';
 import { useToastStore } from './stores/uiToast';
 import { useUserSettingsStore } from './stores/userSettings';
-import { isFileSystemAccessSupported } from './utils/browser';
-import { formatRelativeTime } from './utils/format';
+import { isDegradedFSA, isFileSystemAccessSupported } from './utils/browser';
 
 const themeStore = useThemeStore();
 const fsStore = useFsStore();
@@ -72,7 +71,10 @@ const restorableHandle = ref(null);
 const settingsPanelEl = ref(null); // SettingsPanel 组件 ref;面板根经 defineExpose 暴露
 // 设置面板根元素(面板 v-if 关闭时为 null → computed 返回 null,排除区跳过)。hover 面板时不触发边缘感应滚动。
 const settingsPanelRoot = computed(() => settingsPanelEl.value?.panelEl);
-useScrollZone([sidebarEl, settingsBtnEl, filterEl, settingsPanelRoot]);
+const contextMenuEl = ref(null); // ContextMenu 组件 ref;菜单根经 defineExpose 暴露
+// 右键菜单根元素(菜单 v-if 隐藏时为 null → 排除区跳过)。鼠标在右键菜单上不触发边缘感应滚动。
+const contextMenuRoot = computed(() => contextMenuEl.value?.menuEl);
+useScrollZone([sidebarEl, settingsBtnEl, filterEl, settingsPanelRoot, contextMenuRoot]);
 
 onMounted(async () => {
   themeStore.init();
@@ -95,6 +97,9 @@ onBeforeUnmount(() => {
 
 // 启动:加载历史 → 取最近 → 权限 granted 自动恢复;否则启动页显示"打开上次"(requestPermission 需用户手势)。
 async function tryRestoreFolder() {
+  // 降级浏览器(Safari/Firefox,无 showDirectoryPicker)无持久句柄可恢复 → 跳过历史根恢复。
+  if (!isFileSystemAccessSupported())
+    return;
   try {
     await rootStore.loadFromHandleStore();
     const last = await handleStore.getLastUsed();
@@ -123,7 +128,7 @@ async function restoreLast() {
 }
 
 async function open() {
-  await openFolderPicker();
+  await openDirectory();
   restorableHandle.value = null;
 }
 function onKeydown(e) {
@@ -162,6 +167,8 @@ function onKeydown(e) {
   // F2:重命名。modal 打开 → 打开属性面板直达文件名 inline 编辑(方案 A);
   // modal 未开 → 重命名 hover 的卡片。输入框聚焦已在上方 return。
   if (!isCtrl && key === 'f2') {
+    if (isDegradedFSA())
+      return;
     if (modal.isOpen && modal.currentFile) {
       e.preventDefault();
       properties.open(modal.currentFile, { focusRename: true });
@@ -175,6 +182,8 @@ function onKeydown(e) {
   // Delete:删除。modal 打开 → 删当前大图并推进(末张则关闭);否则删 hover 的卡片。
   // 与右键删除同走 deleteFileWithToast → .trash,可 Ctrl+Z 撤销。输入框聚焦已在上方 return。
   if (!isCtrl && key === 'delete') {
+    if (isDegradedFSA())
+      return;
     const f = modal.isOpen ? modal.currentFile : hoveredFile.value;
     if (f) {
       e.preventDefault();
@@ -207,7 +216,7 @@ function onKeydown(e) {
   }
   else if (isCtrl && key === 'z') {
     e.preventDefault();
-    if (!history.canUndo)
+    if (isDegradedFSA() || !history.canUndo)
       return;
     history
       .undoLastOperation()
@@ -261,25 +270,6 @@ function onVisibilityChange() {
           <div v-if="restorableHandle" class="restore-card" @click.stop="restoreLast">
             <i class="fas fa-folder-open" />
             <span>打开上次:{{ restorableHandle.name }}</span>
-          </div>
-          <!-- 历史文件夹列表 -->
-          <div v-if="rootStore.roots.length" class="root-history">
-            <div
-              v-for="r in rootStore.roots"
-              :key="r.id"
-              class="root-history-item"
-              @click="switchToRoot(r.id)"
-            >
-              <i class="fas fa-folder" />
-              <div class="r-info">
-                <div class="r-name">
-                  {{ r.name }}
-                </div>
-                <div class="r-meta">
-                  {{ r.fileCount || 0 }} 文件 · {{ formatRelativeTime(r.lastUsed) }}
-                </div>
-              </div>
-            </div>
           </div>
         </div>
         <div class="footer">
@@ -338,7 +328,7 @@ function onVisibilityChange() {
     <MediaModal />
     <Toast />
     <ConfirmDialog />
-    <ContextMenu />
+    <ContextMenu ref="contextMenuEl" />
     <PropertiesPanel />
   </div>
 </template>
@@ -363,40 +353,6 @@ function onVisibilityChange() {
   background-color: var(--bg-tertiary);
   transform: translateY(-2px);
 }
-.root-history {
-  max-width: 360px;
-  margin: 12px auto 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.root-history-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
-  border: 1px solid var(--color-gray-200);
-  border-radius: var(--radius-lg);
-  cursor: pointer;
-  background: var(--bg-secondary);
-  transition: all var(--transition-fast) var(--ease-out);
-}
-.root-history-item:hover {
-  border-color: var(--color-primary);
-  transform: translateY(-1px);
-}
-.root-history-item .r-info {
-  flex: 1;
-  min-width: 0;
-}
-.r-name {
-  font-size: 14px;
-}
-.r-meta {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
 /* ===== 启动页(原 components.css) ===== */
 #hint {
     flex: 1;

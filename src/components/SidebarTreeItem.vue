@@ -8,6 +8,7 @@ import { useContextMenuStore } from '../stores/contextMenu';
 import { useFsStore } from '../stores/fs';
 import { useHistoryStore } from '../stores/history';
 import { useToastStore } from '../stores/uiToast';
+import { isDegradedFSA } from '../utils/browser';
 
 defineOptions({ name: 'SidebarTreeItem' });
 
@@ -49,13 +50,14 @@ function onContextmenu(e) {
     {
       label: '刷新',
       icon: 'fas fa-sync-alt',
+      disabled: isDegradedFSA(),
       action: async () => {
         toast.info(`正在刷新 ${props.folder.name}...`);
         await refreshFolderTree(props.folder);
         toast.success(`已刷新 ${props.folder.name}`);
       },
     },
-    { label: '删除文件夹', icon: 'fas fa-trash-alt', danger: true, disabled: props.isRoot, action: () => handleDeleteFolder(props.folder) },
+    { label: '删除文件夹', icon: 'fas fa-trash-alt', danger: true, disabled: props.isRoot || isDegradedFSA(), action: () => handleDeleteFolder(props.folder) },
   ]);
 }
 
@@ -69,6 +71,8 @@ function onDragleave() {
 async function onDrop(e) {
   e.preventDefault();
   dragOver.value = false;
+  if (isDegradedFSA())
+    return; // 降级只读:不允许拖拽移动
   const path = e.dataTransfer.getData('application/x-photo-path');
   if (!path)
     return;

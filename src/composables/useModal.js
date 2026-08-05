@@ -6,7 +6,7 @@
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { FileTypes } from '../config/file-types';
 import { CONFIG } from '../config/index';
-import { peek } from '../services/fileResource';
+import { getFile } from '../models/SmartFile';
 import { useModalStore } from '../stores/modal';
 import { usePropertiesStore } from '../stores/properties';
 import { convertToPngBlob } from '../utils/file';
@@ -314,7 +314,7 @@ export function useModal(modalElRef, contentElRef, mediaElRef) {
     }
     try {
       // Modal 已 ensureBlobUrl,peek 有 File → 复用,省一次 getFile
-      const raw = peek(file)?.file ?? await file.handle.getFile();
+      const raw = await getFile(file);
       const targetBlob = raw.type === 'image/png' ? raw : await convertToPngBlob(file.blobUrl);
       if (!targetBlob)
         throw new Error('无法生成图片数据');

@@ -1,5 +1,7 @@
 import { createPinia, setActivePinia } from 'pinia';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { _setDegraded } from '../utils/browser';
+import { useFsStore } from './fs';
 import { useHistoryStore } from './history';
 
 // history.js import afterFolderMutation from persistence;mock 掉避免真 timer + 隔离落盘断言。
@@ -49,5 +51,28 @@ describe('history undoLastOperation', () => {
   it('空栈 → undo 抛错', async () => {
     const history = useHistoryStore();
     await expect(history.undoLastOperation()).rejects.toThrow();
+  });
+});
+
+describe('executeOperation 降级总闸', () => {
+  afterEach(() => _setDegraded(false));
+
+  it('降级 + 无根句柄 → 抛错,不执行操作不入栈', async () => {
+    _setDegraded(true);
+    useFsStore().rootHandle = null;
+    const history = useHistoryStore();
+    const op = { execute: vi.fn(async () => {}), getAffectedFolders: () => [] };
+    await expect(history.executeOperation(op)).rejects.toThrow('只读模式');
+    expect(op.execute).not.toHaveBeenCalled();
+    expect(history.stack.length).toBe(0);
+  });
+
+  it('降级但有根句柄(边缘)→ 仍放行(总闸判定 rootHandle 缺失)', async () => {
+    _setDegraded(true);
+    useFsStore().rootHandle = { name: 'root' };
+    const history = useHistoryStore();
+    const op = { execute: vi.fn(async () => {}), getAffectedFolders: () => [] };
+    await history.executeOperation(op);
+    expect(op.execute).toHaveBeenCalled();
   });
 });

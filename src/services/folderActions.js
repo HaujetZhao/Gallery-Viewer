@@ -3,13 +3,23 @@ import { collectAllFiles, createFolder, detectMetaChanges, enrichFolder, folders
 import { useFsStore } from '../stores/fs';
 import { useRootStore } from '../stores/root';
 import { useToastStore } from '../stores/uiToast';
-import { isFileSystemAccessSupported } from '../utils/browser';
+import { _setDegraded, isDegradedFSA, isFileSystemAccessSupported } from '../utils/browser';
 import { makeCancelToken, runConcurrent } from '../utils/concurrency';
+import { kvGet } from './db';
 import * as handleStore from './handleStore';
 import { cancelPendingPersist, flushPendingPersist, markFolderDirty, persistIfDirty, schedulePersist } from './persistence';
 import { handleFolderNotFound } from './recovery';
 import { loadScan } from './scanCache';
 import { integrateScanResult, resetFoldersData } from './scanIntegration';
+import {
+  clearDegradedSnapshotSession,
+  computeDirectoryFingerprint,
+  createDegradedRootFromFileList,
+  createDirectoryInput,
+  scanDegradedFolder,
+  setDegradedSnapshot,
+  startDegradedSnapshotSession,
+} from './webkitDirectory';
 
 // 文件夹 CRUD / 编排 / 入口流程:init / picker / switch / load / reload / click。
 
@@ -57,12 +67,18 @@ async function scanAndPersist(id) {
 // R2:切根秒显快照后,后台递归整树做名字集合校验(trust 一致零 IO),变了的对新增文件 enrich。
 // 不再只扫 root 一层——深层磁盘增删也即时拾取(不点开也反映)。复用 scanAndPersist(全树 + persistIfDirty)。
 
+// 双模式统一入口:支持 FSA → 完整读写;否则降级只读(webkitdirectory)。
+export async function openDirectory() {
+  if (!isFileSystemAccessSupported())
+    return openDegradedDirectoryPicker();
+  return openFolderPicker();
+}
+
 // 打开新文件夹(picker)。已保存(handleStore 命中)→ 复用 switchToRoot 秒显+toast,不重建;否则新建扫+记录+切换。
+// 仅 FSA 路径;降级由 openDirectory 分流走 openDegradedDirectoryPicker。
 export async function openFolderPicker() {
-  if (!isFileSystemAccessSupported()) {
-    alert('浏览器不支持文件系统访问 API,请使用 Chrome / Edge / Opera(86+)');
-    return null;
-  }
+  if (!isFileSystemAccessSupported())
+    return null; // 防直接调用(正常已被 openDirectory 分流)
   const toast = useToastStore();
   try {
     const handle = await window.showDirectoryPicker({
@@ -91,8 +107,44 @@ export async function openFolderPicker() {
   }
 }
 
+// 降级只读:webkitdirectory 选单目录 → FileList 建整棵树(零 IO)。无句柄 → 不落 roots、不调 handleStore;
+// `_setDegraded(true)` 切到只读语义(UI 置灰写回 + history 总闸 + validateFolder 短路)。
+async function openDegradedDirectoryPicker() {
+  const toast = useToastStore();
+  const input = createDirectoryInput();
+  const files = await new Promise((resolve) => {
+    input.onchange = () => resolve([...(input.files || [])]);
+    input.click();
+  });
+  if (!files.length)
+    return null;
+  // 目录指纹秒开:同目录重选命中「指纹→md5快照」→ 预填 md5 免重算;miss 则懒算 + 会话内增量收集落快照。
+  clearDegradedSnapshotSession();
+  const fp = computeDirectoryFingerprint(files);
+  const prev = await kvGet('scans', `degraded:${fp}`);
+  const md5Map = prev?.files ? new Map(Object.entries(prev.files)) : null;
+  const root = createDegradedRootFromFileList(files, md5Map);
+  if (!root)
+    return null;
+  startDegradedSnapshotSession(fp);
+  _setDegraded(true);
+  setDegradedSnapshot(files);
+  const fs = useFsStore();
+  resetFoldersData(fs); // 清撤销栈 + dispose 旧树 + 清 ALL_MEDIA/dirty
+  fs.rootHandle = null;
+  fs.rootFolder = root;
+  fs.currentFolder = root;
+  fs.allMediaFolder.files = collectAllFiles(root);
+  toast.info(`以只读模式打开「${root.name}」(重命名/删除/回收站不可用)`);
+  return root;
+}
+
 // 切换到历史根。有缓存秒显(fromSnapshot)+后台校验;无缓存则重扫。
 export async function switchToRoot(id) {
+  if (isDegradedFSA()) {
+    useToastStore().error('只读模式不支持切换文件夹');
+    return null;
+  }
   const fs = useFsStore();
   const rootStore = useRootStore();
   const toast = useToastStore();
@@ -193,6 +245,10 @@ export async function startBackgroundScan(parentFolder, token = bgToken) {
 // 重载当前根(绕过缓存,重新扫描)+ 更新快照。设置面板"重载项目"用。
 // Phase 2:initProject(listFolder 根,纯名字集合)+ scanAndPersist(enrich 由 startBackgroundScan 触发)。
 export async function reloadProject() {
+  if (isDegradedFSA()) {
+    useToastStore().info('只读模式无持久句柄,重载 = 重新选择文件夹');
+    return null;
+  }
   const fs = useFsStore();
   const rootStore = useRootStore();
   if (!fs.rootHandle)
@@ -299,6 +355,13 @@ export async function handleFolderClick(folder) {
     return;
   const fs = useFsStore();
   if (folder === fs.allMediaFolder) {
+    await loadFolder(folder);
+    return;
+  }
+  // 降级只读:树已由 FileList 全量建好,点击仅做 trust 校验(名字集合一致零 IO)+ 展示,不落盘。
+  if (isDegradedFSA()) {
+    const result = await scanDegradedFolder(folder, { trust: true });
+    integrateScanResult(folder, result); // markFolderDirty 在降级下 currentRootId null 自动短路,不落盘
     await loadFolder(folder);
     return;
   }

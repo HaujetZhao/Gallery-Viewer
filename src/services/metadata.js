@@ -1,10 +1,9 @@
 // 元数据提取策略。搬自源码 js/metadata-strategies.js。
 // image:dimensions + EXIF;video:loadedmetadata;audio:时长 + MP3 ID3;svg:dimensions。
 import { FileTypes } from '../config/file-types';
-import { ensureBlobUrl } from '../models/SmartFile';
+import { ensureBlobUrl, getFile } from '../models/SmartFile';
 import { getImageInfoFromHeader } from '../utils/file';
 import { extractExif } from './exif';
-import { peek } from './fileResource';
 import { extractID3Tags } from './id3-parser';
 
 export function formatDuration(seconds) {
@@ -25,7 +24,7 @@ export const MetadataStrategies = {
       const metadata = {};
       await ensureBlobUrl(file);
       // fileObj 复用:peek 命中省一次 getFile,未命中回退 handle.getFile
-      const fileObj = peek(file)?.file ?? await file.handle.getFile();
+      const fileObj = await getFile(file);
       // T18:dimensions 优先零解码魔数(getImageInfoFromHeader),不支持格式 fallback new Image 解码
       const header = await getImageInfoFromHeader(fileObj);
       if (header) {

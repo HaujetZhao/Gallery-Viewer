@@ -5,9 +5,8 @@
 import { computed, inject, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue';
 import { triggerRedraw } from '../composables/useThumbnail';
 import { FileTypes } from '../config/file-types';
-import { detectFileChange, ensureBlobUrl } from '../models/SmartFile';
+import { detectFileChange, ensureBlobUrl, getFile } from '../models/SmartFile';
 import { saveFileMeta } from '../services/fileMeta';
-import { peek } from '../services/fileResource';
 import { useModalStore } from '../stores/modal';
 import { ensureMediaSession } from '../utils/mediaSession';
 import AudioPlayer from './AudioPlayer.vue';
@@ -54,7 +53,7 @@ async function loadSvg() {
   if (mediaKind.value !== 'svg' || !props.file)
     return;
   try {
-    const f = peek(props.file)?.file ?? await props.file.handle.getFile();
+    const f = await getFile(props.file);
     svgText.value = await f.text();
   }
   catch (e) {

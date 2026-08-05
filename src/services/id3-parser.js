@@ -1,5 +1,6 @@
 // MP3 ID3v2 文本帧解析(TIT2/TPE1/TALB 等)。搬自源码 js/id3-parser.js,纯逻辑。
 // 与 thumbnail-strategies.extractAudioCover(APIC 封面)独立,不合并。
+import { getFile } from '../models/SmartFile';
 
 function decodeTextFrame(data, offset, size) {
   if (size <= 1)
@@ -53,7 +54,7 @@ function decodeTextFrame(data, offset, size) {
 
 export async function extractID3Tags(file) {
   try {
-    const raw = await file.handle.getFile();
+    const raw = await getFile(file);
     const maxSize = Math.min(raw.size, 5 * 1024 * 1024); // 只读前 5MB
     const buf = await raw.slice(0, maxSize).arrayBuffer();
     const u8 = new Uint8Array(buf);

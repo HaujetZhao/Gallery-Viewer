@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { acquire, destroy } from '../services/fileResource';
-import { ensureBlobUrl, fileFromSnapshot, fileToSnapshot, SmartFile } from './SmartFile';
+import { ensureBlobUrl, fileFromSnapshot, fileToSnapshot, getFile, SmartFile } from './SmartFile';
 import { SmartFolder } from './SmartFolder';
 
 // jsdom 的 URL.createObjectURL 对 mock 普通对象会抛,stub 之。
@@ -110,5 +110,24 @@ describe('smartFile.move(T08:走 folder 方法,不内联 splice)', () => {
     const source = new SmartFolder({ handle: { name: 'src' }, parent: null });
     const file = new SmartFile({ handle: { name: 'a', move: vi.fn(async () => {}) }, parent: source });
     await expect(file.move({ handle: null })).rejects.toThrow('目标文件夹无效');
+  });
+});
+
+describe('getFile 统一读入口', () => {
+  it('降级:_file 直接返回,不触 handle.getFile', async () => {
+    const handleGetFile = vi.fn(async () => {
+      throw new Error('不应调用');
+    });
+    const file = new SmartFile({ handle: { name: 'a.jpg', getFile: handleGetFile }, file: new File(['x'], 'a.jpg') });
+    const raw = await getFile(file);
+    expect(raw).toBeInstanceOf(File);
+    expect(handleGetFile).not.toHaveBeenCalled();
+  });
+
+  it('fSA:无 _file → 走 handle.getFile', async () => {
+    const rawFile = new File(['y'], 'b.jpg');
+    const file = new SmartFile({ handle: { name: 'b.jpg', getFile: vi.fn(async () => rawFile) } });
+    const raw = await getFile(file);
+    expect(raw).toBe(rawFile);
   });
 });
