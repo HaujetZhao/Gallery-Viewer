@@ -7,10 +7,12 @@ import { useFsStore } from '../stores/fs';
 import RootSwitcher from './RootSwitcher.vue';
 import SidebarTreeItem from './SidebarTreeItem.vue';
 
+const emit = defineEmits(['toggleSettings']);
+
 const fsStore = useFsStore();
 const contextMenu = useContextMenuStore();
 const resizeEl = ref(null);
-const { pinned, width, togglePin } = useSidebar(resizeEl);
+const { pinned, width, overlayOpen, collapseSidebar } = useSidebar(resizeEl);
 
 async function onAllMediaClick() {
   await switchToAllPhotos();
@@ -25,12 +27,18 @@ function onSidebarContextmenu() {
 </script>
 
 <template>
-  <div id="sidebar" :class="{ pinned }" :style="{ '--sidebar-width': `${width}px` }" @contextmenu.prevent="onSidebarContextmenu">
+  <div
+    id="sidebar"
+    :class="{ pinned, 'overlay-open': overlayOpen }"
+    :style="{ '--sidebar-width': `${width}px` }"
+    @contextmenu.prevent="onSidebarContextmenu"
+  >
     <div id="sidebar-content">
       <div class="sidebar-header">
         <RootSwitcher />
-        <button id="pinSidebarBtn" :title="pinned ? '取消固定' : '固定侧边栏'" @click="togglePin">
-          <i class="fas fa-thumbtack" />
+        <!-- 收起按钮:宽屏收起 pin,窄屏关 overlay 抽屉 -->
+        <button id="pinSidebarBtn" title="收起侧栏" @click="collapseSidebar">
+          <i class="fas fa-chevron-left" />
         </button>
       </div>
 
@@ -56,6 +64,13 @@ function onSidebarContextmenu() {
           <SidebarTreeItem v-if="fsStore.rootFolder" :folder="fsStore.rootFolder" :is-root="true" />
         </ul>
       </div>
+
+      <!-- 底部设置入口(齿轮 → 弹出 SettingsPanel 浮层) -->
+      <div class="sidebar-footer">
+        <button class="sidebar-settings-btn" title="设置" @click.stop="emit('toggleSettings')">
+          <i class="fas fa-cog" /><span>设置</span>
+        </button>
+      </div>
     </div>
     <!-- 右边缘拖拽调宽 handle -->
     <div ref="resizeEl" class="sidebar-resize-handle" />
@@ -71,11 +86,12 @@ function onSidebarContextmenu() {
     left: 0;
     width: var(--sidebar-width, 280px);
     height: 100vh;
+    height: 100dvh;
     background-color: var(--sidebar-bg);
     color: var(--sidebar-text);
     z-index: 900;
     transform: translateX(-100%);
-    transition: transform 0.25s ease;
+    transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
     box-shadow: 2px 0 10px rgba(0, 0, 0, 0.2);
     display: flex;
     flex-direction: column;
@@ -98,6 +114,7 @@ function onSidebarContextmenu() {
     bottom: 0;
     width: 12px;
     cursor: col-resize;
+    touch-action: none; /* 触屏拖动调宽不被页面滚动劫持 */
     z-index: 20;
 }
 .sidebar-resize-handle:hover,
@@ -105,20 +122,20 @@ function onSidebarContextmenu() {
     background: rgba(255, 255, 255, 0.2);
 }
 
-/* 侧边栏感应区：鼠标靠左显示 */
-#sidebar::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    right: -10px;
-    width: 14px;
-    height: 100%;
-    z-index: 10;
+#sidebar.pinned,
+#sidebar.overlay-open {
+    transform: translateX(0);
 }
 
-#sidebar:hover,
-#sidebar.pinned {
-    transform: translateX(0);
+/* 窄屏抽屉:钳制宽度 + 让出顶部搜索框行(搜索框 z-index 高于侧栏,保持盖在展开卡片上,
+   故靠空间错开而非降层级——抽屉从顶部搜索框下方开始,不与右上搜索框重叠)。 */
+@media (max-width: 880px) {
+    #sidebar.overlay-open {
+        max-width: 86vw;
+        top: 60px;
+        bottom: 0;
+        height: auto;
+    }
 }
 
 /* 固定按钮样式 */
@@ -144,14 +161,12 @@ function onSidebarContextmenu() {
     border: none;
     color: #95a5a6;
     cursor: pointer;
-    font-size: 14px;
+    font-size: 16px;
     transition: color 0.2s;
 }
 
-#pinSidebarBtn:hover,
-#sidebar.pinned #pinSidebarBtn {
-    color: var(--accent-color);
-    transform: rotate(45deg);
+#pinSidebarBtn:hover {
+    color: #fff;
 }
 
 /* 侧边栏内容 */
@@ -217,10 +232,31 @@ function onSidebarContextmenu() {
     color: white;
 }
 
-@media (max-width: 768px) {
-    #sidebar {
-        width: 100%;
-        max-width: 300px;
-    }
+/* 底部设置入口 */
+.sidebar-footer {
+    padding: 10px;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom));
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.sidebar-settings-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 12px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: #bdc3c7;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+.sidebar-settings-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+}
+.sidebar-settings-btn i {
+    font-size: 15px;
 }
 </style>

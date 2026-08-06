@@ -2,13 +2,14 @@
 import { useWindowVirtualizer } from '@tanstack/vue-virtual';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useGallerySearch } from '../composables/useGallerySearch';
+import { useResponsiveViewport } from '../composables/useResponsiveViewport';
 import { redrawSignal, unobserveAll } from '../composables/useThumbnail';
 import { loadCapturedAtForFiles } from '../services/fileMeta';
 import { useFsStore } from '../stores/fs';
 import { useModalStore } from '../stores/modal';
 import { useUserSettingsStore } from '../stores/userSettings';
 import { windowsCompareStrings } from '../utils/format';
-import { buildSlots, chunkRows, computeRowHeight, dateSortValue, DETAIL_INFO_HEIGHT } from '../utils/gallery-layout';
+import { buildSlots, chunkRows, computeRowHeight, dateSortValue, detailInfoHeightFor } from '../utils/gallery-layout';
 import PhotoCard from './PhotoCard.vue';
 
 const fsStore = useFsStore();
@@ -18,7 +19,33 @@ const { searchTerm, debouncedTerm, filteredCount, totalCount, filterFavorite, fi
 
 const sortField = computed(() => settings.settings.sortField);
 const sortAsc = computed(() => settings.settings.sortDirection === 'asc');
+const { viewportWidth } = useResponsiveViewport();
+// 列数 = columnCount 设置(单一真值,所见即所得,绝不运行时 min 钳制)。
+// 仅在「gallery container 档位变化」时按档位值改写设置(<480→2 / <768→3 / <1100→4 / ≥1100 不动);
+// 用 container 宽度(而非视口)——钉住侧栏导致 container 变窄也会正确降列。
+// 用户手调滑块不被覆盖,grid 真实等于设置值。初始测量不改写(尊重已存设置)。
+function bracketFor(w) {
+  if (!w)
+    return null;
+  if (w < 480)
+    return 2;
+  if (w < 768)
+    return 3;
+  if (w < 1100)
+    return 4;
+  return null; // ≥1100:不限,保留用户设置
+}
 const colCount = computed(() => settings.settings.columnCount);
+const containerWidth = ref(0);
+const colBracket = computed(() => bracketFor(containerWidth.value));
+let lastBracket = null;
+watch(colBracket, (b) => {
+  // 仅 finite→finite 的真实变化才改写(跳过初始 null→B1 的挂载测量)
+  if (b != null && lastBracket !== null && b !== lastBracket)
+    settings.set('columnCount', b);
+  if (b != null)
+    lastBracket = b;
+});
 
 // R8:会话内稳定排序。冻结序号 frozenOrder(Map<file, number>),displayFiles 按冻结序号排,
 // 不再读 live name/size/mtime → rename/delete/move/enrich 不再"飞走"。
@@ -163,9 +190,10 @@ function measureRowHeight() {
   const el = gridRef.value;
   if (!el)
     return;
-  // detail 样式卡内多了图下方信息区(固定 DETAIL_INFO_HEIGHT),行高随之增大,否则虚拟化行错位。
+  containerWidth.value = el.clientWidth; // 供列数档位判定(container 宽,非视口)
+  // detail 样式卡内多了图下方信息区;其高度随视口字体档位变化(detailInfoHeightFor),行高需同步,否则虚拟化行错位。
   const cardStyle = settings.settings.cardStyle;
-  const extraPerCard = cardStyle === 'detail' ? DETAIL_INFO_HEIGHT : 0;
+  const extraPerCard = cardStyle === 'detail' ? detailInfoHeightFor(viewportWidth.value) : 0;
   rowHeight.value = computeRowHeight(el.clientWidth, colCount.value, currentGap(), extraPerCard);
   // 列宽 = 行高 - 额外高度 - gap(供卡片悬浮拓展读 --col-width)。
   colWidth.value = rowHeight.value - extraPerCard - currentGap();

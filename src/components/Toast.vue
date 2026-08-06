@@ -32,8 +32,8 @@ const icons = {
 /* Toast 提示 */
 #toastContainer {
     position: fixed;
-    top: 20px;
-    right: 20px;
+    top: calc(20px + env(safe-area-inset-top));
+    right: calc(20px + env(safe-area-inset-right));
     z-index: var(--z-toast);
 }
 

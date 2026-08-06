@@ -29,6 +29,15 @@ export async function drawBlobToCanvas(canvas, blob) {
   }
 }
 
+// 同 drawBlobToCanvas 但不 close bitmap,返回给调用方缓存(remount 时同步 drawImage 免转圈闪)。
+export async function drawBlobToCanvasKeepBitmap(canvas, blob) {
+  const bitmap = await createImageBitmap(blob, { imageOrientation: 'from-image' });
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  canvas.getContext('2d').drawImage(bitmap, 0, 0);
+  return bitmap;
+}
+
 // 主线程兜底:worker 池不可用时(无 Worker/OffscreenCanvas,如 jsdom)走原路径。
 // createImageBitmap 解码 + 临时 canvas cover-fit drawImage + toBlob;用完关闭 bitmap。
 async function drawCoverToBlobMain(file, targetSize) {

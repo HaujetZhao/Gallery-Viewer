@@ -16,10 +16,28 @@ import { ensureFileMetaLoaded, saveFileMeta } from './fileMeta';
 import { peek } from './fileResource';
 import { refreshFolder } from './folderActions';
 import { afterFolderMutation } from './persistence';
-import { drawBlobToCanvas, extractAudioDuration, getThumbnailStrategy } from './thumbnail-strategies';
+import { drawBlobToCanvasKeepBitmap, extractAudioDuration, getThumbnailStrategy } from './thumbnail-strategies';
 import { collectDegradedMd5 } from './webkitDirectory';
 
 // drawBlobToCanvas(缓存命中 + worker 回传 blob 共用)从 thumbnail-strategies.js 导入。
+
+// 内存 ImageBitmap 缓存:remount(虚拟化滚出再滚回 / 列数变化锚点跳 Y)时同步 drawImage,
+// 免异步 IDB 读 + createImageBitmap 造成的转圈闪。LRU,满则 evict 最旧并 close 释放。
+const memBitmapCache = new Map(); // thumbnailKey → ImageBitmap
+const MEM_BITMAP_CAP = 150;
+function setMemBitmap(key, bitmap) {
+  if (memBitmapCache.size >= MEM_BITMAP_CAP) {
+    const oldest = memBitmapCache.keys().next().value;
+    memBitmapCache.get(oldest)?.close?.();
+    memBitmapCache.delete(oldest);
+  }
+  memBitmapCache.set(key, bitmap);
+}
+export function clearMemBitmapCache() {
+  for (const b of memBitmapCache.values())
+    b.close?.();
+  memBitmapCache.clear();
+}
 
 // 卡片媒体元数据统一加载器:md5 + file-meta(时长/dim) + audio duration + favorites/notes。
 // 幂等(md5 已有则跳,ensureLoaded 重复无害)。所有卡片(含视频预览)进视口(100px)时统一调一次,
@@ -64,19 +82,35 @@ export async function renderThumbnail(file, element, targetSize = 400, onDrawn) 
     return { cached: false, strategyName: strategy.name };
   }
 
+  const key = thumbnailKey(file.md5, targetSize);
+
+  // 内存命中:同步 drawImage + 同帧 onDrawn → loaded 在浏览器绘制前置真,remount 不闪转圈。
+  const mem = memBitmapCache.get(key);
+  if (mem) {
+    element.width = mem.width;
+    element.height = mem.height;
+    element.getContext('2d').drawImage(mem, 0, 0);
+    onDrawn?.();
+    memBitmapCache.delete(key); // move-to-end(LRU 续命)
+    memBitmapCache.set(key, mem);
+    return { cached: true, strategyName: strategy.name };
+  }
+
   const cached = await getThumbnailFromDB(file.md5, targetSize);
   if (cached) {
-    await drawBlobToCanvas(element, cached.blob);
+    const bitmap = await drawBlobToCanvasKeepBitmap(element, cached.blob); // 画上 + 保留 bitmap
+    setMemBitmap(key, bitmap); // 缓存解码结果,下次 remount 同步出图
     onDrawn?.();
-    touchThumbnailInDB(thumbnailKey(file.md5, targetSize)); // 异步刷新 lastAccessed(不阻塞,修源码陷阱)
+    touchThumbnailInDB(key); // 异步刷新 lastAccessed(不阻塞,修源码陷阱)
     return { cached: true, strategyName: strategy.name };
   }
 
   // 未命中:策略生成(image 策略整条管线在 worker 池跑,主线程零参与)→ 存 DB(fire-and-forget)。
   const blob = await strategy.generateThumbnail(element, file, targetSize, onDrawn);
   if (blob) {
+    setMemBitmap(key, await createImageBitmap(blob, { imageOrientation: 'from-image' }));
     saveThumbnailToDB({
-      id: thumbnailKey(file.md5, targetSize),
+      id: key,
       md5: file.md5,
       size: file.size,
       width: targetSize,
@@ -117,5 +151,6 @@ export async function forceRegenerateCurrentThumbnails() {
     deleteCount++;
   }
   toast.success(`已清除 ${deleteCount} 个缩略图缓存,正在重新生成...`);
+  clearMemBitmapCache();
   triggerRedraw();
 }

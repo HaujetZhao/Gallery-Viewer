@@ -269,8 +269,16 @@ watch(
 .modal-video {
     max-width: 90vw;
     max-height: 90vh;
+    max-height: 90dvh;
     outline: none;
     transition: opacity 0.2s ease; /* 首帧就绪后淡入,无空框闪烁 */
+}
+
+/* 窄屏:去掉 90vw 宽度上限,视频可占满 modal 宽度(小屏 90vw 显窄) */
+@media (max-width: 768px) {
+    .modal-video {
+        max-width: 100%;
+    }
 }
 
 .loader {

@@ -13,6 +13,7 @@ import { deleteFileWithToast } from './composables/useFileActions';
 import { useGallerySearch } from './composables/useGallerySearch';
 import { hoveredFile, requestRename } from './composables/useHoveredFile';
 import { useScrollZone } from './composables/useScrollZone';
+import { useSidebar } from './composables/useSidebar';
 import { initDB } from './services/db';
 import { openDirectory, switchToRoot } from './services/folderActions';
 import * as handleStore from './services/handleStore';
@@ -25,21 +26,17 @@ import { usePropertiesStore } from './stores/properties';
 import { useRootStore } from './stores/root';
 import { useThemeStore } from './stores/theme';
 import { useToastStore } from './stores/uiToast';
-import { useUserSettingsStore } from './stores/userSettings';
 import { isDegradedFSA, isFileSystemAccessSupported } from './utils/browser';
 
 const themeStore = useThemeStore();
 const fsStore = useFsStore();
 const rootStore = useRootStore();
-const settings = useUserSettingsStore();
 const toast = useToastStore();
 const history = useHistoryStore();
 const favorites = useFavoritesStore();
 const properties = usePropertiesStore();
 const modal = useModalStore();
 const { searchTerm, filteredCount, totalCount, filterFavorite, filterNote } = useGallerySearch();
-
-const sidebarPinned = computed(() => !!settings.settings.sidebarPinned);
 
 // 全局错误边界:兜底所有子组件未处理错误——toast 提示 + return false 阻止错误上抛(不白屏)。
 // ponytail:App.vue 是根,onErrorCaptured 一处兜底,替代散落各组件的 try/catch。
@@ -48,22 +45,20 @@ onErrorCaptured((err) => {
   toast.error(`发生错误:${err?.message || err}`);
   return false;
 });
-const sidebarWidth = computed(() => settings.settings.sidebarWidth || 280);
-const mainStyle = computed(() => ({
-  marginLeft: sidebarPinned.value ? `${sidebarWidth.value}px` : '0px',
-  width: sidebarPinned.value ? `calc(100% - ${sidebarWidth.value}px)` : '100%',
-}));
+
+// 侧栏单例(与 Sidebar 共享):pinned 推挤内容(单通道 body class),overlay 窄屏抽屉 + scrim。
+const { pinned: sidebarPinnedNow, overlayOpen: sidebarOverlay, toggleSidebar, closeOverlay: closeSidebarOverlay } = useSidebar(null);
 
 watch(
-  sidebarPinned,
-  v => document.body.classList.toggle('sidebar-pinned', v),
+  [sidebarPinnedNow],
+  ([v]) => document.body.classList.toggle('sidebar-pinned', v),
   { immediate: true },
 );
 
 const settingsOpen = ref(false);
 const browserSupported = isFileSystemAccessSupported();
 const sidebarEl = ref(null);
-const settingsBtnEl = ref(null);
+const sidebarFabEl = ref(null);
 const filterEl = ref(null);
 const searchInputEl = ref(null);
 // 待恢复:{ id, name } 权限需用户手势重新授权时,启动页显示"打开上次"按钮
@@ -74,7 +69,7 @@ const settingsPanelRoot = computed(() => settingsPanelEl.value?.panelEl);
 const contextMenuEl = ref(null); // ContextMenu 组件 ref;菜单根经 defineExpose 暴露
 // 右键菜单根元素(菜单 v-if 隐藏时为 null → 排除区跳过)。鼠标在右键菜单上不触发边缘感应滚动。
 const contextMenuRoot = computed(() => contextMenuEl.value?.menuEl);
-useScrollZone([sidebarEl, settingsBtnEl, filterEl, settingsPanelRoot, contextMenuRoot]);
+useScrollZone([sidebarEl, sidebarFabEl, filterEl, settingsPanelRoot, contextMenuRoot]);
 
 onMounted(async () => {
   themeStore.init();
@@ -235,13 +230,13 @@ function onVisibilityChange() {
 </script>
 
 <template>
-  <div :class="{ 'sidebar-pinned': sidebarPinned }">
+  <div>
     <div ref="sidebarEl">
-      <Sidebar />
+      <Sidebar @toggle-settings="settingsOpen = !settingsOpen" />
     </div>
 
     <!-- 启动页(无 currentFolder) -->
-    <div v-if="!fsStore.currentFolder" class="main-content-wrapper" :style="mainStyle">
+    <div v-if="!fsStore.currentFolder" class="main-content-wrapper">
       <div class="container">
         <header class="header">
           <h1><i class="fas fa-images" /> 相册浏览器</h1>
@@ -279,7 +274,7 @@ function onVisibilityChange() {
     </div>
 
     <!-- 主界面 -->
-    <div v-else class="main-content-wrapper" :style="mainStyle">
+    <div v-else class="main-content-wrapper">
       <div class="container">
         <header class="header">
           <h1><i class="fas fa-images" /> 相册浏览器</h1>
@@ -291,10 +286,19 @@ function onVisibilityChange() {
       </div>
     </div>
 
-    <!-- 全局浮层 -->
-    <button ref="settingsBtnEl" class="settings-btn" title="设置" @click.stop="settingsOpen = !settingsOpen">
-      <i class="fas fa-cog" />
+    <!-- 侧栏唤出 FAB(左上):pin 常驻时隐藏,overlay 展开时淡出 -->
+    <button
+      v-show="!sidebarPinnedNow"
+      ref="sidebarFabEl"
+      class="sidebar-fab"
+      :class="{ dim: sidebarOverlay }"
+      title="侧边栏"
+      @click.stop="toggleSidebar"
+    >
+      <i class="fas fa-bars" />
     </button>
+    <!-- 窄屏 overlay 抽屉遮罩:点击关闭 -->
+    <div v-if="sidebarOverlay" class="sidebar-scrim" @click="closeSidebarOverlay" />
 
     <div v-if="fsStore.currentFolder" ref="filterEl" class="filter-container">
       <div class="filter-row">
@@ -480,46 +484,60 @@ function onVisibilityChange() {
     }
 }
 
-/* ===== 悬浮设置按钮(原 components.css) ===== */
-/* body 级 class,scoped 不给 body 加 data-v;body.sidebar-pinned .settings-btn[data-v] 仍匹配 */
-.settings-btn {
+/* ===== 侧栏唤出 FAB(左上) ===== */
+.sidebar-fab {
     position: fixed;
-    top: 20px;
-    left: 20px;
-    width: 50px;
-    height: 50px;
-    background-color: #2C3E50;
+    top: calc(20px + env(safe-area-inset-top));
+    left: calc(20px + env(safe-area-inset-left));
+    width: 44px;
+    height: 44px;
+    background-color: var(--bg-primary, #2C3E50);
+    color: var(--text-primary, white);
+    border: 1px solid var(--color-gray-300, transparent);
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    z-index: 1000; /* 高于展开媒体(950)/侧栏(900),设置按钮始终可见可点 */
-    transition: all 0.3s ease;
+    z-index: 960; /* 高于展开媒体(950):展开卡片不盖住 FAB */
+    opacity: 0.6;
+    transition: opacity 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    border: none;
 }
-
-body.sidebar-pinned .settings-btn {
-    left: calc(var(--sidebar-width) + 20px);
-}
-
-.settings-btn:hover {
-    transform: rotate(30deg);
+.sidebar-fab:hover,
+.sidebar-fab:focus {
+    opacity: 1;
     box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
 }
+/* 抽屉(overlay)打开时:降 z 到遮罩之下,被抽屉/遮罩盖住而非叠在面板上 */
+.sidebar-fab.dim {
+    opacity: 0.25;
+    z-index: 850;
+}
+.sidebar-fab i {
+    font-size: 18px;
+}
 
-.settings-btn i {
-    font-size: 24px;
-    color: white;
+/* 窄屏 overlay 抽屉遮罩 */
+.sidebar-scrim {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.35);
+    z-index: 890; /* 低于侧栏(900),高于内容 */
 }
 
 /* ===== 筛选悬浮区域(原 components.css) ===== */
 .filter-container {
     position: fixed;
-    top: 20px;
-    right: 20px;
+    top: calc(20px + env(safe-area-inset-top));
+    right: calc(20px + env(safe-area-inset-right));
     z-index: 1000; /* 高于展开媒体(950),搜索框不被盖住 */
+    opacity: 0.6;
+    transition: opacity 0.2s ease;
+}
+.filter-container:hover,
+.filter-container:focus-within {
+    opacity: 1;
 }
 
 .filter-row {
@@ -598,6 +616,34 @@ body.sidebar-pinned .settings-btn {
     margin-left: 4px;
 }
 
+/* 窄屏:筛选框避让 FAB(左上),收窄并贴顶占满,防越出视口 */
+@media (max-width: 600px) {
+    .filter-container input[type="text"] {
+        width: calc(100vw - 120px);
+        padding-right: 96px;
+    }
+    .filter-container input[type="text"]:focus {
+        width: calc(100vw - 120px);
+    }
+    .sidebar-fab {
+        top: calc(14px + env(safe-area-inset-top));
+        left: calc(14px + env(safe-area-inset-left));
+        width: 40px;
+        height: 40px;
+    }
+    .filter-container {
+        top: calc(14px + env(safe-area-inset-top));
+        right: calc(14px + env(safe-area-inset-right));
+        max-width: calc(100vw - 70px);
+    }
+    /* 触屏/窄屏放大筛选图标热区(≥40px) */
+    .filter-icon {
+        width: 36px;
+        height: 36px;
+        font-size: 15px;
+    }
+}
+
 /* ===== 布局(原 layout.css) ===== */
 .header {
     text-align: center;
@@ -621,6 +667,13 @@ body.sidebar-pinned .settings-btn {
     border-top: 1px solid var(--color-gray-200);
 }
 
+/* 窄屏:使用提示字号缩小,避免占满整行 */
+@media (max-width: 480px) {
+    .footer {
+        font-size: 0.75rem;
+    }
+}
+
 .footer p {
     margin: 8px 0;
 }
@@ -630,16 +683,18 @@ body.sidebar-pinned .settings-btn {
 .main-content-wrapper {
     flex: 1;
     width: 100%;
-    margin-left: 0;
-    transition: margin-left 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    box-sizing: border-box;
+    padding-left: 0;
+    /* 单通道:padding-left 过渡,与侧栏 transform 同步推内容;width 不变,避免瞬间 reflow 跳变 */
+    transition: padding-left 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
     display: flex;
     flex-direction: column;
     min-height: 100vh;
+    min-height: 100dvh;
 }
 
 body.sidebar-pinned .main-content-wrapper {
-    margin-left: var(--sidebar-width, 280px);
-    width: calc(100% - var(--sidebar-width, 280px));
+    padding-left: var(--sidebar-width, 280px);
 }
 
 .container {
@@ -652,9 +707,18 @@ body.sidebar-pinned .main-content-wrapper {
     flex: 1;
 }
 
+/* 窄屏:容器 padding 随视口缩小,与图库行内 gap(15→5)匹配,边缘不再比卡片间隙更宽 */
 @media (max-width: 768px) {
-    body.sidebar-pinned .main-content-wrapper {
-        margin-left: 0;
+    .container {
+        padding: 12px;
     }
 }
+@media (max-width: 480px) {
+    .container {
+        padding: 8px;
+    }
+}
+
+/* ponytail: 旧 @media(max-width:768px) sidebar-pinned margin-left:0 已删——
+   新模型 body.sidebar-pinned 由 canPinSidebar(>900) 守护,窄屏永不 pin,且 margin-left 已改 padding-left */
 </style>

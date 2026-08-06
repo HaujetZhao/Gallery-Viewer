@@ -33,18 +33,14 @@ watch(
     if (open) {
       await refreshStorage();
       await nextTick();
-      // 贴近设置按钮(左上;sidebar-pinned 时右移)正下方,而非固定窗口右侧
-      const btn = document.querySelector('.settings-btn');
+      // 触发入口已迁移至侧栏齿轮;面板默认贴左上,钉住侧栏时右移避让。
       const panelWidth = 350;
-      if (btn) {
-        const r = btn.getBoundingClientRect();
-        left.value = Math.max(10, Math.min(r.left, window.innerWidth - panelWidth - 10));
-        top.value = r.bottom + 8;
-      }
-      else {
-        left.value = Math.max(10, window.innerWidth - panelWidth - 20);
-        top.value = 80;
-      }
+      const sidebarW = document.body.classList.contains('sidebar-pinned')
+        ? Number.parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width')) || 0
+        : 0;
+      const baseLeft = sidebarW + 20;
+      left.value = Math.max(10, Math.min(baseLeft, window.innerWidth - panelWidth - 10));
+      top.value = 80;
     }
   },
 );
@@ -109,7 +105,10 @@ function setSortDir(v) {
   sortAsc.value = v === 'asc';
   settings.set('sortDirection', v);
 }
-const colCount = ref(settings.settings.columnCount);
+const colCount = computed({
+  get: () => settings.settings.columnCount,
+  set: v => settings.set('columnCount', Number(v)),
+});
 const thumbnailSize = ref(settings.settings.thumbnailSize);
 const cardStyle = ref(settings.settings.cardStyle);
 const cardHoverStyle = ref(settings.settings.cardHoverStyle);
@@ -118,9 +117,6 @@ const scrollSpeed = ref(settings.settings.scrollSpeed);
 const videoPreviewMode = ref(settings.settings.videoPreviewMode);
 const videoPreviewSpeed = ref(settings.settings.videoPreviewSpeed);
 
-function commitCol() {
-  settings.set('columnCount', Number(colCount.value));
-}
 function commitThumb() {
   settings.set('thumbnailSize', Number(thumbnailSize.value));
 }
@@ -318,7 +314,7 @@ async function onClearAll() {
 
         <div class="setting-item">
           <label>显示列数</label>
-          <input v-model.number="colCount" type="range" min="1" max="10" step="1" @change="commitCol">
+          <input v-model.number="colCount" type="range" min="1" max="10" step="1">
           <span>{{ colCount }}列</span>
         </div>
 

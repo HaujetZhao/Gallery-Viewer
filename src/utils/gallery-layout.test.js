@@ -38,7 +38,7 @@ describe('computeRowHeight', () => {
     expect(computeRowHeight(1000, 4, 15)).toBeCloseTo(253.75, 5);
   });
   it('detail 样式:行高 = 列宽 + DETAIL_INFO_HEIGHT + gap', () => {
-    // 列宽 = 238.75;行高 = 238.75 + 46 + 15 = 299.75
+    // 列宽 = 238.75;行高 = 238.75 + DETAIL_INFO_HEIGHT + 15
     expect(computeRowHeight(1000, 4, 15, DETAIL_INFO_HEIGHT)).toBeCloseTo(238.75 + DETAIL_INFO_HEIGHT + 15, 5);
   });
 });

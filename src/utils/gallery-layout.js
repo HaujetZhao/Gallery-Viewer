@@ -2,10 +2,19 @@
 // chunkRows:行优先切片,每行 n 项(末行可不足)。
 // computeRowHeight:由容器宽度算固定行高 = 列宽(thumbnail aspect-ratio 1/1)+ 卡内信息区高度 + 行间 gap。
 
-// detail 卡片样式(cardStyle='detail')图下方信息区的固定高度(px)。
-// 文件名 1 行 + meta 1 行 + 上下 padding,按 PhotoCard card-style-detail 实测校准。
-// ponytail: 一个常量,PhotoCard CSS 与 Gallery 行高共用同一来源避免漂移;未来真有第二种非零 extra 再抽象。
-export const DETAIL_INFO_HEIGHT = 46;
+// detail 卡片样式(cardStyle='detail')图下方信息区的固定高度(px),按 PhotoCard card-style-detail 实测校准。
+// 桌面(≥768)文件名1行+meta1行=52。窄屏字体档位缩号 → 条高随视口变小(48/49),故做成视口档位函数。
+// ⚠️ 改 PhotoCard 的 detail 垂直 padding 或字体档位时,必须同步这里,否则虚拟化行高错位 → 行重叠。
+export const DETAIL_INFO_HEIGHT = 52;
+
+// 按视口宽度返回 detail 信息区高度(字体档位在 PhotoCard 用 @media(max-width:768/480) 控制,与视口对齐)。
+export function detailInfoHeightFor(viewportWidth) {
+  if (viewportWidth < 480)
+    return 48;
+  if (viewportWidth < 768)
+    return 49;
+  return DETAIL_INFO_HEIGHT;
+}
 
 /**
  * 行优先切片。

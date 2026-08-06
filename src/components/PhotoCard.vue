@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useFileActions } from '../composables/useFileActions';
 import { hoveredFile, renameTick } from '../composables/useHoveredFile';
+import { useResponsiveViewport } from '../composables/useResponsiveViewport';
 import { useThumbnail } from '../composables/useThumbnail';
 import { ensureBlobUrl } from '../models/SmartFile';
 import { saveFileMeta } from '../services/fileMeta';
@@ -69,7 +70,11 @@ const { loaded, loading, isVisible } = useThumbnail(mediaEl, props.file, props.t
 
 // 视频预览播/停:只在卡片整卡在视口内播放(isVisible 基于「卡片」——useThumbnail 播放观察器观察卡片而非视频
 // 元素);悬浮模式额外要求卡片 hover,auto 视口内即播。媒体展开后出视口不会让 isVisible 翻转(卡片稳定)。
-const cardHovered = ref(false);
+// 桌面:mouseenter/leave 置 mouseHover;触屏:按下后拖动(滚动)置 touchHover(预览式 hover,不做展开变形)。
+const { isTouch } = useResponsiveViewport();
+const mouseHover = ref(false);
+const touchHover = ref(false);
+const cardHovered = computed(() => mouseHover.value || touchHover.value);
 function updatePlayback() {
   const v = mediaEl.value;
   if (!v || v.tagName !== 'VIDEO')
@@ -263,7 +268,8 @@ const editing = ref(false);
 const contextMenu = useContextMenuStore();
 const mediaExpand = computed(() => {
   // 重命名或右键菜单打开时也不展开——否则展开画面盖住重命名输入框/右键菜单。
-  if (!cardHovered.value || editing.value || contextMenu.visible || !isExpandStyle.value || !props.colWidth)
+  // 触屏拖动不算:展开变形会让滚动抖动(预览式 hover 不展开,展开留给大图 modal)。
+  if (!mouseHover.value || editing.value || contextMenu.visible || !isExpandStyle.value || !props.colWidth)
     return null;
   const w = mediaDims.value?.w;
   const h = mediaDims.value?.h;
@@ -327,10 +333,52 @@ function onDragstart(e) {
 // click + 键盘(Enter/Space)共用。
 // modal 已打开时(焦点可能还停在背后这张卡片上),键盘不再重开 modal——否则空格/回车会把
 // 这张卡片重新 open 到前台,顶掉当前正在看的媒体(也会让 modal 的空格=暂停 失效)。
+// 触屏预览式 hover:按下后若拖动超阈值(滚动)→ 置 touchHover 预览(视频循环),松手停;不展开变形。
+// tap(未拖动)走 click → openPreview;drag 不产生 click,且 suppressClick 兜底。
+let touchStart = null;
+let suppressClick = false;
+
 function openPreview() {
   if (useModalStore().isOpen)
     return;
+  // 触屏拖动收尾会残留一次 click,吞掉(预览式 hover 不应开 modal)。
+  if (suppressClick) {
+    suppressClick = false;
+    return;
+  }
   emit('click');
+}
+
+function onMouseEnter() {
+  mouseHover.value = true;
+  hoveredFile.value = props.file;
+}
+function onMouseLeave() {
+  mouseHover.value = false;
+  hoveredFile.value = null;
+}
+function onCardPointerDown(e) {
+  if (!isTouch.value || e.pointerType === 'mouse')
+    return;
+  touchStart = { x: e.clientX, y: e.clientY };
+}
+function onCardPointerMove(e) {
+  if (!touchStart || touchHover.value)
+    return;
+  const dx = e.clientX - touchStart.x;
+  const dy = e.clientY - touchStart.y;
+  if (dx * dx + dy * dy > 100) { // 10px 阈值,区分 tap vs 拖动
+    touchHover.value = true;
+    hoveredFile.value = props.file;
+  }
+}
+function onCardPointerUp() {
+  if (touchHover.value) {
+    touchHover.value = false;
+    hoveredFile.value = null;
+    suppressClick = true; // 吞掉拖动收尾的 click
+  }
+  touchStart = null;
 }
 
 // 卸载清理:取消进度 rAF + 移除指针拖动监听(防拖动中卸载泄漏)。
@@ -345,7 +393,7 @@ onBeforeUnmount(() => {
   <div
     ref="cardEl"
     class="photo-card"
-    :class="[cardStyleClass, { 'renaming': editing, 'media-expanding': !!mediaExpand, 'hover-expand': isExpandStyle }]"
+    :class="[cardStyleClass, { 'renaming': editing, 'media-expanding': !!mediaExpand, 'hover-expand': isExpandStyle, 'touch-hover': touchHover }]"
     :style="mediaExpandStyle"
     tabindex="0"
     role="button"
@@ -356,8 +404,12 @@ onBeforeUnmount(() => {
     @keydown.space.prevent="openPreview"
     @contextmenu.prevent="onContextmenu"
     @dragstart="onDragstart"
-    @mouseenter="hoveredFile = file; cardHovered = true"
-    @mouseleave="hoveredFile = null; cardHovered = false"
+    @pointerdown="onCardPointerDown"
+    @pointermove="onCardPointerMove"
+    @pointerup="onCardPointerUp"
+    @pointercancel="onCardPointerUp"
+    @mouseenter="onMouseEnter"
+    @mouseleave="onMouseLeave"
   >
     <div class="thumbnail-container">
       <!-- 视频悬浮/自动预览:<video> 循环静音播放,src 由 mediaEl watch 设,播/停由 isVisible+hover 驱动(仅视口内播) -->
@@ -615,8 +667,9 @@ onBeforeUnmount(() => {
 .fav-btn:not(.favorited) {
     pointer-events: none;
 }
-/* hover 下移(与 badge 同步);未收藏不再显现(沿用 opacity:0) */
-.photo-card:hover .fav-btn {
+/* hover 下移(与 badge 同步);未收藏不再显现(沿用 opacity:0);触屏拖动同效(touch-hover) */
+.photo-card:hover .fav-btn,
+.photo-card.touch-hover .fav-btn {
     transform: translateY(100%);
 }
 .photo-card:hover .fav-btn:hover {
@@ -792,6 +845,7 @@ onBeforeUnmount(() => {
 }
 
 .photo-card:hover .card-info-filename,
+.photo-card.touch-hover .card-info-filename,
 .photo-card.renaming .card-info-filename {
     transform: translateY(0);
 }
@@ -812,6 +866,7 @@ onBeforeUnmount(() => {
 }
 
 .photo-card:hover .card-info-meta,
+.photo-card.touch-hover .card-info-meta,
 .photo-card.renaming .card-info-meta {
     transform: translateY(0);
 }
@@ -864,6 +919,20 @@ onBeforeUnmount(() => {
 
 .photo-card.card-style-detail .card-info-meta {
     padding: 3px 10px 7px;
+    overflow: hidden; /* 窄卡时 size+date 不换行,超宽部分裁掉,信息区高度恒定(DETAIL_INFO_HEIGHT 依赖) */
+}
+/* detail 信息区强制单行:size 固定显全,date 收缩+省略号。否则窄卡下 size/date 各自换行撑高信息区,
+   与 gallery-layout.DETAIL_INFO_HEIGHT(固定 52) 错位 → 虚拟化行距偏小 → 行间重叠。 */
+.photo-card.card-style-detail .card-info-meta .file-size {
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+.photo-card.card-style-detail .card-info-meta .file-date {
+    flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* meta 子元素原为白色(叠在图上渐变层时用);detail 下信息区在卡背景上,改主题次级文字色。 */
@@ -943,7 +1012,8 @@ onBeforeUnmount(() => {
     pointer-events: none;
 }
 
-.photo-card:hover .note-overlay {
+.photo-card:hover .note-overlay,
+.photo-card.touch-hover .note-overlay {
     opacity: 1;
 }
 
@@ -963,5 +1033,68 @@ onBeforeUnmount(() => {
     font-size: 12px;
     line-height: 1.45;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* 窄屏:卡片圆角/水平 padding/info 字体随视口缩小,与容器 padding/gap 紧凑层级匹配。
+   圆角 8/6/4、水平 padding 10/6/4、字体档位。垂直 padding(5/3/7)不动。
+   ⚠️ 字体变小会缩 info 条高 → 必须同步 gallery-layout.DETAIL_INFO_HEIGHT 响应式常量(见 Gallery.extraPerCard),否则行重叠。 */
+@media (max-width: 768px) {
+    .photo-card {
+        border-radius: 6px;
+    }
+    /* 纯净/信息(非 detail):info 覆盖条(绝对定位,不占行高)字体/水平 padding 缩小 */
+    .photo-card:not(.card-style-detail) .card-info-filename {
+        padding: 4px 6px;
+    }
+    .photo-card:not(.card-style-detail) .card-info-meta {
+        padding: 4px 6px;
+    }
+    .photo-card:not(.card-style-detail) .file-name {
+        font-size: 13px;
+    }
+    .photo-card:not(.card-style-detail) .card-info-meta {
+        font-size: 10px;
+    }
+    .photo-card.card-style-detail .card-info-filename {
+        padding: 5px 6px 0;
+    }
+    .photo-card.card-style-detail .card-info-meta {
+        padding: 3px 6px 7px;
+    }
+    .photo-card.card-style-detail .card-info-filename .file-name {
+        font-size: 13px;
+    }
+    .photo-card.card-style-detail .card-info-meta {
+        font-size: 10px;
+    }
+}
+@media (max-width: 480px) {
+    .photo-card {
+        border-radius: 4px;
+    }
+    .photo-card:not(.card-style-detail) .card-info-filename {
+        padding: 3px 4px;
+    }
+    .photo-card:not(.card-style-detail) .card-info-meta {
+        padding: 3px 4px;
+    }
+    .photo-card:not(.card-style-detail) .file-name {
+        font-size: 12px;
+    }
+    .photo-card:not(.card-style-detail) .card-info-meta {
+        font-size: 10px;
+    }
+    .photo-card.card-style-detail .card-info-filename {
+        padding: 5px 4px 0;
+    }
+    .photo-card.card-style-detail .card-info-meta {
+        padding: 3px 4px 7px;
+    }
+    .photo-card.card-style-detail .card-info-filename .file-name {
+        font-size: 12px;
+    }
+    .photo-card.card-style-detail .card-info-meta {
+        font-size: 10px;
+    }
 }
 </style>

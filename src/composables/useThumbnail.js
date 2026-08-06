@@ -7,7 +7,7 @@
 // 元素可随预览模式切换在 canvas↔video 间替换,故用 watch(mediaElRef) 而非 onMounted 绑定。
 import { onBeforeUnmount, ref, watch } from 'vue';
 import { CONFIG } from '../config/index';
-import { loadCardMetadata, renderThumbnail } from '../services/thumbnail';
+import { clearMemBitmapCache, loadCardMetadata, renderThumbnail } from '../services/thumbnail';
 
 // 模块级单例
 let observer = null;
@@ -48,7 +48,8 @@ function handleIntersect(entries) {
       continue;
     }
     if (entry.isIntersecting) {
-      if (!t.loading.value) {
+      // 已 loaded 不再重复入队(FLIP scale/位移会触发 IO 重新 enter,避免缩略图重载闪)
+      if (!t.loading.value && !t.loaded.value) {
         t.loading.value = true;
         queue.waiting.push({ el, file: t.file, targetSize: t.targetSize, loaded: t.loaded, loading: t.loading, isVideo: t.isVideo, metaDone: t.metaDone });
         schedule();
@@ -118,13 +119,14 @@ async function schedule() {
   }
 }
 
-// 全量重置(切换文件夹时调):disconnect + 清队列。
+// 全量重置(切换文件夹时调):disconnect + 清队列 + 清内存 bitmap 缓存(释放 + 防陈旧)。
 export function unobserveAll() {
   if (observer) {
     observer.disconnect();
     observer = null;
   }
   queue.waiting = [];
+  clearMemBitmapCache();
 }
 
 // 强制重绘当前视图:unobserveAll + 递增 redrawSignal → Gallery 重挂卡片重新生成。
