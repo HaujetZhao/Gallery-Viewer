@@ -275,6 +275,7 @@ watch(
 }
 
 /* 窄屏:去掉 90vw 宽度上限,视频可占满 modal 宽度(小屏 90vw 显窄) */
+/* 响应式断点字面量须与 src/utils/breakpoints.js 的 BREAKPOINTS 保持一致 */
 @media (max-width: 768px) {
     .modal-video {
         max-width: 100%;

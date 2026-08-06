@@ -8,8 +8,9 @@ import { loadCapturedAtForFiles } from '../services/fileMeta';
 import { useFsStore } from '../stores/fs';
 import { useModalStore } from '../stores/modal';
 import { useUserSettingsStore } from '../stores/userSettings';
+import { BREAKPOINTS } from '../utils/breakpoints';
 import { windowsCompareStrings } from '../utils/format';
-import { buildSlots, chunkRows, computeRowHeight, dateSortValue, detailInfoHeightFor } from '../utils/gallery-layout';
+import { buildSlots, chunkRows, computeRowHeight, dateSortValue } from '../utils/gallery-layout';
 import PhotoCard from './PhotoCard.vue';
 
 const fsStore = useFsStore();
@@ -27,13 +28,13 @@ const { viewportWidth } = useResponsiveViewport();
 function bracketFor(w) {
   if (!w)
     return null;
-  if (w < 480)
+  if (w < BREAKPOINTS.sm)
     return 2;
-  if (w < 768)
+  if (w < BREAKPOINTS.md)
     return 3;
-  if (w < 1100)
+  if (w < BREAKPOINTS.lg)
     return 4;
-  return null; // ≥1100:不限,保留用户设置
+  return null; // ≥lg:不限,保留用户设置
 }
 const colCount = computed(() => settings.settings.columnCount);
 const containerWidth = ref(0);
@@ -165,51 +166,49 @@ const rows = computed(() => chunkRows(isFiltering.value ? displayFiles.value : s
 const DESKTOP_GAP = 15;
 const MOBILE_GAP = 5;
 function currentGap() {
-  return window.matchMedia('(max-width: 768px)').matches ? MOBILE_GAP : DESKTOP_GAP;
+  return viewportWidth.value < BREAKPOINTS.md ? MOBILE_GAP : DESKTOP_GAP;
 }
 
 const gridRef = ref(null);
-const rowHeight = ref(300); // 初值;ResizeObserver 实测后覆盖(弃旧 estHeight 公式)
 const colWidth = ref(0); // 列宽 px;作 prop 传 PhotoCard,供视频悬浮拓展算尺寸
 
-// 整页滚动:用 useWindowVirtualizer(window 版,observe window 的 resize/scroll 事件,
-// 而非 ResizeObserver.observe(window)——后者因 window 非 Element 会抛错)。固定行高,无需 measureElement。
-// 固定行高依赖缩略图 1:1 方形;未来若引入非方形缩略图策略,需改用 measureElement 或动态行高,否则布局错位。
+// 整页滚动:useWindowVirtualizer(window 版)。行高用 measureElement 动态实测——
+// 每行 ref 回调挂 virtualizer.measureElement,实测高度(含 detail 信息条),无需 DETAIL_INFO_HEIGHT 假设。
+// estimateSize 仅作未测量行的滚动条估算(detail 给 ~52 余量,实测会修正;不与 CSS 精确同步)。
 const virtualizer = useWindowVirtualizer({
   get count() { return rows.value.length; },
-  estimateSize: () => rowHeight.value,
+  estimateSize: () => computeRowHeight(containerWidth.value, colCount.value, currentGap(), settings.settings.cardStyle === 'detail' ? 52 : 0),
   overscan: 4, // 4 行 ≈ 1200px,覆盖 useThumbnail observer 的 rootMargin(100px)
+  measureElement: el => Math.round((el?.getBoundingClientRect().height ?? 0) + currentGap()),
 });
-// 行高变化 → 重算 getTotalSize,track 高度跟随
-watch(rowHeight, () => virtualizer.value?.measure());
 
-function measureRowHeight() {
+function measureContainer() {
   const el = gridRef.value;
   if (!el)
     return;
-  containerWidth.value = el.clientWidth; // 供列数档位判定(container 宽,非视口)
-  // detail 样式卡内多了图下方信息区;其高度随视口字体档位变化(detailInfoHeightFor),行高需同步,否则虚拟化行错位。
-  const cardStyle = settings.settings.cardStyle;
-  const extraPerCard = cardStyle === 'detail' ? detailInfoHeightFor(viewportWidth.value) : 0;
-  rowHeight.value = computeRowHeight(el.clientWidth, colCount.value, currentGap(), extraPerCard);
-  // 列宽 = 行高 - 额外高度 - gap(供卡片悬浮拓展读 --col-width)。
-  colWidth.value = rowHeight.value - extraPerCard - currentGap();
+  containerWidth.value = el.clientWidth; // 供列数档位判定 + estimateSize
+  // 列宽直接由 container 算(供卡片悬浮拓展读 --col-width),不再依赖行高反推。
+  const gap = currentGap();
+  colWidth.value = (el.clientWidth - (colCount.value - 1) * gap) / colCount.value;
 }
 
 let ro = null;
 // gridRef 在 v-else(有文件)才渲染:出现时首次 measure + observe;卸载时 disconnect。
+// ResizeObserver 只跟 container 宽度(列数/列宽);行高由 virtualizer.measureElement 各行自测。
 watch(gridRef, (el) => {
   if (!el || typeof ResizeObserver === 'undefined')
     return;
-  measureRowHeight();
+  measureContainer();
   ro?.disconnect();
-  ro = new ResizeObserver(measureRowHeight);
+  ro = new ResizeObserver(measureContainer);
   ro.observe(el);
 });
-// 列数变化(宽度不变但列宽变)也要重测
-watch(colCount, () => measureRowHeight());
-// 卡片样式变化(detail 多出信息区高度)也要重测
-watch(() => settings.settings.cardStyle, () => measureRowHeight());
+// 列数/卡片样式变化 → 重算列宽;行高由 measureElement 自动重测(各行 ResizeObserver 触发)。
+watch(colCount, measureContainer);
+watch(() => settings.settings.cardStyle, () => {
+  measureContainer();
+  virtualizer.value?.measure(); // cardStyle 切换:已测量行重测
+});
 
 const rerunKey = ref(0);
 watch(
@@ -280,7 +279,9 @@ onBeforeUnmount(() => {
         <div
           v-for="vi in virtualizer.getVirtualItems()"
           :key="vi.key"
+          :ref="virtualizer.measureElement"
           class="gallery-row"
+          :data-index="vi.index"
           :style="{ transform: `translateY(${vi.start}px)` }"
         >
           <template
@@ -356,7 +357,7 @@ onBeforeUnmount(() => {
    封在 0,盖不过侧栏(#sidebar z-index:900)。含展开卡(media-expanding)的行提 z-index 到 950,让弹出的
    媒体能横向盖过侧栏。:has() Chrome/Edge 支持(本应用仅 Chrome/Edge/Opera)。 */
 .gallery-row:has(.photo-card.media-expanding) {
-    z-index: 950;
+    z-index: var(--z-expanded-card);
 }
 
 @media (max-width: 768px) {

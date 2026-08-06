@@ -721,7 +721,7 @@ onBeforeUnmount(() => {
 
 /* 展开的卡片提 z-index 高于侧栏(#sidebar z-index:900),让弹出的媒体能盖过侧栏(横向溢出到侧栏区时)。 */
 .photo-card.media-expanding {
-    z-index: 950;
+    z-index: var(--z-expanded-card);
 }
 
 .photo-card.media-expanding .thumbnail-canvas,
@@ -876,7 +876,7 @@ onBeforeUnmount(() => {
    - always:上下信息条常驻显示;右上 badge 与左上爱心也常驻在"被推挤下来"的位置(爱心并常显)。
    - detail:上图下信息整卡——信息条从绝对叠层重排为图下方正常流(文件名+大小日期两行),
      同卡背景一体式圆角块;badge/爱心撤销 hover 下移、常驻图上原位;备注 hover 胶囊保留。
-     信息区固定高度,与 gallery-layout.DETAIL_INFO_HEIGHT 对齐(改这里要同步改那个常量)。
+     信息区强制单行高度稳定(见下),虚拟化行高由 Gallery measureElement 实测,无需手算常量。
      后续新增样式在此扩展。 */
 .photo-card.card-style-always .card-info-filename,
 .photo-card.card-style-always .card-info-meta {
@@ -919,10 +919,9 @@ onBeforeUnmount(() => {
 
 .photo-card.card-style-detail .card-info-meta {
     padding: 3px 10px 7px;
-    overflow: hidden; /* 窄卡时 size+date 不换行,超宽部分裁掉,信息区高度恒定(DETAIL_INFO_HEIGHT 依赖) */
+    overflow: hidden; /* 窄卡时 size+date 不换行,超宽部分裁掉,信息区高度恒定 */
 }
-/* detail 信息区强制单行:size 固定显全,date 收缩+省略号。否则窄卡下 size/date 各自换行撑高信息区,
-   与 gallery-layout.DETAIL_INFO_HEIGHT(固定 52) 错位 → 虚拟化行距偏小 → 行间重叠。 */
+/* detail 信息区强制单行:size 固定显全,date 收缩+省略号。否则窄卡下 size/date 各自换行撑高信息区。 */
 .photo-card.card-style-detail .card-info-meta .file-size {
     flex-shrink: 0;
     white-space: nowrap;
@@ -1037,7 +1036,8 @@ onBeforeUnmount(() => {
 
 /* 窄屏:卡片圆角/水平 padding/info 字体随视口缩小,与容器 padding/gap 紧凑层级匹配。
    圆角 8/6/4、水平 padding 10/6/4、字体档位。垂直 padding(5/3/7)不动。
-   ⚠️ 字体变小会缩 info 条高 → 必须同步 gallery-layout.DETAIL_INFO_HEIGHT 响应式常量(见 Gallery.extraPerCard),否则行重叠。 */
+   info 字体档位缩号 → 条高变小,但虚拟化行高由 measureElement 实测自动跟随,无需手动同步常量。 */
+/* 响应式断点字面量须与 src/utils/breakpoints.js 的 BREAKPOINTS 保持一致 */
 @media (max-width: 768px) {
     .photo-card {
         border-radius: 6px;

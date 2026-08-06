@@ -1,20 +1,7 @@
 // Gallery 虚拟化布局纯函数(可单测,不依赖 Vue/DOM)。
 // chunkRows:行优先切片,每行 n 项(末行可不足)。
-// computeRowHeight:由容器宽度算固定行高 = 列宽(thumbnail aspect-ratio 1/1)+ 卡内信息区高度 + 行间 gap。
-
-// detail 卡片样式(cardStyle='detail')图下方信息区的固定高度(px),按 PhotoCard card-style-detail 实测校准。
-// 桌面(≥768)文件名1行+meta1行=52。窄屏字体档位缩号 → 条高随视口变小(48/49),故做成视口档位函数。
-// ⚠️ 改 PhotoCard 的 detail 垂直 padding 或字体档位时,必须同步这里,否则虚拟化行高错位 → 行重叠。
-export const DETAIL_INFO_HEIGHT = 52;
-
-// 按视口宽度返回 detail 信息区高度(字体档位在 PhotoCard 用 @media(max-width:768/480) 控制,与视口对齐)。
-export function detailInfoHeightFor(viewportWidth) {
-  if (viewportWidth < 480)
-    return 48;
-  if (viewportWidth < 768)
-    return 49;
-  return DETAIL_INFO_HEIGHT;
-}
+// computeRowHeight:由容器宽度算「行高估算值」= 列宽(thumbnail aspect-ratio 1/1)+ 卡内额外高度 + 行间 gap。
+// 仅供 virtualizer 的 estimateSize 用(未测量行的滚动条估算);实际行高由 measureElement 实测,不再依赖此函数精确。
 
 /**
  * 行优先切片。
@@ -93,18 +80,17 @@ export function computeVideoExpand(colWidth, videoW, videoH) {
 }
 
 /**
- * 由容器宽度计算固定行高。行高 = 列宽(=方形卡高)+ 每卡额外高度 + gap。
+ * 由容器宽度计算「行高估算值」(供 virtualizer estimateSize,未测量行的滚动条估算;实际行高由 measureElement 实测)。
+ * 行高 = 列宽(=方形卡高)+ 每卡额外高度 + gap。
  * @param {number} containerWidth gallery-grid 实际宽度(clientWidth)
  * @param {number} colCount 列数
  * @param {number} gap 列/行间距
- * @param {number} [extraPerCard] 每张卡除方形缩略图外的额外高度(detail 样式 = DETAIL_INFO_HEIGHT,其他 = 0)
- * @returns {number} 行高;containerWidth<=0 或 colCount<=0 返回 0
+ * @param {number} [extraPerCard] 每张卡除方形缩略图外的额外高度估算(detail 样式给个约值即可,实测会修正)
+ * @returns {number} 行高估算;containerWidth<=0 或 colCount<=0 返回 0
  */
 export function computeRowHeight(containerWidth, colCount, gap, extraPerCard = 0) {
   if (containerWidth <= 0 || colCount <= 0)
     return 0;
   const colWidth = (containerWidth - (colCount - 1) * gap) / colCount;
-  // 行高 = 列宽,依赖 thumbnail aspect-ratio 1/1(方形)。
-  // 前瞻:未来若引入非方形缩略图策略,需同步改虚拟化(改用 measureElement 或动态行高),否则布局错位。
   return colWidth + extraPerCard + gap;
 }

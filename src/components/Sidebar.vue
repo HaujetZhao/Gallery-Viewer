@@ -89,7 +89,7 @@ function onSidebarContextmenu() {
     height: 100dvh;
     background-color: var(--sidebar-bg);
     color: var(--sidebar-text);
-    z-index: 900;
+    z-index: var(--z-sidebar);
     transform: translateX(-100%);
     transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
     box-shadow: 2px 0 10px rgba(0, 0, 0, 0.2);
@@ -129,6 +129,7 @@ function onSidebarContextmenu() {
 
 /* 窄屏抽屉:钳制宽度 + 让出顶部搜索框行(搜索框 z-index 高于侧栏,保持盖在展开卡片上,
    故靠空间错开而非降层级——抽屉从顶部搜索框下方开始,不与右上搜索框重叠)。 */
+/* 响应式断点字面量须与 src/utils/breakpoints.js 的 BREAKPOINTS 保持一致 */
 @media (max-width: 880px) {
     #sidebar.overlay-open {
         max-width: 86vw;

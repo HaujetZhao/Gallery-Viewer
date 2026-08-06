@@ -209,8 +209,13 @@
     --z-content: 10;      /* gallery 内部(卡片/badge/悬浮条 z-2/3/10)*/
     --z-dropdown: 100;    /* 下拉(RootSwitcher)*/
     --z-sticky: 200;      /* 粘性(settings-modal 等)*/
+    --z-fab-dim: 850;     /* FAB 抽屉打开时的降层态(< 遮罩,被遮罩盖住)*/
+    --z-scrim: 890;       /* overlay 抽屉遮罩(< 侧栏,> 内容)*/
     --z-sidebar: 900;     /* 侧栏 */
+    --z-expanded-card: 950;/* hover 展开的卡片媒体(> 侧栏,让弹出媒体盖过侧栏)*/
+    --z-fab: 960;         /* 左上 FAB(> 展开卡,不被盖住)*/
     --z-modal: 1000;      /* 模态框(MediaModal)*/
+    --z-toolbar: 1000;    /* 右上搜索/筛选栏(= modal 层)*/
     --z-toast: 1100;      /* toast(> modal:modal 开时 toast 可见)*/
     --z-properties: 1500; /* 属性面板(> modal:在 modal 之上叠开,如 modal 内 N/F2/属性按钮)*/
     --z-popover: 2000;    /* 右键菜单(context-menu)*/

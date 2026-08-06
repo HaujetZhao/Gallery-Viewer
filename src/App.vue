@@ -426,6 +426,7 @@ function onVisibilityChange() {
     color: var(--text-secondary);
 }
 
+/* 响应式断点字面量须与 src/utils/breakpoints.js 的 BREAKPOINTS 保持一致 */
 @media (max-width: 768px) {
     .intro-content {
         max-width: 90%;
@@ -499,7 +500,7 @@ function onVisibilityChange() {
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    z-index: 960; /* 高于展开媒体(950):展开卡片不盖住 FAB */
+    z-index: var(--z-fab); /* 高于展开卡(--z-expanded-card):展开卡片不盖住 FAB */
     opacity: 0.6;
     transition: opacity 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
@@ -512,7 +513,7 @@ function onVisibilityChange() {
 /* 抽屉(overlay)打开时:降 z 到遮罩之下,被抽屉/遮罩盖住而非叠在面板上 */
 .sidebar-fab.dim {
     opacity: 0.25;
-    z-index: 850;
+    z-index: var(--z-fab-dim);
 }
 .sidebar-fab i {
     font-size: 18px;
@@ -523,7 +524,7 @@ function onVisibilityChange() {
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.35);
-    z-index: 890; /* 低于侧栏(900),高于内容 */
+    z-index: var(--z-scrim); /* 低于侧栏(--z-sidebar),高于内容 */
 }
 
 /* ===== 筛选悬浮区域(原 components.css) ===== */
@@ -531,7 +532,7 @@ function onVisibilityChange() {
     position: fixed;
     top: calc(20px + env(safe-area-inset-top));
     right: calc(20px + env(safe-area-inset-right));
-    z-index: 1000; /* 高于展开媒体(950),搜索框不被盖住 */
+    z-index: var(--z-toolbar); /* 高于展开卡(--z-expanded-card),搜索框不被盖住 */
     opacity: 0.6;
     transition: opacity 0.2s ease;
 }

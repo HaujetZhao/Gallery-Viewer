@@ -3,13 +3,10 @@
 // （列数档位改由 Gallery 按 container 宽度自行算,见 Gallery.bracketFor。）
 // ponytail: 模块级单例 reactive，全应用一个 resize listener。
 import { onBeforeUnmount, onMounted, readonly, ref } from 'vue';
-
-// 断点（innerWidth，px）
-const SIDEBAR_PIN = 900; // 越过 → 允许 pin
-const SIDEBAR_UNPIN = 880; // 跌破 → 强制 overlay 抽屉（20px 迟滞带防抖动）
+import { BREAKPOINTS } from '../utils/breakpoints';
 
 const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1280);
-const canPinSidebar = ref(viewportWidth.value > SIDEBAR_PIN);
+const canPinSidebar = ref(viewportWidth.value > BREAKPOINTS.sidebarPin);
 // 触屏（无 hover）：pointer:coarse 或 hover:none
 const isTouch = ref(typeof window !== 'undefined'
   && (window.matchMedia?.('(hover: none)').matches || window.matchMedia?.('(pointer: coarse)').matches));
@@ -21,9 +18,9 @@ function recompute() {
   const w = window.innerWidth;
   viewportWidth.value = w;
   // 迟滞双阈值：越过 pin 才允许，跌破 unpin 才禁止
-  if (w > SIDEBAR_PIN)
+  if (w > BREAKPOINTS.sidebarPin)
     canPinSidebar.value = true;
-  else if (w < SIDEBAR_UNPIN)
+  else if (w < BREAKPOINTS.sidebarUnpin)
     canPinSidebar.value = false;
 }
 
