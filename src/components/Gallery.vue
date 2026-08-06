@@ -5,17 +5,25 @@ import { useGallerySearch } from '../composables/useGallerySearch';
 import { useResponsiveViewport } from '../composables/useResponsiveViewport';
 import { redrawSignal, unobserveAll } from '../composables/useThumbnail';
 import { loadCapturedAtForFiles } from '../services/fileMeta';
+import { useContextMenuStore } from '../stores/contextMenu';
 import { useFsStore } from '../stores/fs';
 import { useModalStore } from '../stores/modal';
+import { useReorderStore } from '../stores/reorder';
+import { useToastStore } from '../stores/uiToast';
 import { useUserSettingsStore } from '../stores/userSettings';
 import { BREAKPOINTS } from '../utils/breakpoints';
+import { isDegradedFSA } from '../utils/browser';
 import { windowsCompareStrings } from '../utils/format';
 import { buildSlots, chunkRows, computeRowHeight, dateSortValue } from '../utils/gallery-layout';
+import { computeGridInsertIndex } from '../utils/reorder';
 import PhotoCard from './PhotoCard.vue';
 
 const fsStore = useFsStore();
 const settings = useUserSettingsStore();
 const modal = useModalStore();
+const reorderStore = useReorderStore();
+const contextMenu = useContextMenuStore();
+const toast = useToastStore();
 const { searchTerm, debouncedTerm, filteredCount, totalCount, filterFavorite, filterNote, filterSets } = useGallerySearch();
 
 const sortField = computed(() => settings.settings.sortField);
@@ -170,6 +178,7 @@ function currentGap() {
 }
 
 const gridRef = ref(null);
+const reorderGridRef = ref(null); // 重排态 grid 容器(拖拽落点查询用它)
 const colWidth = ref(0); // 列宽 px;作 prop 传 PhotoCard,供视频悬浮拓展算尺寸
 
 // 整页滚动:useWindowVirtualizer(window 版)。行高用 measureElement 动态实测——
@@ -227,6 +236,82 @@ function openPreview(file) {
   modal.open(file, displayFiles.value);
 }
 
+// —— 重排模式:容器空白右键入口 + 多列拖拽落点 + 应用流程 ——
+
+// 容器空白处右键:出「进入重排模式」(降级/空夹/已在模式时不出现)。卡片右键自行处理(冒泡到此则忽略)。
+function onContainerContextmenu(e) {
+  if (e.target.closest('.photo-card'))
+    return; // 点在卡片上 → 走卡片自己的 fileMenu
+  if (reorderStore.active)
+    return;
+  const folder = fsStore.currentFolder;
+  if (!folder?.files?.length || isDegradedFSA())
+    return;
+  contextMenu.show(e.clientX, e.clientY, [
+    { label: '进入重排模式', icon: 'fas fa-arrows-up-down-left-right', action: () => reorderStore.enter() },
+  ]);
+}
+
+// dragover:实时按指针算落点,moveSelectedTo 重排 → TransitionGroup FLIP 挤压。
+function onReorderDragover(e) {
+  if (!reorderStore.active || !reorderStore.dragging)
+    return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  const grid = reorderGridRef.value;
+  if (!grid)
+    return;
+  // 非-选中(非被拖)卡片的 rect,按 DOM 顺序(= order 顺序 = rest 顺序)
+  // ponytail: dragover 每次遍历几百卡 getBoundingClientRect,O(n);万图升级=空间索引/缓存
+  const nonDragged = grid.querySelectorAll('.photo-card:not(.reorder-selected)');
+  const rects = [...nonDragged].map(el => el.getBoundingClientRect());
+  const insertAt = computeGridInsertIndex(e.clientX, e.clientY, rects);
+  reorderStore.moveSelectedTo(insertAt);
+}
+function onReorderDrop(e) {
+  if (!reorderStore.active || !reorderStore.dragging)
+    return;
+  e.preventDefault();
+  reorderStore.dragging = false; // 落定(dragend 也清,双保险)
+}
+
+// document 级 preventDefault 消除 HTML5 drag 禁用光标(照搬 RootSwitcher)
+function onDocDrag(e) {
+  if (!reorderStore.dragging)
+    return;
+  e.preventDefault();
+  if (e.dataTransfer)
+    e.dataTransfer.dropEffect = 'move';
+}
+watch(() => reorderStore.dragging, (d) => {
+  if (d) {
+    document.addEventListener('dragover', onDocDrag);
+    document.addEventListener('dragenter', onDocDrag);
+  }
+  else {
+    document.removeEventListener('dragover', onDocDrag);
+    document.removeEventListener('dragenter', onDocDrag);
+  }
+});
+
+// 应用:执行批量重命名(可 Ctrl+Z 撤销,故无需二次确认对话框)。进度靠 store.applyProcessed/applyTotal。
+async function doApply() {
+  if (reorderStore.applying)
+    return;
+  try {
+    const report = await reorderStore.apply();
+    if (report.failed > 0)
+      toast.warning(`已重命名 ${report.done - report.failed} 个,失败 ${report.failed} 个(Ctrl+Z 撤销)`);
+    else if (report.done > 0)
+      toast.success(`已重命名 ${report.done} 个文件(Ctrl+Z 撤销)`);
+    else
+      toast.info('顺序未变化,无需重命名');
+  }
+  catch (e) {
+    toast.error(`应用失败: ${e?.message ?? e}`);
+  }
+}
+
 watch(
   () => fsStore.currentFolder,
   () => {
@@ -265,14 +350,60 @@ freeze();
 onBeforeUnmount(() => {
   unobserveAll();
   ro?.disconnect();
+  document.removeEventListener('dragover', onDocDrag);
+  document.removeEventListener('dragenter', onDocDrag);
 });
 </script>
 
 <template>
-  <div id="galleryContainer" class="gallery-container">
-    <div v-if="displayFiles.length === 0" class="empty-state">
+  <div id="galleryContainer" class="gallery-container" @contextmenu="onContainerContextmenu">
+    <!-- 重排模式工具栏 -->
+    <div v-if="reorderStore.active" class="reorder-toolbar">
+      <button
+        class="rt-btn rt-apply"
+        :disabled="reorderStore.applying || reorderStore.order.length < 2"
+        title="把当前顺序作为数字前缀写入文件名"
+        @click="doApply"
+      >
+        <i class="fas fa-check" /> 应用重排
+      </button>
+      <button class="rt-btn rt-cancel" :disabled="reorderStore.applying" @click="reorderStore.cancel">
+        <i class="fas fa-xmark" /> 取消
+      </button>
+      <span v-if="reorderStore.applying" class="rt-status">重命名中 {{ reorderStore.applyProcessed }}/{{ reorderStore.applyTotal }}</span>
+      <span v-else class="rt-status">已选 {{ reorderStore.selected.size }} / 共 {{ reorderStore.order.length }}</span>
+      <div class="rt-seg" :title="`序号方向: ${reorderStore.direction === 'asc' ? '升序 001…N' : '降序 N…001'}`">
+        <button :class="{ active: reorderStore.direction === 'asc' }" @click="reorderStore.setDirection('asc')">
+          升序
+        </button>
+        <button :class="{ active: reorderStore.direction === 'desc' }" @click="reorderStore.setDirection('desc')">
+          降序
+        </button>
+      </div>
+    </div>
+
+    <div v-if="!reorderStore.active && displayFiles.length === 0" class="empty-state">
       <i class="fas fa-images empty-icon" />
       <p>{{ debouncedTerm ? '没有匹配的文件' : '此文件夹为空' }}</p>
+    </div>
+    <!-- 重排态:非虚拟化 TransitionGroup(全量渲染,FLIP 挤压) -->
+    <div
+      v-else-if="reorderStore.active"
+      ref="reorderGridRef"
+      class="reorder-grid"
+      :style="{ '--col-count': colCount }"
+      @dragover="onReorderDragover"
+      @drop="onReorderDrop"
+    >
+      <TransitionGroup name="reorder-flip">
+        <PhotoCard
+          v-for="f in reorderStore.order"
+          :key="f.path"
+          :file="f"
+          :target-size="settings.settings.thumbnailSize"
+          :reorder-mode="true"
+        />
+      </TransitionGroup>
     </div>
     <div v-else ref="gridRef" class="gallery-grid" :style="{ '--col-count': colCount }">
       <div class="gallery-track" :style="{ height: `${virtualizer.getTotalSize()}px` }">
@@ -362,6 +493,91 @@ onBeforeUnmount(() => {
 
 @media (max-width: 768px) {
     .gallery-row {
+        gap: 5px;
+    }
+}
+
+/* —— 重排模式 —— */
+/* 工具栏:浮在 gallery 顶部 */
+.reorder-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    background: var(--bg-primary);
+    border: 1px solid var(--color-gray-200, #e2e8f0);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    flex-wrap: wrap;
+}
+.rt-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border: none;
+    border-radius: var(--radius-md, 8px);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    color: #fff;
+    transition: opacity 0.2s ease, transform 0.1s ease;
+}
+.rt-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.rt-btn:not(:disabled):active {
+    transform: translateY(1px);
+}
+.rt-apply {
+    background: #27ae60;
+}
+.rt-cancel {
+    background: #95a5a6;
+}
+.rt-status {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-left: 4px;
+}
+.rt-seg {
+    margin-left: auto;
+    display: inline-flex;
+    border: 1px solid var(--color-gray-300, #cbd5e1);
+    border-radius: var(--radius-md, 8px);
+    overflow: hidden;
+}
+.rt-seg button {
+    padding: 6px 14px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    cursor: pointer;
+}
+.rt-seg button.active {
+    background: #2C3E50;
+    color: #fff;
+}
+
+/* 重排 grid:普通 grid 流式(非虚拟化),列数沿用 columnCount 设置。 */
+.reorder-grid {
+    display: grid;
+    grid-template-columns: repeat(var(--col-count, 4), 1fr);
+    gap: 15px;
+    width: 100%;
+}
+/* TransitionGroup FLIP 挤位:落点变化时其余卡片平滑移动。 */
+.reorder-flip-move {
+    transition: transform 0.25s cubic-bezier(0.2, 0, 0, 1);
+}
+@media (max-width: 768px) {
+    .reorder-grid {
         gap: 5px;
     }
 }
