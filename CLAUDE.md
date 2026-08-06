@@ -87,6 +87,18 @@ docs/superpowers/        # specs(设计 + 实现记录)+ plans(实施计划)
 - **零落盘天然成立**：降级不写 roots/handleStore → `currentRootId` 恒 null → `markFolderDirty` 短路（[persistence.js](src/services/persistence.js)）→ `dirtyFolders` 恒空。**不改 persistence.js**。
 - 降级不持久化多根（每次会话重选单目录）；刷新 = 重选目录；启动不恢复历史根（[App.vue](src/App.vue) `tryRestoreFolder` 短路）。
 
+## 重排模式（拖拽排序 + 序号写回文件名）
+
+进入后强制名称排序作起点，卡片可拖拽重排（多列跨行落点），「应用」把当前顺序固化为数字前缀写回文件名（`BatchRenameOperation` 聚合重命名，走 history 可撤销）。降级只读下 `enter` 拦截。
+
+- **状态在 [reorder.js](src/stores/reorder.js)**：`active/order/selected/direction/applying/dragging/applyProcessed/applyTotal`；`enter` 快照 sortField→强制 name，`cancel` 恢复，`apply` 构造条目→`history.executeOperation`→finally `cancel`。`direction` 进模式时按排序方向定，**无 UI 切换**（升降序按钮已删），只影响 `seqForIndex` 编号映射、不改视觉 order。
+- **重排态 = 非虚拟化 `reorder-grid`**（全量渲染 + `TransitionGroup` FLIP 挤位）；普通态 = 虚拟化 `gallery-grid`。**`gallery-grid` 常驻 DOM**，重排时用 `.reorder-hidden`（display:none）隐藏而非卸载——保缩略图/布局热，退出即秒显无闪白；隐藏期间仍随窗口滚动预热可视区缩略图。
+- **虚拟化测量两道守卫**（退出重排正确性的关键）：
+  - `measureElement` 行高 `h<=0` → 返回 `estimateRowHeight()`：退出过渡期行未排布会量到 0，若缓存「仅 gap」的 15px，`getTotalSize` 少算整行 → 页面高度不对、滚动到该行才回弹；
+  - `measureContainer` 在 `clientWidth<=0`（隐藏态）跳过，防 estimate 退 0、track 高度骤缩。
+- **卡片稳定 key**：`rkOf(f)` 用 WeakMap 给 file 引用分配稳定数字 key——rename 只改 `file.path`，若 key=`f.path` 会触发卡片进出 FLIP 动画（哗啦啦）。
+- **拖拽**：HTML5 drag + `moveSelectedTo(insertAt)` 落定（selected 整体插到 rest）；`REORDER_SCROLL_ZONE`=150px rAF 边缘滚动，鼠标进工具栏（`toolbarRef`）暂停感应；工具栏可用左侧 grip 把手拖拽改位（`toolbarPos`，x 为 null 居中、拖后固定）。点空白清选中（排除工具栏）。设计文档见下文「文档」节。
+
 ## 后续待办
 
 见 [后续待办.md](后续待办.md) + [改造路线图.md](改造路线图.md)。每轮验收后追加。
@@ -100,6 +112,7 @@ docs/superpowers/        # specs(设计 + 实现记录)+ plans(实施计划)
 - 存储三分（md5 三分 + rootId 收口）：`docs/superpowers/specs/2026-08-02-批次3实现总结-卡片样式与存储三分.md` + 交互批次3 `2026-08-03-批次3实现总结-R16-R17-R19.md`
 - EXIF 拍摄时间 + GPS 落盘（图片优先拍摄时间）：`docs/superpowers/specs/2026-08-05-EXIF拍摄时间与GPS落盘-design.md`
 - 降级只读模式（非 Chromium 浏览器 webkitdirectory）：见上方「降级只读模式」节 + 实施计划 `docs/superpowers/plans/`
+- 重排模式（拖拽排序 + 序号写回）：`docs/superpowers/specs/2026-08-06-重排模式-拖动重排与序号写回-design.md`
 - 改造路线图：`docs/改造路线图.md`
 - 各阶段实施计划：`docs/superpowers/plans/`
 - 源工程（只读参考）：`D:\repos\相册浏览器`（原生 JS 原版）
