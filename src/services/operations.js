@@ -2,12 +2,14 @@
 // FileDelete 含 .trash 回收站逻辑(镜像目录 + 防重名);Rename/Move 委托 SmartFile 实例方法(T08 回 class)。
 // 文件删除进撤销栈;文件夹删除不进(物理 removeEntry,不可逆,见 fileOps.handleDeleteFolder)。
 import { useFsStore } from '../stores/fs';
+import { runConcurrent } from '../utils/concurrency';
 import { acquire, destroy } from './fileResource';
 
 export const OperationType = {
   FILE_DELETE: 'file_delete',
   FILE_RENAME: 'file_rename',
   FILE_MOVE: 'file_move',
+  BATCH_RENAME: 'batch_rename',
 };
 
 class Operation {
@@ -186,5 +188,76 @@ export class FileMoveOperation extends Operation {
   // move 改两个夹:源(文件移出)+ 目标(文件移入)。undo 反向,但两个夹都仍受影响。
   getAffectedFolders() {
     return [this.sourceFolder, this.targetFolder].filter(Boolean);
+  }
+}
+
+// 批量重命名(重排模式「应用」用)。聚合 N 条 { file, oldName, newName },整批一次撤销,
+// 避免每文件一条 FileRenameOperation 塞爆撤销栈(MAX 50)。
+// 全量应用下序号唯一 + 原名唯一 → 新名天然唯一,无需冲突兜底(FSA move 同名覆盖的丢数据风险不会触发)。
+// 单条失败不中断整批(rename 不可逆,已成功的不回滚);undo 仍可整体撤成功的部分。
+export class BatchRenameOperation extends Operation {
+  constructor(entries) {
+    super(OperationType.BATCH_RENAME, null); // 无单一 target,affected 由 entries 推
+    this.entries = entries; // [{ file, oldName, newName }]
+    this.failureReport = null; // execute 后填 { failed: number, errors: [{newName, message}] }
+  }
+
+  // onProgress?(processed, failed) 进度回调,每项完成即报。不抛错(部分成功也视为完成);失败明细存 failureReport。
+  async execute(onProgress) {
+    let done = 0;
+    let failed = 0;
+    const errors = [];
+    await runConcurrent(
+      this.entries,
+      async ({ file, newName }) => {
+        if (file.name === newName) {
+          done++; // 幂等:已是目标名(上次残留)跳过
+        }
+        else {
+          try {
+            await file.rename(newName);
+            done++;
+          }
+          catch (err) {
+            failed++;
+            errors.push({ oldName: file.name, newName, message: err?.message ?? String(err) });
+          }
+        }
+        onProgress?.(done + failed, failed);
+      },
+      { concurrency: 6 },
+    );
+    this.failureReport = failed > 0 ? { failed, errors } : null;
+  }
+
+  async undo() {
+    // 反向:每个 file 从当前名(=newName)改回 oldName。undo 失败静默累积(尽力还原)。
+    await runConcurrent(
+      this.entries,
+      async ({ file, oldName }) => {
+        if (file.name === oldName)
+          return;
+        try {
+          await file.rename(oldName);
+        }
+        catch {
+          // undo 尽力:个别失败不阻断其余还原
+        }
+      },
+      { concurrency: 6 },
+    );
+  }
+
+  getDescription() {
+    return `重排重命名 ${this.entries.length} 个文件`;
+  }
+
+  getAffectedFolders() {
+    const set = new Set();
+    for (const { file } of this.entries) {
+      if (file.parent)
+        set.add(file.parent);
+    }
+    return [...set];
   }
 }

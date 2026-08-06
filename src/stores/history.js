@@ -2,7 +2,7 @@
 // 文件级操作(删除/重命名/移动)进栈,Ctrl+Z 撤销;文件夹删除不进栈。
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
-import { FileDeleteOperation, FileMoveOperation, FileRenameOperation } from '../services/operations';
+import { BatchRenameOperation, FileDeleteOperation, FileMoveOperation, FileRenameOperation } from '../services/operations';
 import { afterFolderMutation } from '../services/persistence';
 import { isDegradedFSA } from '../utils/browser';
 import { useFsStore } from './fs';
@@ -12,11 +12,11 @@ const MAX_SIZE = 50;
 export const useHistoryStore = defineStore('history', () => {
   const stack = ref([]);
 
-  async function executeOperation(op) {
+  async function executeOperation(op, onProgress) {
     // 总闸:降级只读(无根句柄)一律拦写回,兜住 UI 任何漏堵的右键/Delete/拖拽/F2/Ctrl+Z。
     if (isDegradedFSA() && !useFsStore().rootHandle)
       throw new Error('只读模式(降级)不支持文件写入操作');
-    await op.execute();
+    await op.execute(onProgress); // onProgress 仅 BatchRenameOperation 用;其余 op.execute 忽略此参数
     stack.value.push(op);
     if (stack.value.length > MAX_SIZE)
       stack.value.shift();
@@ -44,6 +44,8 @@ export const useHistoryStore = defineStore('history', () => {
   const deleteFile = f => executeOperation(new FileDeleteOperation(f));
   const renameFile = (f, newName) => executeOperation(new FileRenameOperation(f, f.name, newName));
   const moveFile = (f, target) => executeOperation(new FileMoveOperation(f, target));
+  // 批量重命名(重排模式「应用」):entries=[{file,oldName,newName}],onProgress 透传给 BatchRenameOperation。
+  const batchRename = (entries, onProgress) => executeOperation(new BatchRenameOperation(entries), onProgress);
 
   const canUndo = computed(() => stack.value.length > 0);
   const lastDescription = computed(() =>
@@ -60,5 +62,6 @@ export const useHistoryStore = defineStore('history', () => {
     deleteFile,
     renameFile,
     moveFile,
+    batchRename,
   };
 });
