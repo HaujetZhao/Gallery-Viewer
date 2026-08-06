@@ -2,7 +2,7 @@
 // 文件级操作(删除/重命名/移动)进栈,Ctrl+Z 撤销;文件夹删除不进栈。
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
-import { BatchRenameOperation, FileDeleteOperation, FileMoveOperation, FileRenameOperation } from '../services/operations';
+import { FileDeleteOperation, FileMoveOperation, FileRenameOperation } from '../services/operations';
 import { afterFolderMutation } from '../services/persistence';
 import { isDegradedFSA } from '../utils/browser';
 import { useFsStore } from './fs';
@@ -44,8 +44,6 @@ export const useHistoryStore = defineStore('history', () => {
   const deleteFile = f => executeOperation(new FileDeleteOperation(f));
   const renameFile = (f, newName) => executeOperation(new FileRenameOperation(f, f.name, newName));
   const moveFile = (f, target) => executeOperation(new FileMoveOperation(f, target));
-  // 批量重命名(重排模式「应用」):entries=[{file,oldName,newName}],onProgress 透传给 BatchRenameOperation。
-  const batchRename = (entries, onProgress) => executeOperation(new BatchRenameOperation(entries), onProgress);
 
   const canUndo = computed(() => stack.value.length > 0);
   const lastDescription = computed(() =>
@@ -62,6 +60,5 @@ export const useHistoryStore = defineStore('history', () => {
     deleteFile,
     renameFile,
     moveFile,
-    batchRename,
   };
 });
