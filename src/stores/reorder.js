@@ -19,6 +19,7 @@ export const useReorderStore = defineStore('reorder', () => {
   const selected = ref(new Set()); // 选中的 file 引用集合(Set<SmartFile>,靠引用相等)
   const direction = ref('asc'); // 模式内编号方向(只影响 seqForIndex,不改视觉 order)
   const applying = ref(false); // 「应用」执行中(工具栏禁用)
+  const dragging = ref(false); // 拖拽中(选中集合半透明);PhotoCard dragstart 置 true、dragend/drop 置 false
   const applyProcessed = ref(0); // 已处理文件数(进度)
   const applyTotal = ref(0);
   let savedSortField = null; // 进入时快照,退出恢复(单字段:只 sortField 被改成 name,direction 没动)
@@ -139,6 +140,7 @@ export const useReorderStore = defineStore('reorder', () => {
     selected,
     direction,
     applying,
+    dragging,
     applyProcessed,
     applyTotal,
     enter,

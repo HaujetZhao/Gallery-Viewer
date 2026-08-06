@@ -11,6 +11,7 @@ import { useContextMenuStore } from '../stores/contextMenu';
 import { useFavoritesStore } from '../stores/favorites';
 import { useModalStore } from '../stores/modal';
 import { useNotesStore } from '../stores/notes';
+import { useReorderStore } from '../stores/reorder';
 import { useUserSettingsStore } from '../stores/userSettings';
 import { isDegradedFSA } from '../utils/browser';
 import { formatDate, formatDuration, formatFileSize } from '../utils/format';
@@ -22,11 +23,16 @@ const props = defineProps({
   targetSize: { type: Number, default: 400 },
   // 列宽 px(来自 Gallery 实测):视频悬浮等比拓展用。无(0)时拓展几何拿不到 → 保持方形。
   colWidth: { type: Number, default: 0 },
+  // 重排模式:点击=选中、悬浮不展开、拖拽走重排(不走 move)。Gallery 重排态渲染时置 true。
+  reorderMode: { type: Boolean, default: false },
 });
 const emit = defineEmits(['click']);
 
 const settings = useUserSettingsStore();
 const modalStore = useModalStore();
+const reorderStore = useReorderStore();
+// 重排态选中(响应式:selected Set 变或 file 变都重算)
+const reorderSelected = computed(() => props.reorderMode && reorderStore.isSelected(props.file));
 // 卡片信息显示样式(hover/always/...),根元素挂 card-style-<style> class,CSS 据此控制信息条显隐。
 const cardStyleClass = computed(() => `card-style-${settings.settings.cardStyle || 'hover'}`);
 
@@ -269,7 +275,8 @@ const contextMenu = useContextMenuStore();
 const mediaExpand = computed(() => {
   // 重命名或右键菜单打开时也不展开——否则展开画面盖住重命名输入框/右键菜单。
   // 触屏拖动不算:展开变形会让滚动抖动(预览式 hover 不展开,展开留给大图 modal)。
-  if (!mouseHover.value || editing.value || contextMenu.visible || !isExpandStyle.value || !props.colWidth)
+  // 重排模式不展开(交互已变为选中/拖拽)。
+  if (!mouseHover.value || editing.value || contextMenu.visible || !isExpandStyle.value || !props.colWidth || props.reorderMode)
     return null;
   const w = mediaDims.value?.w;
   const h = mediaDims.value?.h;
@@ -313,6 +320,15 @@ function onContextmenu(e) {
 }
 
 function onDragstart(e) {
+  // 重排模式:拖拽 = 重排(不走 move)。未选中则单拖它(清空其余选中,只选本卡)。
+  if (props.reorderMode) {
+    if (!reorderStore.isSelected(props.file))
+      reorderStore.selectOneOnly(props.file);
+    reorderStore.dragging = true;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', 'reorder'); // Firefox 需 setData 才触发后续 dragover/drop
+    return;
+  }
   if (isDegradedFSA()) {
     e.preventDefault();
     return;
@@ -347,6 +363,21 @@ function openPreview() {
     return;
   }
   emit('click');
+}
+
+// 重排模式:点击 = 切换选中(不开 modal);常态走 openPreview。
+function onCardClick() {
+  if (props.reorderMode) {
+    reorderStore.toggleSelect(props.file);
+    return;
+  }
+  openPreview();
+}
+
+// 重排拖拽收尾:清除 dragging 半透明态(drop 落定或异常中断都触发 dragend)。
+function onDragend() {
+  if (props.reorderMode)
+    reorderStore.dragging = false;
 }
 
 function onMouseEnter() {
@@ -393,17 +424,26 @@ onBeforeUnmount(() => {
   <div
     ref="cardEl"
     class="photo-card"
-    :class="[cardStyleClass, { 'renaming': editing, 'media-expanding': !!mediaExpand, 'hover-expand': isExpandStyle, 'touch-hover': touchHover }]"
+    :class="[cardStyleClass, {
+      'renaming': editing,
+      'media-expanding': !!mediaExpand,
+      'hover-expand': isExpandStyle,
+      'touch-hover': touchHover,
+      'reorder-mode': reorderMode,
+      'reorder-selected': reorderSelected,
+      'reorder-dragging': reorderMode && reorderStore.dragging && reorderSelected,
+    }]"
     :style="mediaExpandStyle"
     tabindex="0"
     role="button"
-    :aria-label="`查看 ${file.name}`"
-    :draggable="!editing && !isDegradedFSA()"
-    @click="openPreview"
-    @keydown.enter="openPreview"
-    @keydown.space.prevent="openPreview"
+    :aria-label="reorderMode ? `选中 ${file.name}` : `查看 ${file.name}`"
+    :draggable="!editing && (reorderMode || !isDegradedFSA())"
+    @click="onCardClick"
+    @keydown.enter="onCardClick"
+    @keydown.space.prevent="onCardClick"
     @contextmenu.prevent="onContextmenu"
     @dragstart="onDragstart"
+    @dragend="onDragend"
     @pointerdown="onCardPointerDown"
     @pointermove="onCardPointerMove"
     @pointerup="onCardPointerUp"
@@ -448,7 +488,7 @@ onBeforeUnmount(() => {
 
       <!-- R6:收藏爱心(左上角)。已收藏常显实心;未收藏 hover 显空心;md5 未算不显示。@click.stop 防冒泡开 modal -->
       <button
-        v-if="hasMd5"
+        v-if="hasMd5 && !reorderMode"
         class="fav-btn"
         :class="{ favorited }"
         title="收藏 (L)"
@@ -456,6 +496,11 @@ onBeforeUnmount(() => {
       >
         <i :class="favorited ? 'fas fa-heart' : 'far fa-heart'" />
       </button>
+
+      <!-- 重排模式:右上角选中圆圈(常显;选中填色 + 对勾) -->
+      <div v-if="reorderMode" class="reorder-select-badge" :class="{ selected: reorderSelected }">
+        <i v-if="reorderSelected" class="fas fa-check" />
+      </div>
 
       <!-- R14:md5 备注 hover 时叠在缩略图中央(CSS 控制显隐) -->
       <div v-if="noteText" class="note-overlay">
@@ -1032,6 +1077,47 @@ onBeforeUnmount(() => {
     font-size: 12px;
     line-height: 1.45;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* —— 重排模式 —— */
+/* 重排态不上浮(hover 静止,便于拖拽判断落点);信息条常显(看文件名排序)。 */
+.photo-card.reorder-mode:hover {
+    transform: none;
+}
+.photo-card.reorder-mode .card-info-filename,
+.photo-card.reorder-mode .card-info-meta {
+    transform: translateY(0);
+}
+/* 选中:主色描边 */
+.photo-card.reorder-selected {
+    outline: 3px solid #2C3E50;
+    outline-offset: -3px;
+}
+/* 拖动中的选中卡:半透明(自身即占位,其余卡片 FLIP 挤压让位) */
+.photo-card.reorder-dragging {
+    opacity: 0.4;
+}
+/* 右上角选中圆圈:常显空心,选中填色 + 对勾 */
+.reorder-select-badge {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.4);
+    border: 2px solid #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 6;
+    color: #fff;
+    font-size: 12px;
+    pointer-events: none;
+}
+.reorder-select-badge.selected {
+    background: #2C3E50;
+    border-color: #fff;
 }
 
 /* 窄屏:卡片圆角/水平 padding/info 字体随视口缩小,与容器 padding/gap 紧凑层级匹配。
