@@ -308,6 +308,8 @@ function startRename() {
 
 // F2 重命名:App 全局 F2 → requestRename bump;仅 hover 中的这张卡响应(modal 打开时 App 不 bump)。
 watch(renameTick, () => {
+  if (props.reorderMode)
+    return; // 重排态不触发重命名
   if (hoveredFile.value === props.file && !editing.value)
     startRename();
 });
@@ -382,11 +384,13 @@ function onDragend() {
 
 function onMouseEnter() {
   mouseHover.value = true;
-  hoveredFile.value = props.file;
+  if (!props.reorderMode)
+    hoveredFile.value = props.file; // 重排态不设 hoveredFile,避免 App 全局 Delete/F2 误触该卡
 }
 function onMouseLeave() {
   mouseHover.value = false;
-  hoveredFile.value = null;
+  if (!props.reorderMode)
+    hoveredFile.value = null;
 }
 function onCardPointerDown(e) {
   if (!isTouch.value || e.pointerType === 'mouse')
@@ -1088,10 +1092,12 @@ onBeforeUnmount(() => {
 .photo-card.reorder-mode .card-info-meta {
     transform: translateY(0);
 }
-/* 选中:主色描边 */
+/* 选中:主色外描边。必须外描边(offset≥0)——outline 画在最上层、不被 overflow 裁、不被子元素盖;
+   内偏移会被 thumbnail-container 盖住(图片区看不到,只有信息条边缘露出来)。z-index 提层防邻卡遮挡。 */
 .photo-card.reorder-selected {
     outline: 3px solid #2C3E50;
-    outline-offset: -3px;
+    outline-offset: 0;
+    z-index: 5;
 }
 /* 拖动中的选中卡:半透明(自身即占位,其余卡片 FLIP 挤压让位) */
 .photo-card.reorder-dragging {

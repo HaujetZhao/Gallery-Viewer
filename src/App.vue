@@ -18,11 +18,13 @@ import { initDB } from './services/db';
 import { openDirectory, switchToRoot } from './services/folderActions';
 import * as handleStore from './services/handleStore';
 import { flushPendingPersist } from './services/persistence';
+import { useContextMenuStore } from './stores/contextMenu';
 import { useFavoritesStore } from './stores/favorites';
 import { useFsStore } from './stores/fs';
 import { useHistoryStore } from './stores/history';
 import { useModalStore } from './stores/modal';
 import { usePropertiesStore } from './stores/properties';
+import { useReorderStore } from './stores/reorder';
 import { useRootStore } from './stores/root';
 import { useThemeStore } from './stores/theme';
 import { useToastStore } from './stores/uiToast';
@@ -36,7 +38,36 @@ const history = useHistoryStore();
 const favorites = useFavoritesStore();
 const properties = usePropertiesStore();
 const modal = useModalStore();
+const reorderStore = useReorderStore();
+const contextMenu = useContextMenuStore();
 const { searchTerm, filteredCount, totalCount, filterFavorite, filterNote } = useGallerySearch();
+
+// 主内容区(.container)右键:进入重排模式入口(覆盖 header/gallery/footer 整个内容区的空白)。
+// 卡片右键自行处理(冒泡到此则 closest('.photo-card') 命中跳过)。降级/空夹/已在模式时不出现。
+function onMainContextmenu(e) {
+  if (e.target.closest('.photo-card'))
+    return;
+  if (reorderStore.active)
+    return;
+  const folder = fsStore.currentFolder;
+  if (!folder?.files?.length || isDegradedFSA())
+    return;
+  contextMenu.show(e.clientX, e.clientY, [
+    { label: '进入重排模式', icon: 'fas fa-arrows-up-down-left-right', action: () => reorderStore.enter() },
+  ]);
+}
+
+// 重排模式下点 .container 空白处清空选中(整个内容区:header/gallery 外围/footer)。
+// 卡片冒泡被 closest('.photo-card') 拦下;工具栏(应用/取消/升降序)单独拦,点了不清选中。
+function onMainClick(e) {
+  if (!reorderStore.active)
+    return;
+  if (e.target.closest('.photo-card'))
+    return;
+  if (e.target.closest('.reorder-toolbar'))
+    return;
+  reorderStore.clearSelect();
+}
 
 // 全局错误边界:兜底所有子组件未处理错误——toast 提示 + return false 阻止错误上抛(不白屏)。
 // ponytail:App.vue 是根,onErrorCaptured 一处兜底,替代散落各组件的 try/catch。
@@ -275,7 +306,7 @@ function onVisibilityChange() {
 
     <!-- 主界面 -->
     <div v-else class="main-content-wrapper">
-      <div class="container">
+      <div class="container" @contextmenu.prevent="onMainContextmenu" @click="onMainClick">
         <header class="header">
           <h1><i class="fas fa-images" /> 相册浏览器</h1>
         </header>

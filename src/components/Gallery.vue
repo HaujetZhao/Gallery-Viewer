@@ -1,18 +1,16 @@
 <script setup>
 import { useWindowVirtualizer } from '@tanstack/vue-virtual';
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import { useGallerySearch } from '../composables/useGallerySearch';
 import { useResponsiveViewport } from '../composables/useResponsiveViewport';
 import { redrawSignal, unobserveAll } from '../composables/useThumbnail';
 import { loadCapturedAtForFiles } from '../services/fileMeta';
-import { useContextMenuStore } from '../stores/contextMenu';
 import { useFsStore } from '../stores/fs';
 import { useModalStore } from '../stores/modal';
 import { useReorderStore } from '../stores/reorder';
 import { useToastStore } from '../stores/uiToast';
 import { useUserSettingsStore } from '../stores/userSettings';
 import { BREAKPOINTS } from '../utils/breakpoints';
-import { isDegradedFSA } from '../utils/browser';
 import { windowsCompareStrings } from '../utils/format';
 import { buildSlots, chunkRows, computeRowHeight, dateSortValue } from '../utils/gallery-layout';
 import { computeGridInsertIndex } from '../utils/reorder';
@@ -22,7 +20,6 @@ const fsStore = useFsStore();
 const settings = useUserSettingsStore();
 const modal = useModalStore();
 const reorderStore = useReorderStore();
-const contextMenu = useContextMenuStore();
 const toast = useToastStore();
 const { searchTerm, debouncedTerm, filteredCount, totalCount, filterFavorite, filterNote, filterSets } = useGallerySearch();
 
@@ -179,21 +176,79 @@ function currentGap() {
 
 const gridRef = ref(null);
 const reorderGridRef = ref(null); // 重排态 grid 容器(拖拽落点查询用它)
+const toolbarRef = ref(null); // 重排工具栏(拖拽时鼠标进入则暂停边缘感应滚动)
+
+// 工具栏可拖动改位置:位置由 toolbarPos 驱动。x 为 null 时保持默认顶部居中;拖过就固定在拖到的像素位。
+const toolbarPos = reactive({ x: null, y: 10 });
+const toolbarStyle = computed(() => (toolbarPos.x === null
+  ? { top: `${toolbarPos.y}px`, left: '50%', transform: 'translateX(-50%)' }
+  : { top: `${toolbarPos.y}px`, left: `${toolbarPos.x}px`, transform: 'none' }));
+let toolbarDrag = null; // { offX, offY } 拖把手的指针相对工具栏左上偏移
+function onToolbarHandleDown(e) {
+  if (e.button !== 0)
+    return;
+  const r = toolbarRef.value?.getBoundingClientRect();
+  if (!r)
+    return;
+  const curX = toolbarPos.x === null ? r.left : toolbarPos.x; // 居中态取视觉 left,避免拖起瞬间跳位
+  toolbarDrag = { offX: e.clientX - curX, offY: e.clientY - toolbarPos.y };
+  window.addEventListener('pointermove', onToolbarHandleMove);
+  window.addEventListener('pointerup', onToolbarHandleUp);
+}
+function onToolbarHandleMove(e) {
+  if (!toolbarDrag)
+    return;
+  toolbarPos.x = e.clientX - toolbarDrag.offX;
+  toolbarPos.y = e.clientY - toolbarDrag.offY;
+}
+function onToolbarHandleUp() {
+  toolbarDrag = null;
+  window.removeEventListener('pointermove', onToolbarHandleMove);
+  window.removeEventListener('pointerup', onToolbarHandleUp);
+}
+// 重排态卡片的稳定 key:rename 会改 file.path,若 key=f.path 会触发卡片进出动画(哗啦啦);
+// 用 WeakMap 给每个 file 引用分配稳定数字 key,rename 时引用不变 → key 不变 → 卡片只更新文件名文字,不进出。
+const rkMap = new WeakMap();
+let rkN = 0;
+function rkOf(f) {
+  let k = rkMap.get(f);
+  if (k == null) {
+    k = ++rkN;
+    rkMap.set(f, k);
+  }
+  return k;
+}
 const colWidth = ref(0); // 列宽 px;作 prop 传 PhotoCard,供视频悬浮拓展算尺寸
 
 // 整页滚动:useWindowVirtualizer(window 版)。行高用 measureElement 动态实测——
 // 每行 ref 回调挂 virtualizer.measureElement,实测高度(含 detail 信息条),无需 DETAIL_INFO_HEIGHT 假设。
 // estimateSize 仅作未测量行的滚动条估算(detail 给 ~52 余量,实测会修正;不与 CSS 精确同步)。
+// 行高 = 等比卡高 + gap,常态必有非零高度;仅退出重排的过渡帧会量到 0(见 measureElement 注释)。
+function estimateRowHeight() {
+  return computeRowHeight(containerWidth.value, colCount.value, currentGap(), settings.settings.cardStyle === 'detail' ? 52 : 0);
+}
 const virtualizer = useWindowVirtualizer({
   get count() { return rows.value.length; },
-  estimateSize: () => computeRowHeight(containerWidth.value, colCount.value, currentGap(), settings.settings.cardStyle === 'detail' ? 52 : 0),
+  estimateSize: estimateRowHeight,
   overscan: 4, // 4 行 ≈ 1200px,覆盖 useThumbnail observer 的 rootMargin(100px)
-  measureElement: el => Math.round((el?.getBoundingClientRect().height ?? 0) + currentGap()),
+  measureElement: (el) => {
+    const h = el?.getBoundingClientRect().height ?? 0;
+    // 退出重排过渡期行内容尚未排布,可能有一帧量到 0 高度。若把「仅 gap」的 15px 缓存进 itemSizeCache,
+    // getTotalSize 会少算整行 → 页面高度不对,滚动到该行才重测回弹。0 高度是瞬时空帧,用 estimate 兜底
+    // (estimate = 卡高 + gap,恰等于该行真实高度),等排布完成再被实测修正,高度始终稳定。
+    if (h <= 0)
+      return estimateRowHeight();
+    return Math.round(h + currentGap());
+  },
 });
 
 function measureContainer() {
   const el = gridRef.value;
   if (!el)
+    return;
+  // 重排时 gallery-grid 被 .reorder-hidden(display:none)隐藏 → clientWidth 为 0。
+  // 不要用 0 覆盖上次的实测宽(否则 estimateSize 退化成 0,track 高度骤缩,退出重排那帧白屏)。
+  if (el.clientWidth <= 0)
     return;
   containerWidth.value = el.clientWidth; // 供列数档位判定 + estimateSize
   // 列宽直接由 container 算(供卡片悬浮拓展读 --col-width),不再依赖行高反推。
@@ -236,21 +291,8 @@ function openPreview(file) {
   modal.open(file, displayFiles.value);
 }
 
-// —— 重排模式:容器空白右键入口 + 多列拖拽落点 + 应用流程 ——
-
-// 容器空白处右键:出「进入重排模式」(降级/空夹/已在模式时不出现)。卡片右键自行处理(冒泡到此则忽略)。
-function onContainerContextmenu(e) {
-  if (e.target.closest('.photo-card'))
-    return; // 点在卡片上 → 走卡片自己的 fileMenu
-  if (reorderStore.active)
-    return;
-  const folder = fsStore.currentFolder;
-  if (!folder?.files?.length || isDegradedFSA())
-    return;
-  contextMenu.show(e.clientX, e.clientY, [
-    { label: '进入重排模式', icon: 'fas fa-arrows-up-down-left-right', action: () => reorderStore.enter() },
-  ]);
-}
+// —— 重排模式:多列拖拽落点 + 边缘滚动 + 应用流程 ——
+// 右键「进入重排模式」入口在 App.vue 的 .container 上(覆盖 header/gallery/footer 整个内容区)。
 
 // dragover:实时按指针算落点,moveSelectedTo 重排 → TransitionGroup FLIP 挤压。
 function onReorderDragover(e) {
@@ -261,10 +303,22 @@ function onReorderDragover(e) {
   const grid = reorderGridRef.value;
   if (!grid)
     return;
-  // 非-选中(非被拖)卡片的 rect,按 DOM 顺序(= order 顺序 = rest 顺序)
-  // ponytail: dragover 每次遍历几百卡 getBoundingClientRect,O(n);万图升级=空间索引/缓存
   const nonDragged = grid.querySelectorAll('.photo-card:not(.reorder-selected)');
-  const rects = [...nonDragged].map(el => el.getBoundingClientRect());
+  if (!nonDragged.length)
+    return;
+  // 用 offsetLeft/offsetTop(布局终态)而非 getBoundingClientRect:FLIP 动画期间后者返回
+  // 元素"飞过去"的过渡位置,落点会在「行末↔下行首」间反复翻转 → moveSelectedTo 反复触发 → 来回闪。
+  // offsetTop 不受 transform 影响,落点基于稳定终态 → 鼠标静止即不震荡。
+  // ponytail: dragover 每次遍历几百卡 O(n);万图升级=空间索引
+  const parent = nonDragged[0].offsetParent;
+  const pr = parent.getBoundingClientRect();
+  const rects = [...nonDragged].map(el => ({
+    left: pr.left + el.offsetLeft,
+    top: pr.top + el.offsetTop,
+    bottom: pr.top + el.offsetTop + el.offsetHeight,
+    width: el.offsetWidth,
+    height: el.offsetHeight,
+  }));
   const insertAt = computeGridInsertIndex(e.clientX, e.clientY, rects);
   reorderStore.moveSelectedTo(insertAt);
 }
@@ -275,22 +329,61 @@ function onReorderDrop(e) {
   reorderStore.dragging = false; // 落定(dragend 也清,双保险)
 }
 
-// document 级 preventDefault 消除 HTML5 drag 禁用光标(照搬 RootSwitcher)
+// document 级 preventDefault 消除 HTML5 drag 禁用光标(照搬 RootSwitcher)+ 跟踪指针供边缘滚动用。
+// HTML5 拖拽不触发 mousemove,故 useScrollZone(常驻边缘感应)在拖拽时失效——这里用 dragover 跟踪 + rAF 单独滚。
+const REORDER_SCROLL_ZONE = 150; // 顶/底感应区高度(px)
+let dragClientY = -1; // 最近一次 dragover 的视口 y;-1=未收到(不滚)
+let scrollRaf = null;
+
 function onDocDrag(e) {
   if (!reorderStore.dragging)
     return;
   e.preventDefault();
   if (e.dataTransfer)
     e.dataTransfer.dropEffect = 'move';
+  // 鼠标在工具栏上时不感应滚动(工具栏在顶部,否则会被当作顶区持续向上滚)
+  const tb = toolbarRef.value?.getBoundingClientRect();
+  if (tb && e.clientX >= tb.left && e.clientX <= tb.right && e.clientY >= tb.top && e.clientY <= tb.bottom) {
+    dragClientY = -1;
+    return;
+  }
+  dragClientY = e.clientY;
+}
+// rAF 边缘滚动:指针在顶/底 150px 内,按距边缘距离线性加速(最快 ~15px/帧 ≈ 900px/s)。
+function reorderScrollTick() {
+  if (!reorderStore.dragging) {
+    scrollRaf = null;
+    return;
+  }
+  if (dragClientY >= 0) {
+    const vh = window.innerHeight;
+    let amount = 0;
+    if (dragClientY < REORDER_SCROLL_ZONE) {
+      amount = -Math.round((1 - dragClientY / REORDER_SCROLL_ZONE) * 15); // 顶区向上
+    }
+    else if (dragClientY > vh - REORDER_SCROLL_ZONE) {
+      const fromBottom = vh - dragClientY;
+      amount = Math.round((1 - fromBottom / REORDER_SCROLL_ZONE) * 15); // 底区向下
+    }
+    if (amount !== 0)
+      window.scrollBy({ top: amount, behavior: 'instant' });
+  }
+  scrollRaf = requestAnimationFrame(reorderScrollTick);
 }
 watch(() => reorderStore.dragging, (d) => {
   if (d) {
+    dragClientY = -1;
     document.addEventListener('dragover', onDocDrag);
     document.addEventListener('dragenter', onDocDrag);
+    scrollRaf = requestAnimationFrame(reorderScrollTick);
   }
   else {
     document.removeEventListener('dragover', onDocDrag);
     document.removeEventListener('dragenter', onDocDrag);
+    if (scrollRaf) {
+      cancelAnimationFrame(scrollRaf);
+      scrollRaf = null;
+    }
   }
 });
 
@@ -335,6 +428,19 @@ watch([sortField, sortAsc], () => {
   refineDateOrder(); // date:补 EXIF 时间后重冻
 });
 
+// 退出重排模式 → 重冻:应用后文件名已变,需按新名重排显示;取消则顺序未变(重冻无害)。
+// 必要:若进重排前就是「名称排序」,cancel 恢复 sortField 值未变 → 上面的 watch 不触发 → 不重冻 → 卡在旧冻结序。
+// 同时保持 scrollY:重排态(非虚拟化全量 DOM)切回虚拟化时内容高度骤变,浏览器会 clamp scrollY。
+watch(() => reorderStore.active, (now, wasActive) => {
+  if (wasActive && !now) {
+    const y = window.scrollY; // 退出前(重排态)的滚动位置
+    settled.value = false;
+    freeze();
+    refineDateOrder();
+    nextTick(() => window.scrollTo(0, y));
+  }
+});
+
 // R8:size/date 排序:enrich 完成后(_meta 补齐)重冻一次,之后冻结直到下一触发点。
 watch(allEnriched, async (ok) => {
   if (ok && !settled.value) {
@@ -352,13 +458,18 @@ onBeforeUnmount(() => {
   ro?.disconnect();
   document.removeEventListener('dragover', onDocDrag);
   document.removeEventListener('dragenter', onDocDrag);
+  if (scrollRaf)
+    cancelAnimationFrame(scrollRaf);
 });
 </script>
 
 <template>
-  <div id="galleryContainer" class="gallery-container" @contextmenu="onContainerContextmenu">
+  <div id="galleryContainer" class="gallery-container">
     <!-- 重排模式工具栏 -->
-    <div v-if="reorderStore.active" class="reorder-toolbar">
+    <div v-if="reorderStore.active" ref="toolbarRef" class="reorder-toolbar" :style="toolbarStyle">
+      <div class="rt-handle" title="拖动调整位置" @pointerdown="onToolbarHandleDown">
+        <i class="fas fa-grip" />
+      </div>
       <button
         class="rt-btn rt-apply"
         :disabled="reorderStore.applying || reorderStore.order.length < 2"
@@ -372,40 +483,22 @@ onBeforeUnmount(() => {
       </button>
       <span v-if="reorderStore.applying" class="rt-status">重命名中 {{ reorderStore.applyProcessed }}/{{ reorderStore.applyTotal }}</span>
       <span v-else class="rt-status">已选 {{ reorderStore.selected.size }} / 共 {{ reorderStore.order.length }}</span>
-      <div class="rt-seg" :title="`序号方向: ${reorderStore.direction === 'asc' ? '升序 001…N' : '降序 N…001'}`">
-        <button :class="{ active: reorderStore.direction === 'asc' }" @click="reorderStore.setDirection('asc')">
-          升序
-        </button>
-        <button :class="{ active: reorderStore.direction === 'desc' }" @click="reorderStore.setDirection('desc')">
-          降序
-        </button>
-      </div>
     </div>
 
     <div v-if="!reorderStore.active && displayFiles.length === 0" class="empty-state">
       <i class="fas fa-images empty-icon" />
       <p>{{ debouncedTerm ? '没有匹配的文件' : '此文件夹为空' }}</p>
     </div>
-    <!-- 重排态:非虚拟化 TransitionGroup(全量渲染,FLIP 挤压) -->
+    <!-- gallery-grid 常驻 DOM:重排时用 .reorder-hidden 隐藏(display:none)而非卸载——
+         这样缩略图/布局保持热,退出重排即秒显,避免整树重挂触发缩略图异步重载闪白。
+         虚拟化行在隐藏期间仍跟随窗口滚动渲染(预热可视区缩略图)。 -->
     <div
-      v-else-if="reorderStore.active"
-      ref="reorderGridRef"
-      class="reorder-grid"
+      v-else
+      ref="gridRef"
+      class="gallery-grid"
+      :class="{ 'reorder-hidden': reorderStore.active }"
       :style="{ '--col-count': colCount }"
-      @dragover="onReorderDragover"
-      @drop="onReorderDrop"
     >
-      <TransitionGroup name="reorder-flip">
-        <PhotoCard
-          v-for="f in reorderStore.order"
-          :key="f.path"
-          :file="f"
-          :target-size="settings.settings.thumbnailSize"
-          :reorder-mode="true"
-        />
-      </TransitionGroup>
-    </div>
-    <div v-else ref="gridRef" class="gallery-grid" :style="{ '--col-count': colCount }">
       <div class="gallery-track" :style="{ height: `${virtualizer.getTotalSize()}px` }">
         <div
           v-for="vi in virtualizer.getVirtualItems()"
@@ -431,6 +524,25 @@ onBeforeUnmount(() => {
           </template>
         </div>
       </div>
+    </div>
+    <!-- 重排态:非虚拟化 TransitionGroup(全量渲染,FLIP 挤压)。仅重排时挂载。 -->
+    <div
+      v-if="reorderStore.active"
+      ref="reorderGridRef"
+      class="reorder-grid"
+      :style="{ '--col-count': colCount }"
+      @dragover="onReorderDragover"
+      @drop="onReorderDrop"
+    >
+      <TransitionGroup name="reorder-flip">
+        <PhotoCard
+          v-for="f in reorderStore.order"
+          :key="rkOf(f)"
+          :file="f"
+          :target-size="settings.settings.thumbnailSize"
+          :reorder-mode="true"
+        />
+      </TransitionGroup>
     </div>
   </div>
 </template>
@@ -460,6 +572,11 @@ onBeforeUnmount(() => {
 .gallery-grid {
     position: relative;
     width: 100%;
+}
+/* 重排时隐藏普通网格(display:none)而非卸载:保缩略图/布局热,退出重排即秒显无闪白。
+   display:none 让隐藏网格不占布局(不撑高页面),虚拟化行仍随窗口滚动预热可视区缩略图。 */
+.gallery-grid.reorder-hidden {
+    display: none;
 }
 
 /* 虚拟化:track 由 virtualizer.getTotalSize() 撑高,行绝对定位 translateY */
@@ -498,21 +615,34 @@ onBeforeUnmount(() => {
 }
 
 /* —— 重排模式 —— */
-/* 工具栏:浮在 gallery 顶部 */
+/* 工具栏:悬浮(fixed 顶部居中),脱离文档流不挤压卡片——进入重排模式时卡片位置不跳。
+   定位(left/top/transform)由内联 toolbarStyle 驱动(默认居中,拖把手后固定到像素位)。 */
 .reorder-toolbar {
-    position: sticky;
-    top: 0;
-    z-index: 20;
+    position: fixed;
+    z-index: 1000;
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 8px 12px;
-    margin-bottom: 8px;
+    padding: 8px 14px;
     background: var(--bg-primary);
     border: 1px solid var(--color-gray-200, #e2e8f0);
     border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-sm);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
     flex-wrap: wrap;
+    backdrop-filter: blur(8px);
+}
+/* 拖把手:工具栏位置调整抓手(左侧,不影响内部按钮点击)。 */
+.rt-handle {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 6px;
+    margin-left: -6px;
+    cursor: grab;
+    color: var(--text-secondary);
+    user-select: none;
+}
+.rt-handle:active {
+    cursor: grabbing;
 }
 .rt-btn {
     display: inline-flex;
@@ -544,25 +674,6 @@ onBeforeUnmount(() => {
     font-size: 13px;
     color: var(--text-secondary);
     margin-left: 4px;
-}
-.rt-seg {
-    margin-left: auto;
-    display: inline-flex;
-    border: 1px solid var(--color-gray-300, #cbd5e1);
-    border-radius: var(--radius-md, 8px);
-    overflow: hidden;
-}
-.rt-seg button {
-    padding: 6px 14px;
-    border: none;
-    background: transparent;
-    color: var(--text-secondary);
-    font-size: 13px;
-    cursor: pointer;
-}
-.rt-seg button.active {
-    background: #2C3E50;
-    color: #fff;
 }
 
 /* 重排 grid:普通 grid 流式(非虚拟化),列数沿用 columnCount 设置。 */

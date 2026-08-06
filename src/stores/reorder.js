@@ -70,11 +70,6 @@ export const useReorderStore = defineStore('reorder', () => {
     return selected.value.has(file);
   }
 
-  function setDirection(dir) {
-    // 视觉 order 不反转;编号映射随方向变(seqForIndex 在 buildEntries 时按 direction 算)
-    direction.value = dir;
-  }
-
   // 拖拽落定:把 selected 从 order 移除,整体插到 rest 的 insertAt。
   function moveSelectedTo(insertAt) {
     const sel = new Set(selected.value);
@@ -149,7 +144,6 @@ export const useReorderStore = defineStore('reorder', () => {
     clearSelect,
     selectOneOnly,
     isSelected,
-    setDirection,
     moveSelectedTo,
     buildEntries,
     apply,

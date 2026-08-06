@@ -2,12 +2,14 @@
 // 排除区域(sidebar/modal/settings/topbar)用 ref 数组传入。
 import { onBeforeUnmount, onMounted, watch } from 'vue';
 import { useModalStore } from '../stores/modal';
+import { useReorderStore } from '../stores/reorder';
 import { useUserSettingsStore } from '../stores/userSettings';
 
 const ZONE_HEIGHT = 60;
 
 export function useScrollZone(excludeRefs = []) {
   const settings = useUserSettingsStore();
+  const reorderStore = useReorderStore();
   let rafId = null;
   let active = false;
   let direction = 0;
@@ -32,6 +34,10 @@ export function useScrollZone(excludeRefs = []) {
       return;
     if (useModalStore().isOpen)
       return; // modal 打开时暂停感应滚动(避免全屏遮罩下触发看不见的滚动)
+    if (reorderStore.active) {
+      stop(); // 重排模式:不感应(拖拽时另有专用边缘滚动 Gallery.reorderScrollTick)
+      return;
+    }
     if (isInExcluded(e.clientX, e.clientY, e.target)) {
       stop();
       return;
