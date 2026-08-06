@@ -50,8 +50,8 @@ onErrorCaptured((err) => {
 const { pinned: sidebarPinnedNow, overlayOpen: sidebarOverlay, toggleSidebar, closeOverlay: closeSidebarOverlay } = useSidebar(null);
 
 watch(
-  [sidebarPinnedNow],
-  ([v]) => document.body.classList.toggle('sidebar-pinned', v),
+  sidebarPinnedNow,
+  v => document.body.classList.toggle('sidebar-pinned', v),
   { immediate: true },
 );
 

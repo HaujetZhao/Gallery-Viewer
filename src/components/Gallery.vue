@@ -38,13 +38,10 @@ function bracketFor(w) {
 const colCount = computed(() => settings.settings.columnCount);
 const containerWidth = ref(0);
 const colBracket = computed(() => bracketFor(containerWidth.value));
-let lastBracket = null;
-watch(colBracket, (b) => {
-  // 仅 finite→finite 的真实变化才改写(跳过初始 null→B1 的挂载测量)
-  if (b != null && lastBracket !== null && b !== lastBracket)
+// 仅 finite→finite 的真实变化才改写设置(oldB 为 null/undefined 时跳过初始挂载测量)
+watch(colBracket, (b, oldB) => {
+  if (b != null && oldB != null && b !== oldB)
     settings.set('columnCount', b);
-  if (b != null)
-    lastBracket = b;
 });
 
 // R8:会话内稳定排序。冻结序号 frozenOrder(Map<file, number>),displayFiles 按冻结序号排,

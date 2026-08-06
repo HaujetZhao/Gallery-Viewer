@@ -1,5 +1,6 @@
 // 响应式视口基础设施：模块级共享状态 + 单个 rAF 节流 resize 监听。
-// 侧栏断点（迟滞双阈值）与图库列数自适应共用，避免散落的瞬时 matchMedia。
+// 提供 viewportWidth / canPinSidebar（侧栏迟滞断点）/ isTouch（设备能力）共享 ref。
+// （列数档位改由 Gallery 按 container 宽度自行算,见 Gallery.bracketFor。）
 // ponytail: 模块级单例 reactive，全应用一个 resize listener。
 import { onBeforeUnmount, onMounted, readonly, ref } from 'vue';
 
@@ -7,20 +8,8 @@ import { onBeforeUnmount, onMounted, readonly, ref } from 'vue';
 const SIDEBAR_PIN = 900; // 越过 → 允许 pin
 const SIDEBAR_UNPIN = 880; // 跌破 → 强制 overlay 抽屉（20px 迟滞带防抖动）
 
-// 视口允许列数阶梯
-function maxColumnsFor(width) {
-  if (width < 480)
-    return 2;
-  if (width < 768)
-    return 3;
-  if (width < 1100)
-    return 4;
-  return Infinity; // 桌面不封顶，用用户偏好
-}
-
 const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1280);
 const canPinSidebar = ref(viewportWidth.value > SIDEBAR_PIN);
-const maxColumns = ref(maxColumnsFor(viewportWidth.value));
 // 触屏（无 hover）：pointer:coarse 或 hover:none
 const isTouch = ref(typeof window !== 'undefined'
   && (window.matchMedia?.('(hover: none)').matches || window.matchMedia?.('(pointer: coarse)').matches));
@@ -36,7 +25,6 @@ function recompute() {
     canPinSidebar.value = true;
   else if (w < SIDEBAR_UNPIN)
     canPinSidebar.value = false;
-  maxColumns.value = maxColumnsFor(w);
 }
 
 function onResize() {
@@ -73,7 +61,6 @@ export function useResponsiveViewport() {
   return {
     viewportWidth: readonly(viewportWidth),
     canPinSidebar: readonly(canPinSidebar),
-    maxColumns: readonly(maxColumns),
     isTouch: readonly(isTouch),
   };
 }

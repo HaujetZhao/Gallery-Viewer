@@ -22,10 +22,8 @@ function init(settings) {
 
   const applyWidthVar = w => document.documentElement.style.setProperty('--sidebar-width', `${w}px`);
   applyWidthVar(width.value);
-  watch(width, (w) => {
-    applyWidthVar(w);
-    settings.set('sidebarWidth', w);
-  });
+  // width 仅实时同步 CSS 变量(拖拽中跟手);持久化在 onUp 落盘一次,免 pointermove 每帧写 localStorage。
+  watch(width, w => applyWidthVar(w));
   watch(pinnedPref, v => settings.set('sidebarPinned', v));
 }
 
@@ -36,10 +34,6 @@ export function useSidebar(resizeElRef) {
 
   // 实际钉住 = 宽屏允许且用户偏好开
   const pinned = computed(() => canPinSidebar.value && pinnedPref.value);
-
-  function togglePin() {
-    pinnedPref.value = !pinnedPref.value;
-  }
 
   // FAB 唤出/收起：宽屏 toggle pinnedPref；窄屏 toggle overlay 抽屉
   function toggleSidebar() {
@@ -77,6 +71,8 @@ export function useSidebar(resizeElRef) {
     width.value = w;
   }
   function onUp() {
+    if (dragging)
+      settings.set('sidebarWidth', width.value); // 拖拽结束落盘一次
     dragging = false;
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
@@ -106,11 +102,8 @@ export function useSidebar(resizeElRef) {
 
   return {
     pinned,
-    pinnedPref,
     width,
     overlayOpen,
-    canPinSidebar,
-    togglePin,
     toggleSidebar,
     closeOverlay,
     collapseSidebar,
