@@ -300,6 +300,7 @@ function onVisibilityChange() {
         </div>
         <div class="footer">
           <p>使用提示：F2 重命名、P 属性、N 备注、L 收藏、Delete 删除、Ctrl+Z 撤销。</p>
+          <p><a class="footer-link" href="https://github.com/HaujetZhao/Gallery-Viewer" target="_blank" rel="noopener noreferrer"><i class="fab fa-github" /> HaujetZhao/Gallery-Viewer</a></p>
         </div>
       </div>
     </div>
@@ -313,6 +314,7 @@ function onVisibilityChange() {
         <Gallery />
         <div class="footer">
           <p>使用提示：F2 重命名、P 属性、N 备注、L 收藏、Delete 删除、Ctrl+Z 撤销。</p>
+          <p><a class="footer-link" href="https://github.com/HaujetZhao/Gallery-Viewer" target="_blank" rel="noopener noreferrer"><i class="fab fa-github" /> HaujetZhao/Gallery-Viewer</a></p>
         </div>
       </div>
     </div>
@@ -691,11 +693,11 @@ function onVisibilityChange() {
 }
 
 .footer {
-    margin-top: 30px;
+    margin-top: 18px;
     text-align: center;
-    padding: 15px;
+    padding: 9px 15px;
     color: var(--text-muted);
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     border-top: 1px solid var(--color-gray-200);
 }
 
@@ -707,7 +709,19 @@ function onVisibilityChange() {
 }
 
 .footer p {
-    margin: 8px 0;
+    margin: 3px 0;
+}
+
+.footer-link {
+    color: var(--text-muted);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: color 0.2s;
+}
+.footer-link:hover {
+    color: var(--accent-color);
 }
 
 /* ponytail: .footer-links 删除 —— 全工程无 DOM 使用(grep 零命中),原 layout.css 死代码 */
@@ -732,7 +746,7 @@ body.sidebar-pinned .main-content-wrapper {
 .container {
     max-width: 1400px;
     margin: 0 auto;
-    padding: 20px;
+    padding: 20px 20px 0;
     width: 100%;
     display: flex;
     flex-direction: column;
@@ -742,12 +756,12 @@ body.sidebar-pinned .main-content-wrapper {
 /* 窄屏:容器 padding 随视口缩小,与图库行内 gap(15→5)匹配,边缘不再比卡片间隙更宽 */
 @media (max-width: 768px) {
     .container {
-        padding: 12px;
+        padding: 12px 12px 0;
     }
 }
 @media (max-width: 480px) {
     .container {
-        padding: 8px;
+        padding: 8px 8px 0;
     }
 }
 
