@@ -36,7 +36,7 @@ export const CONFIG = {
     sortDirection: 'asc',
     scrollZoneEnabled: true,
     scrollSpeed: 1,
-    sidebarPinned: false,
+    sidebarPinned: true, // 首次默认钉住侧栏(不收起);用户手动收起后持久化覆盖
     sidebarWidth: 280,
     theme: 'ocean',
     cardStyle: 'detail', // 卡片信息显示样式:hover(悬停滑入)/always(常驻叠层)/detail(上图下信息整卡)。可扩展更多。
