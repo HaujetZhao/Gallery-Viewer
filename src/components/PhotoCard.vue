@@ -377,9 +377,13 @@ function onCardClick() {
 }
 
 // 重排拖拽收尾:清除 dragging 半透明态(drop 落定或异常中断都触发 dragend)。
+// 单张拖动(dragstart 未选中→selectOneOnly 自选)落定后取消选中,避免残留高亮。
 function onDragend() {
-  if (props.reorderMode)
-    reorderStore.dragging = false;
+  if (!props.reorderMode)
+    return;
+  reorderStore.dragging = false;
+  if (reorderStore.selected.size === 1)
+    reorderStore.clearSelect();
 }
 
 function onMouseEnter() {
