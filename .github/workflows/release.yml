@@ -17,7 +17,8 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
+      # 用 npm install 而非 npm ci:lock 在 Windows 生成,含平台相关 optional 依赖,Linux 上 npm ci 会报 sync 失败。
+      - run: npm install
       - run: npm run build
       - name: 重命名为 Gallery-Viewer.html
         run: mv dist/index.html Gallery-Viewer.html

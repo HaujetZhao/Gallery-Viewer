@@ -24,7 +24,9 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
+      # 用 npm install 而非 npm ci:lock 在 Windows 生成,含 @emnapi/@napi-rs 平台相关 optional 依赖,
+      # Linux 上 npm ci 会报 "Missing from lock file";npm install 按平台现算树、容忍平台差异。
+      - run: npm install
       - run: npm run build:pwa
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
